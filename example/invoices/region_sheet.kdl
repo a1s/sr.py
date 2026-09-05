@@ -1,0 +1,85 @@
+// region_sheet.kdl -- a subreport in its own right, named by invoices.kdl
+// as `subreport template="region_sheet.kdl"`.
+//
+// It is an ordinary report document: a root `report` node with its own
+// `records`, its own fonts, and a `layout` of its own. That is the difference
+// between this and an `embedded` layout, which is written inside the report
+// it belongs to and shares that report's fonts and data.
+//
+// It is not `inline`, so it builds complete pages of its own, and those pages
+// go into the printout where the subreport occurs -- after the region that
+// invoked it, before the next one. Having its own pages is what lets it have
+// a `header` and a `footer`, which an inline subreport cannot -- and a page size
+// and margins of its own, which this one uses: the sheet is landscape and
+// inset differently from the register it sits inside. The printout records
+// the difference on those pages alone; every other page takes the document's.
+//
+// It is never built on its own -- it has no data of its own to build over --
+// but `sr validate region_sheet.kdl` checks it like any other template.
+
+report name="Region sheet" description="One region's invoices, on their own pages" \
+       version="1" author="als" {
+
+  // Supplied by the `arg` nodes in the invoices.kdl subreport node.
+  // A subreport has no command line, so a parameter with neither an arg nor
+  // a default is a load-time error rather than something a build discovers.
+  parameter "region" type="string"
+  parameter "total"  type="decimal"
+
+  // The line items of a region, which is a different shape from the invoices
+  // the parent runs over. Untyped when they arrive, because the parent read
+  // them out of a `list`; typed here, once, by this declaration.
+  records {
+    member "invoice_no" type="int"
+    member "customer"   type="string"
+    member "amount"     type="decimal"
+  }
+
+  variable "sheet_total" expr="amount" calc="sum" reset="report"
+
+  font "body" file="../fonts/Go-Regular.ttf" size=9
+  font "bold" file="../fonts/Go-Bold.ttf"    size=9
+
+  // Landscape, because a sheet of one region's invoices is a wide table, and
+  // a subreport that paginates itself is free to choose. An inline one is not:
+  // it prints on the host's pages, so it must match them.
+  layout pagesize="A4" landscape=#true \
+         leftmargin="20mm" rightmargin="20mm" \
+         topmargin="12mm" bottommargin="12mm" \
+  {
+    style font="body" color="black"
+
+    header height="8mm" {
+      style font="bold"
+      field expr="'Region sheet: ' + region" left=0 width="80mm"
+      // PAGE_NUMBER is the document's, not this subreport's, because
+      // the node that invoked this one did not ask for ownpageno.
+      field expr="'Page %d' % PAGE_NUMBER" align="right" right=0 width="30mm"
+      line width=0.5 left=0 right=0 bottom=0 height=0
+    }
+
+    footer height="6mm" {
+      style font="body"
+      line width=0.5 left=0 right=0 top=0 height=0
+    }
+
+    // `title` and `summary` are per-report bands, and for a subreport
+    // "the report" is one invocation, so both print once per region.
+    title height="8mm" {
+      field expr="format('%d invoices, %.2f in total', DATA_COUNT, total)" \
+            left=0 right=0
+    }
+
+    detail height="11mm" {
+      field expr="invoice_no" format="#%05d" left=0 width="20mm"
+      field expr="customer" left="22mm" width="70mm" stretch=#true
+      field expr="amount" format="%.2f" align="right" left="94mm" width="24mm"
+    }
+
+    summary height="10mm" {
+      style font="bold"
+      line width=0.5 left=0 right="60mm" height=0
+      field expr="sheet_total" format="sheet total %.2f" top=2 left=0 width="60mm"
+    }
+  }
+}

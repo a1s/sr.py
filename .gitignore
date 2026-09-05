@@ -1,0 +1,12 @@
+*.bak
+*.exe
+*.tmp
+
+# Work directories
+dist/
+out/
+tmp/
+.claude/
+
+# env file
+env.mk

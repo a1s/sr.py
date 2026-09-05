@@ -1,0 +1,16 @@
+{"customer_id":1,"amount":"2.99","rental_date":"2005-05-24T22:53:30Z","return_date":"2005-05-26T22:04:30Z","customer":{"first_name":"MARY","last_name":"SMITH"},"film":{"title":"ACADEMY DINOSAUR"}}
+{"customer_id":1,"amount":"0.99","rental_date":"2005-05-25T18:22:04Z","return_date":"2005-05-28T19:40:33Z","customer":{"first_name":"MARY","last_name":"SMITH"},"film":{"title":"ACE GOLDFINGER"}}
+{"customer_id":1,"amount":"5.99","rental_date":"2005-06-15T00:54:12Z","return_date":"2005-06-23T02:42:12Z","customer":{"first_name":"MARY","last_name":"SMITH"},"film":{"title":"ADAPTATION HOLES"}}
+{"customer_id":1,"amount":"4.99","rental_date":"2005-06-18T08:41:48Z","return_date":"2005-06-19T13:15:48Z","customer":{"first_name":"MARY","last_name":"SMITH"},"film":{"title":"AFFAIR PREJUDICE"}}
+{"customer_id":1,"amount":"9.99","rental_date":"2005-07-08T03:17:05Z","return_date":null,"customer":{"first_name":"MARY","last_name":"SMITH"},"film":{"title":"AFRICAN EGG"}}
+{"customer_id":2,"amount":"3.99","rental_date":"2005-05-27T00:09:24Z","return_date":"2005-05-28T04:30:24Z","customer":{"first_name":"PATRICIA","last_name":"JOHNSON"},"film":{"title":"AGENT TRUMAN"}}
+{"customer_id":2,"amount":"1.99","rental_date":"2005-06-17T20:24:00Z","return_date":"2005-06-22T00:53:00Z","customer":{"first_name":"PATRICIA","last_name":"JOHNSON"},"film":{"title":"AIRPLANE SIERRA"}}
+{"customer_id":2,"amount":"7.99","rental_date":"2005-06-19T11:21:12Z","return_date":"2005-06-25T09:15:12Z","customer":{"first_name":"PATRICIA","last_name":"JOHNSON"},"film":{"title":"AIRPORT POLLOCK"}}
+{"customer_id":2,"amount":"2.99","rental_date":"2005-07-06T22:47:11Z","return_date":"2005-07-14T20:59:11Z","customer":{"first_name":"PATRICIA","last_name":"JOHNSON"},"film":{"title":"ALABAMA DEVIL"}}
+{"customer_id":3,"amount":"4.99","rental_date":"2005-05-29T07:25:16Z","return_date":"2005-05-30T09:23:16Z","customer":{"first_name":"LINDA","last_name":"WILLIAMS"},"film":{"title":"ALADDIN CALENDAR"}}
+{"customer_id":3,"amount":"0.99","rental_date":"2005-06-16T15:18:57Z","return_date":"2005-06-18T19:04:57Z","customer":{"first_name":"LINDA","last_name":"WILLIAMS"},"film":{"title":"ALAMO VIDEOTAPE"}}
+{"customer_id":3,"amount":"6.99","rental_date":"2005-06-20T02:03:39Z","return_date":"2005-06-24T05:26:39Z","customer":{"first_name":"LINDA","last_name":"WILLIAMS"},"film":{"title":"ALASKA PHANTOM"}}
+{"customer_id":3,"amount":"2.99","rental_date":"2005-07-09T13:24:07Z","return_date":"2005-07-16T11:30:07Z","customer":{"first_name":"LINDA","last_name":"WILLIAMS"},"film":{"title":"ALI FOREVER"}}
+{"customer_id":4,"amount":"1.99","rental_date":"2005-06-14T22:53:33Z","return_date":"2005-06-18T21:04:33Z","customer":{"first_name":"BARBARA","last_name":"JONES"},"film":{"title":"ALICE FANTASIA"}}
+{"customer_id":4,"amount":"8.99","rental_date":"2005-07-07T10:11:54Z","return_date":"2005-07-09T14:22:54Z","customer":{"first_name":"BARBARA","last_name":"JONES"},"film":{"title":"ALIEN CENTER"}}
+{"customer_id":4,"amount":"3.99","rental_date":"2005-08-02T16:40:18Z","return_date":"2005-08-05T18:07:18Z","customer":{"first_name":"BARBARA","last_name":"JONES"},"film":{"title":"ALL BOONDOCKS"}}

@@ -1,0 +1,291 @@
+// invoices.kdl -- the companion to sakila.kdl.
+//
+// Invoices grouped by region, each with its line items as a subreport.
+// Written to cover what sakila.kdl does not: both kinds of subreport --
+// an inline `embedded` one with an `arg`, and a `template=` one that
+// paginates itself -- `records` inside `embedded`, a group that keeps
+// itself together with `minrows` and `mintailrows`, a `summary` with
+// `swapfooter`, a referenced rather than embedded image, a compressed
+// `data` blob read through a field, a detail band configured to split
+// with `orphans` and `widows`, and the variable modes sakila leaves out:
+// `set`, `chain`, `std`, `var`, and `iter="item"`.
+//
+// Build it with:
+//   sr build -t invoices.kdl -d invoices.jsonl -o invoices.pdf
+
+// basedir is where relative paths are resolved from -- logo.png below, and any
+// `font file=` or `subreport template=`. "." is the template's own directory,
+// which is also the default.
+report name="Invoice register" \
+       description="Invoices by region, with line items" \
+       version="1" author="als" basedir="." {
+
+  parameter "min_total" type="decimal" default="0.00"
+
+  records {
+    member "invoice_no" type="int"
+    member "customer"   type="string"
+    member "region"     type="string"
+    member "issued"     type="datetime"
+    member "total"      type="decimal"
+    member "void"       type="bool"
+    member "tags"       type="list"
+    member "lines"      type="list"
+  }
+
+  // `iter="item"` folds once per record even when the detail is suppressed;
+  // `iter="detail"` (the default) folds only for records that print.
+  // The gap between the two is what the summary reports as "skipped".
+  variable "considered" expr="1" calc="sum" iter="item"   reset="report"
+  variable "printed"    expr="1" calc="sum" iter="detail" reset="report"
+
+  variable "region_total" expr="total" calc="sum" reset="group" resetgrp="region"
+  variable "grand_total"  expr="total" calc="sum" reset="report"
+
+  // Between this block and `region_total` / `grand_total` above,
+  // all twelve calc modes appear at least once.
+  variable "regions"     expr="region"     calc="set"   reset="report"
+  variable "all_tags"    expr="tags"       calc="chain" reset="report"
+  variable "total_std"   expr="total"      calc="std"   reset="report"
+  variable "total_var"   expr="total"      calc="var"   reset="report"
+  variable "shown_count" expr="1"          calc="count" reset="report"
+  variable "smallest"    expr="total"      calc="min"   reset="report"
+  variable "largest"     expr="total"      calc="max"   reset="report"
+  variable "mean_total"  expr="total"      calc="avg"   reset="report"
+  variable "first_cust"  expr="customer"   calc="first" reset="group" resetgrp="region"
+  variable "last_cust"   expr="customer"   calc="last"  reset="group" resetgrp="region"
+  variable "invoice_nos" expr="invoice_no" calc="list"  reset="group" resetgrp="region"
+
+  // The rows region_sheet.kdl runs over. A subreport's data is any expression
+  // yielding a sequence of records, so it can be built here rather than read
+  // out of the input: these are the invoices of the region just ended.
+  variable "region_rows" calc="list" reset="group" resetgrp="region" \
+           expr="{'invoice_no': invoice_no, 'customer': customer, 'amount': total}"
+
+  font "body"  file="../fonts/Go-Regular.ttf" size=9
+  font "bold"  file="../fonts/Go-Bold.ttf"    size=9
+  font "head"  file="../fonts/Go-Bold.ttf"    size=13
+  font "small" file="../fonts/Go-Regular.ttf" size=7
+  font "note"  file="../fonts/Go-Regular.ttf" size=7 underline=#true
+
+  // A literal blob rather than a field's own text, stored compressed. The
+  // printout carries it decompressed, once, however many marks read it.
+  data "footnote" encoding="base64" compress="zlib" {
+    content """
+      eNpNi8ENgDAMA1fxBB2jI/AvJYJIKEFJ2vlJJR787Du78jmMHM0Ij+lkZ5V2F9SfMB
+      1y0IFQxEUQSuiBThIFm/JyLFO5f4eeh0jYPKN4DizbPgKisehjvAblBbjbLqs=
+      """
+  }
+
+  layout pagesize="A4" leftmargin="18mm" rightmargin="15mm" \
+         topmargin="15mm" bottommargin="15mm" \
+  {
+
+    style font="body" color="black"
+
+    // The line-item subreport. Its records are line items, not invoices.
+    embedded "lines" {
+      parameter "heading" type="string"
+
+      records {
+        member "sku"      type="string"
+        member "descr"    type="string"
+        member "qty"      type="int"
+        member "unit"     type="decimal"
+      }
+
+      variable "line_total" expr="unit * qty" calc="sum" reset="report"
+
+      // Column labels for the line items. `title`, not `header`: an inline
+      // subreport shares the parent's pages, whose header and footer are
+      // already reserved, so it has none of its own. A `title` prints once at
+      // the start of each invocation, which is what a per-invoice table wants.
+      title height=12 {
+        style font="small"
+        field text="SKU" left="8mm" width="20mm"
+        field text="Description" left="28mm" width="60mm"
+        field text="Qty" align="right" left="88mm" width="12mm"
+        field text="Unit" align="right" left="100mm" width="18mm"
+        field text="Amount" align="right" left="118mm" width="20mm"
+        line width=0 dash="dot" left="8mm" right=0 bottom=0 height=0
+      }
+
+      detail height=11 {
+        style font="body"
+        field expr="sku"   left="8mm"  width="20mm"
+        field expr="descr" left="28mm" width="60mm" stretch=#true
+        field expr="qty"    format="%d"   align="right" left="88mm"  width="12mm"
+        field expr="unit"   format="%.2f" align="right" left="100mm" width="18mm"
+        field expr="unit * qty" format="%.2f" align="right" left="118mm" width="20mm"
+      }
+
+      summary height=13 {
+        style font="bold"
+        line width=0.5 left="88mm" right=0 height=0
+        field expr="(heading, line_total)" format="%s — lines total %.2f" \
+              align="right" top=2 left="8mm" right=0
+      }
+    }
+
+    title height="22mm" {
+      // embed=#false records a file reference in the printout instead of the
+      // bytes, so the renderer resolves it at render time.
+      image file="logo.png" embed=#false scale="fill" width="12mm" height="12mm"
+
+      field text="Invoice register" left="16mm" height="8mm" {
+        style font="head"
+      }
+      field left="16mm" top="8mm" height="6mm" \
+            expr="format('Built %s — minimum total %.2f', strftime(BUILD_TIME, '%Y-%m-%d'), min_total)" \
+      {
+        style font="small"
+      }
+
+      // A logo over a QR code. Nothing in `barcode` does this and nothing
+      // needs to: document order is paint order, so whatever is declared
+      // after the symbol lands on top of it.
+      //
+      // Two things keep it readable. QR-H carries enough error correction
+      // to recover about 30% of the symbol, and the patch below covers
+      // well under half of that. The white rectangle is the other half of
+      // the trick: without it the logo's own edges read as modules.
+      //
+      // `paper` fills the whole box, quiet zone included, so the symbol
+      // brings its own background and its own margin rather than borrowing
+      // whatever the band happens to leave underneath. `grow` spends the
+      // whole 18mm square on the symbol, which is what makes the overlay
+      // positions below something one can write down in advance.
+      barcode type="QR-H" text="https://example.invalid/invoice-register" \
+              grow=#true paper="white" \
+              right=0 width="18mm" top="2mm" height="18mm"
+      // `width` on a rectangle is the pen, not the box, so this one is
+      // placed by its two edges: the frame is 177mm wide here, and the
+      // patch is the 6mm centred under the symbol above.
+      rectangle stroke=#false opaque=#true \
+                left="165mm" right="6mm" top="8mm" height="6mm" {
+        style bgcolor="white"
+      }
+      image file="logo.png" embed=#false scale="fill" proportional=#true \
+            right="6.75mm" width="4.5mm" top="8.75mm" height="4.5mm"
+    }
+
+    header height="7mm" {
+      style font="small"
+      field text="Invoice register" width="60mm"
+      field expr="'Page %d' % PAGE_NUMBER" align="right" right=0 width="30mm"
+      line width=0.5 left=0 right=0 bottom=0 height=0
+    }
+
+    footer height="6mm" {
+      style font="small"
+      line width=0.5 left=0 right=0 top=0 height=0
+      // A footer is built against the outgoing context, so `region` is the last
+      // record's. The guard covers a page that carries no record at all -- a
+      // first page filled by the title -- where THIS is None.
+      field expr="region" printwhen="THIS != None" top="1mm" width="60mm"
+      // The same page carries no record for the counters either, and `sum`
+      // of nothing is None rather than 0, so both need the guard.
+      field expr="'%d of %d invoices shown' % (printed or 0, considered or 0)" \
+            align="right" right=0 top="1mm" width="60mm"
+    }
+
+    // swapfooter puts this summary below the last page footer rather than
+    // above it, so the closing figures sit at the very bottom of the document.
+    summary swapfooter=#true height="36mm" {
+      style font="body"
+      rectangle width=0.5 left=0 right=0 top="2mm" bottom=0
+
+      field text="Register totals" left="4mm" top="4mm" height="6mm" {
+        style font="bold"
+      }
+      field left="4mm" top="11mm" height="5mm" \
+            expr="format('%d invoices in %d regions, %d skipped', shown_count, len(regions), considered - printed)"
+      field left="4mm" top="16mm" height="5mm" \
+            expr="format('grand total %.2f, mean %.2f, smallest %.2f, largest %.2f', grand_total, mean_total, smallest, largest)"
+      // std and var are sample statistics, so they are None
+      // until there are two values to compare.
+      field left="4mm" top="21mm" height="5mm" printwhen="total_std != None" \
+            expr="format('std %.2f, var %.2f', total_std, total_var)"
+      field left="4mm" top="26mm" height="5mm" \
+            expr="'tags: ' + ', '.join(sorted(set(all_tags)))" \
+      {
+        style font="small"
+      }
+
+      // Content from a `data` blob rather than from `text` or `expr`.
+      field data="footnote" left="4mm" top="31mm" height="4mm" right="4mm" {
+        style font="note"
+      }
+    }
+
+    // keeptogether puts a whole region on one page when it fits on an empty one.
+    // minrows keeps at least two invoices with the region title;
+    // mintailrows keeps at least two with the region summary.
+    group "region" expr="region" keeptogether=#true minrows=2 mintailrows=2 {
+
+      title height="9mm" {
+        style font="bold"
+
+        // No `type`, so this is a page eject. It sits alongside keeptogether
+        // and minrows on the same band: each says how much room the title wants,
+        // the largest wins, and at most one eject results -- a page one, because
+        // a selected eject node's `type` decides the kind whichever contributor
+        // asked for the most space. This layout has no columns, so here the two
+        // kinds coincide anyway.
+        eject require="40mm"
+
+        field expr="'Region: ' + region" left=0 width="80mm"
+        line width=1 left=0 right=0 bottom=0 height=0
+      }
+
+      summary height="14mm" {
+        style font="bold"
+        line width=0.5 left=0 right=0 height=0
+
+        // `first`/`last`/`list` all reset at the group, and the summary is built
+        // against the outgoing record, so they describe the group just ended.
+        field left=0 top="2mm" height="5mm" width="110mm" \
+              expr="format('%s: %s … %s, invoices %s', region, first_cust, last_cust, ', '.join([format('#%05d', n) for n in invoice_nos]))" \
+        {
+          style font="small"
+        }
+        field expr="(region, region_total)" format="%s total: %.2f" \
+              align="right" right=0 top="8mm" width="120mm"
+
+        // The other kind of subreport: a separate template, resolved against
+        // basedir, and not inline, so it builds complete pages of its own.
+        // They go into the printout here -- after this region's summary,
+        // before the next region -- and the host resumes on a fresh page.
+        // Because it has pages of its own it may have a `header` and a
+        // `footer`, which the inline one above may not.
+        subreport template="region_sheet.kdl" seq=1 data="region_rows" {
+          arg "region" value="region"
+          arg "total"  value="region_total"
+        }
+      }
+
+      // Only `customer` can split, and it needs orphans+widows = 4 lines before
+      // any cut is legal. A cut below the whole row would leave no marks on the
+      // far side, so it is not a legal split point either. No name in
+      // invoices.jsonl wraps past one line in 60mm, so this band does not split
+      // on this data -- the properties are here to be read, not to fire.
+      detail height="13mm" printwhen="not void and total >= min_total" \
+             split=#true orphans=2 widows=2 \
+      {
+        field expr="invoice_no" format="#%05d" left=0 width="20mm"
+        field expr="customer" left="22mm" width="60mm" stretch=#true
+        field expr="strftime(issued, '%d.%m.%Y')" align="center" \
+              left="84mm" width="22mm"
+        field expr="total" format="%.2f" align="right" left="108mm" width="22mm"
+
+        // Line items print after the invoice row -- after the whole of it,
+        // if the row splits. Negative seq would put them before it.
+        // Starlark's own `%` takes no width or zero flag, so the padded number
+        // goes through the `format` builtin.
+        subreport embedded="lines" seq=1 data="lines" when="len(lines) > 0" inline=#true {
+          arg "heading" value="format('Invoice #%05d', invoice_no)"
+        }
+      }
+    }
+  }
+}
