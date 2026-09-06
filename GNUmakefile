@@ -1,11 +1,15 @@
-PYTHON    ?= .venv/Scripts/python
 VENV      ?= .venv
 
 # A venv puts its interpreter in Scripts/ on Windows and bin/ everywhere
 # else, so pick whichever is there rather than making one platform edit a
 # file.  Before `make install` neither exists; the Windows spelling is the
 # fallback because that is where this is developed.
-VENV_PYTHON := $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,$(VENV)/Scripts/python.exe)
+#
+# Deferred rather than `:=`, so that it still sees a $(VENV) env.mk sets
+# below, and so that the wildcard is tested when a recipe runs rather than
+# once at startup -- `make install check` creates the venv in its first
+# target and needs the interpreter in its second.
+VENV_PYTHON = $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,$(VENV)/Scripts/python.exe)
 PYTHON    ?= $(VENV_PYTHON)
 
 # The recipes below are POSIX: rm -rf, find, test.  On Windows that means
@@ -15,6 +19,13 @@ PYTHON    ?= $(VENV_PYTHON)
 # Everything generated lands here: the tool caches, setuptools' metadata,
 # and the compiled bytecode.  One ignored directory rather than five.
 BUILD_DIR ?= build
+
+# build/ is ignored, but this one file in it is tracked, so that the
+# directory setup.cfg's `egg_base` needs is there in a fresh clone
+# and a plain `pip install` works without running anything here first.
+# `clean` empties the directory and keeps the marker rather than deleting
+# a tracked file and leaving the working tree dirty.
+BUILD_MARKER := $(BUILD_DIR)/.gitkeep
 
 # Where the differential harness builds the Go reference.
 REFERENCE := tmp/reference
@@ -42,7 +53,8 @@ venv:
 	test -d $(VENV) || python -m venv $(VENV)
 
 build-dir:
-	test -d $(BUILD_DIR) || mkdir -p $(BUILD_DIR)
+	mkdir -p $(BUILD_DIR)
+	test -f $(BUILD_MARKER) || touch $(BUILD_MARKER)
 
 # The engine's dependencies, the test and lint tools,
 # and the two oracles the later milestones verify against.
@@ -84,9 +96,12 @@ check: lint typecheck test
 reference:
 	$(PYTHON) -c "from tests.differential.reference import build_reference; print(build_reference())"
 
-# $(BUILD_DIR) takes the caches and the metadata with it.  The two finds
-# catch bytecode written by a command that ran without the prefix above.
-clean:
-	rm -rf $(BUILD_DIR) $(REFERENCE)
+# Emptying $(BUILD_DIR) takes the caches and the metadata with it, while
+# $(BUILD_MARKER) stays: it is tracked, and deleting it would leave the
+# working tree dirty and `pip install` broken until it came back.  The two
+# finds catch bytecode written by a command that ran without the prefix above.
+clean: build-dir
+	rm -rf $(REFERENCE)
+	find $(BUILD_DIR) -mindepth 1 -maxdepth 1 -not -name .gitkeep -exec rm -rf {} +
 	find . -path ./$(VENV) -prune -o -name __pycache__ -type d -exec rm -rf {} +
 	find . -path ./$(VENV) -prune -o -name '*.egg-info' -type d -exec rm -rf {} +
