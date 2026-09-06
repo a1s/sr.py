@@ -142,6 +142,33 @@ absolute. So a printout and the files it points at move as one tree. The header
 records which font file each typeface resolved to and by which step, so a difference
 is diagnosable from the artifact.
 
+## Development
+
+```bash
+make install    # a venv, the dependencies, and the test and lint tools
+make check      # ruff, mypy, pytest
+```
+
+Everything generated goes under `build/`: the pytest, ruff and mypy caches,
+setuptools' metadata, and compiled bytecode. The first three come from
+`pyproject.toml` and the fourth from `PYTHONPYCACHEPREFIX`, which the
+`GNUmakefile` exports — a `pytest` typed straight into a shell still writes
+`__pycache__` beside the sources unless that variable is exported there too.
+
+Tests are `pytest`. `tests/unit/` covers a module at a time, and
+`tests/differential/` compares this engine against the Go one,
+byte for byte, over the examples and over a corpus of probes.
+
+The Go implementation is the **oracle**: a reference binary whose *outputs*
+settle questions the specification leaves open. Its source is not read --
+this is a second implementation from the specification, not a port.
+The harness builds it from a tree beside this repository, and skips
+with a reason where there is no Go toolchain to build it with.
+See [tests/differential/README.md](tests/differential/README.md).
+
+Where the two engines disagree and `doc/` does not say who is right,
+the answer is a sentence in `doc/`, not a workaround in either engine.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

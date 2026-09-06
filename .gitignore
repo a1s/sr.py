@@ -10,3 +10,16 @@ tmp/
 
 # env file
 env.mk
+
+# Python
+.venv/
+venv/
+
+# Everything generated: the tool caches, setuptools' metadata, bytecode.
+build/
+
+# Bytecode and metadata written by a command run without PYTHONPYCACHEPREFIX,
+# which the GNUmakefile sets and a bare shell does not.
+__pycache__/
+*.py[cod]
+*.egg-info/
