@@ -1,0 +1,91 @@
+# Known divergences between this engine and the Go reference.
+#
+# An entry belongs here only when the difference is intended and
+# one side has not caught up yet.  Anything else is a regression,
+# and the suite says so.  A registered case that stops differing
+# fails the suite: the entry has done its work and comes out.
+#
+# `ticket` is what retires the entry.  Until the two projects have
+# an issue tracker between them it names the milestone that owns
+# the change; a URL replaces it once one is filed.
+#
+# `affects` matches case identifiers with shell globs -- `example/sakila`,
+# `probe/expressions/strings`, and so on.  The first matching entry wins.
+#
+# The four below are the dialect decisions M1 writes into doc/, each of
+# which changes the Go engine.  Their probes arrive with M1; until then
+# the entries stand as the record of what was decided.
+#
+# The milestone numbers:
+#   M0: Scaffold and oracle
+#   M1: Close the specification gaps
+#   M2: Foundations
+#   M3: Expression engine
+#   M4: Template model, load, validate
+#   M5: Fonts and text metrics
+#   M6: Walking skeleton
+#   M7: Band building
+#   M8: Pagination
+#   M9: Deferred evaluation
+#   M10: Barcodes
+#   M11: Images
+#   M12: Subreports
+#   M13: Printout completeness
+#   M14: PDF renderer
+#   M15: Command line and examples
+
+[[divergence]]
+id = "strings-are-codepoints"
+summary = "len, indexing and slicing count codepoints here and bytes in the reference"
+reason = """
+doc/expressions.md inherited `starlark-go`'s rule, where a string is a Go \
+string and therefore a sequence of bytes.  Neither other Starlark counts \
+that way, and the byte reading is wrong for the data this engine formats: \
+`title[:20]` can cut a UTF-8 sequence in half and surface as broken glyphs \
+in a PDF rather than as an error.  Codepoints is the decision; the Go \
+engine is the side that changes.\
+"""
+ticket = "M1: string semantics, expressions.md"
+since = "2026-09-06"
+affects = ["probe/expressions/strings", "probe/expressions/strings-*"]
+
+[[divergence]]
+id = "string-elems-dropped"
+summary = "the string type has codepoints and codepoint_ords only"
+reason = """
+`elems` and `elem_ords` are the byte pair, and under codepoint indexing \
+they have no meaning left.  They come out of the string row of the method \
+table; `bytes` keeps its own `elems`, since bytes are bytes.  The reference \
+still offers all four.\
+"""
+ticket = "M1: string semantics, expressions.md:195"
+since = "2026-09-06"
+affects = ["probe/expressions/string-methods*"]
+
+[[divergence]]
+id = "round-builtin"
+summary = "a one-argument round is predeclared here and absent in the reference"
+reason = """
+Added as a convenience spelling for `math.round`, taking one argument and \
+rounding half away from zero, so that one rounding rule covers the builtin, \
+`quantize`, and coordinate rounding alike.  Adding a predeclared global is \
+supported by both hosts, so this is a change the reference takes too.\
+"""
+ticket = "M1: dialect amendments, expressions.md"
+since = "2026-09-06"
+affects = ["probe/expressions/round*"]
+
+[[divergence]]
+id = "decimal-int-comparison"
+summary = "decimal compares and hashes equal with int here; the reference refuses"
+reason = """
+`amount > 0` rather than `amount > decimal(\"0\")`.  The present rule is \
+described as the host dialect's rule for two unrelated types, but `decimal` \
+is our own type in both engines, so the rule is ours to write.  Three things \
+move together: ordered comparison against `int`, `decimal(\"1\") == 1`, and \
+equal hashes.  Comparison against `float` stays an error, because that \
+mixing is genuinely lossy.\
+"""
+ticket = "M1: dialect amendments, expressions.md"
+since = "2026-09-06"
+affects = ["probe/expressions/decimal-int*"]

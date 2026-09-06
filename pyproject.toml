@@ -1,0 +1,115 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sr-py"
+dynamic = ["version"]
+description = "A banded report formatter: template plus records in, PDF out."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Aleksandr Smyshliaev" }]
+keywords = ["reporting", "pdf", "kdl", "starlark"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Printing",
+]
+
+# The engine's own dependencies.  Everything else in the layout --
+# the expression evaluator, the four barcode symbologies, layout,
+# and the PDF writer -- is written here rather than taken.
+dependencies = [
+    "ckdl",       # KDL v2 parsing
+    "fonttools",  # font tables, collections, subsetting primitives
+    "cbor2",      # the .srp.cbor encoding
+    "pillow",     # image decode, for the renderer only
+    "qrcode",     # QR matrices; provisional
+]
+
+[project.urls]
+Homepage = "https://github.com/a1s/sr.py"
+Reference = "https://github.com/a1s/sr"
+
+[project.optional-dependencies]
+# Test and lint only.  None of these is imported by the `sr` package.
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+# Verification tools for the renderer and a second opinion on
+# expression semantics.  Split out because their wheels are
+# the likeliest to be missing on a new interpreter release.
+oracles = [
+    "pypdfium2",  # rasterise rendered pages for image diffs
+    "starlark",   # 0.6.0, a conformance-tested second opinion
+]
+
+[tool.setuptools.dynamic]
+version = { attr = "sr.meta.VERSION" }
+
+[tool.setuptools.packages.find]
+include = ["sr*"]
+
+[tool.setuptools.package-data]
+sr = ["py.typed"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+# Every tool's scratch state goes under build/, so the working tree holds
+# the sources and one ignored directory rather than a cache per tool.
+cache_dir = "build/pytest"
+addopts = "--strict-markers --strict-config -ra"
+markers = [
+    "differential: compares this engine against the Go reference binary",
+    "slow: takes more than a second",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+cache-dir = "build/ruff"
+extend-exclude = ["build", "tmp"]
+
+[tool.ruff.lint]
+select = [
+    "F",    # pyflakes
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "I",    # import sorting
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "D",    # pydocstyle -- PEP 257
+    # The `google` convention below switches D401 off.  Named here to switch
+    # it back on: PEP 257 asks a docstring to prescribe the function's effect
+    # as a command, and this is the rule that holds the codebase to it.
+    "D401",
+    "RUF",
+]
+
+[tool.ruff.lint.pydocstyle]
+# PEP 257 for the shape of a docstring -- a one-line summary, then a blank
+# line, then the detail -- with Google's sections for the parts that are a
+# list rather than prose.  The convention is `google` rather than `pep257`
+# because only that one turns on D405-D417, which check that an `Args:`
+# section names the arguments the signature actually has.
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+# A test's name is its summary; a docstring on every one of them is noise.
+"tests/**" = ["D100", "D103"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["sr", "tests", "conftest.py"]
+cache_dir = "build/mypy"
+strict = true
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = ["ckdl.*", "cbor2.*", "qrcode.*", "PIL.*", "fontTools.*"]
+ignore_missing_imports = true
