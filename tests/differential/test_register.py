@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.differential.cases import example_cases
+from tests.differential.cases import corpus, example_cases, probe_cases
 from tests.differential.register import load_register
 
 WELL_FORMED = """
@@ -57,6 +57,27 @@ def test_the_examples_are_never_excused() -> None:
     for case in example_cases():
         entry = register.entry_for(case.ident)
         assert entry is None, f"{case.ident} is covered by divergence {entry.ident}"
+
+
+def test_every_entry_covers_a_case_that_exists() -> None:
+    """An entry whose probe was renamed excuses nothing, forever, silently.
+
+    That is the register's blind spot: the "stops differing" rule only fires
+    for a case that runs, so an entry pointing at a case that has gone leaves
+    no trace.  Enforced from the moment there are probes to point at -- before
+    M1 there are none, and the four shipped entries name theirs in advance.
+
+    """
+    probes = probe_cases()
+    if not probes:
+        pytest.skip("no probes yet; M1 adds them, and this starts enforcing")
+    identifiers = [case.ident for case in corpus()]
+    for entry in load_register().entries:
+        assert any(entry.matches(ident) for ident in identifiers), (
+            f"divergence {entry.ident!r} matches no case; its patterns are "
+            f"{list(entry.affects)}. Either the probe was renamed, or the "
+            "entry outlived it and should be removed."
+        )
 
 
 def test_a_pattern_matches(tmp_path: Path) -> None:

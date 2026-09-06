@@ -23,6 +23,7 @@ __all__ = [
     "Build",
     "BuildFailed",
     "Engine",
+    "EngineNotImplemented",
     "EngineUnavailable",
     "local_engine",
     "reference_engine",
@@ -38,7 +39,26 @@ ENTRY_POINT = ROOT / "sr.py"
 
 
 class EngineUnavailable(Exception):
-    """An engine cannot be run here, so its comparisons are skipped."""
+    """An engine cannot be run here, so its comparisons are skipped.
+
+    This is about the machine, not about the code: a toolchain that
+    is not installed, a binary that will not start.  Under
+    ``--differential-required`` it is a failure, because on a machine
+    that is supposed to have both engines it means one of them is broken.
+
+    """
+
+
+class EngineNotImplemented(EngineUnavailable):
+    """An engine does not exist yet: a milestone away rather than a fault.
+
+    Kept apart from :class:`EngineUnavailable` so that
+    ``--differential-required`` can insist on the oracle without insisting
+    on an engine the plan has not reached.  This is what the Python side
+    raises until M6, and nothing raises it after: once ``sr.py`` is committed,
+    a checkout without it is a broken checkout.
+
+    """
 
 
 # What the fixtures catch to turn into a skip.
@@ -95,14 +115,12 @@ def local_engine() -> Engine:
     """Return the engine that runs this repository's entry point.
 
     Raises:
-        EngineUnavailable: while the Python engine cannot yet build a printout.
-
-            That is the state until M6, and the comparisons skip
-            with this reason until then.
+        EngineNotImplemented: while there is no entry point at all.
+        EngineUnavailable: when the entry point exists but will not run.
 
     """
     if not ENTRY_POINT.is_file():
-        raise EngineUnavailable(
+        raise EngineNotImplemented(
             f"{ENTRY_POINT.name} does not exist yet; the Python engine "
             "produces its first printout in M6"
         )

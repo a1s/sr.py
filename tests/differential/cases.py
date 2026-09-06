@@ -37,8 +37,17 @@ COMMON_FLAGS: tuple[str, ...] = ("--build-time", BUILD_TIME, "--strict-fonts")
 # The extension for each printout encoding, per doc/cli.md.
 SUFFIXES = {"jsonl": ".srp.jsonl", "cbor": ".srp.cbor"}
 
+TEMPLATE_SUFFIX = ".kdl"
+
 # A probe template that exists to be pulled in by another one,
 # rather than to be built on its own.
+#
+# Both this and the sidecar lookup work on the name with `.kdl` removed
+# rather than on `Path.with_suffix`, which replaces the last extension
+# instead of appending: for `strings.v2.kdl` it would look for
+# `strings.jsonl`, quietly binding whatever unrelated file was
+# sitting there.  A probe that builds the wrong data is worse
+# than one that is not picked up at all.
 INCLUDE_MARKER = ".inc"
 
 
@@ -193,12 +202,12 @@ def probe_cases(directory: Path = PROBE_DIR) -> list[Case]:
         return []
     cases: list[Case] = []
     for template in sorted(directory.rglob("*.kdl")):
-        stem = template.with_suffix("")
-        if stem.suffix == INCLUDE_MARKER:
+        base = template.name.removesuffix(TEMPLATE_SUFFIX)
+        if base.endswith(INCLUDE_MARKER):
             continue
-        data = stem.with_suffix(".jsonl")
-        sidecar = read_sidecar(stem.with_suffix(".args"))
-        relative = template.relative_to(directory).with_suffix("")
+        data = template.with_name(base + ".jsonl")
+        sidecar = read_sidecar(template.with_name(base + ".args"))
+        relative = template.relative_to(directory).with_name(base)
         cases.append(
             Case(
                 ident="probe/" + relative.as_posix(),

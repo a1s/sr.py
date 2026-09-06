@@ -22,6 +22,7 @@ import pytest
 from tests.differential.engines import (
     UNAVAILABLE,
     Engine,
+    EngineNotImplemented,
     local_engine,
     reference_engine,
 )
@@ -31,11 +32,16 @@ from tests.differential.register import Register, load_register
 Product = TypeVar("Product")
 
 
+# Spellings of "no" for SR_DIFFERENTIAL_REQUIRED, compared lowercased
+# so that `False` reads as false rather than as a non-empty string.
+DENIALS = frozenset({"", "0", "false", "no", "off"})
+
+
 def required(config: pytest.Config) -> bool:
     """Report whether an unavailable engine must fail rather than skip."""
     if bool(config.getoption("--differential-required")):
         return True
-    return os.environ.get("SR_DIFFERENTIAL_REQUIRED", "") not in ("", "0", "false")
+    return os.environ.get("SR_DIFFERENTIAL_REQUIRED", "").strip().lower() not in DENIALS
 
 
 def obtain(
@@ -45,12 +51,19 @@ def obtain(
 
     The skip names which of the two is missing, because "reference
     unavailable" and "the Python engine does not build yet" are read
-    very differently.  Under ``--differential-required`` the same condition
-    is a failure, with the same reason.
+    very differently.
+
+    ``--differential-required`` promotes that skip to a failure -- but
+    only for an engine that is *meant* to be here.  An engine the plan
+    has not reached raises :class:`EngineNotImplemented`, and that always
+    skips: otherwise the flag could not be switched on until M6, and
+    before that a missing oracle would go unguarded.
 
     """
     try:
         return produce()
+    except EngineNotImplemented as pending:
+        pytest.skip(f"{label} unavailable: {pending}")
     except UNAVAILABLE as unavailable:
         reason = f"{label} unavailable: {unavailable}"
     # Outside the handler, so the report is the reason

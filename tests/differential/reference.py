@@ -36,10 +36,6 @@ BUILD_DIR = ROOT / "tmp" / "reference"
 # A cold build of the Go tree pulls its module cache; a warm one is instant.
 REFERENCE_BUILD_TIMEOUT = 600.0
 
-# Fallbacks tried when the environment does not name a tree.
-# Anything is only accepted after :func:`looks_like_go_tree` agrees.
-FALLBACK_TREES = (Path.home() / "src" / "sr",)
-
 
 class ReferenceUnavailable(Exception):
     """The oracle cannot be produced on this machine.

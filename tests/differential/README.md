@@ -32,6 +32,14 @@ That is a convenience, and conveniences hide things, which is what
 to have the oracle, a suite that measured nothing should not pass.
 Run `make test-required` there.
 
+The flag insists on an engine that is *meant* to be here, which is not
+the same as every engine. An engine the plan has not reached raises
+`EngineNotImplemented` and always skips -- otherwise the flag could not
+be switched on until this engine is ready, and until then the thing it guards,
+a missing oracle, would go unguarded. Once `sr.py` is committed nothing raises
+that any more: an entry point that is absent or will not run is then a fault,
+and the flag fails on it.
+
 Until we produce the first printout here there is no second engine, and
 the comparisons skip on that side instead. What runs today is the harness'
 own tests, which include running the reference against itself: that

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import date
 
-__all__ = ["NAME", "VERSION", "engine"]
+__all__ = ["DATE", "NAME", "VERSION", "engine"]
 
 # The engine's name, as doc/printout.md's `engine` field spells it.
 # It is the specification's name for the engine, not this implementation's,
@@ -19,7 +19,7 @@ NAME = "sr"
 
 # Kept in step with CHANGELOG.md.
 VERSION = "0.1.0"
-DATE = date(2026, 9, 6)
+DATE = date(2026, 9, 5)
 
 
 def engine() -> str:

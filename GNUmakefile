@@ -1,6 +1,17 @@
 PYTHON    ?= .venv/Scripts/python
 VENV      ?= .venv
 
+# A venv puts its interpreter in Scripts/ on Windows and bin/ everywhere
+# else, so pick whichever is there rather than making one platform edit a
+# file.  Before `make install` neither exists; the Windows spelling is the
+# fallback because that is where this is developed.
+VENV_PYTHON := $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,$(VENV)/Scripts/python.exe)
+PYTHON    ?= $(VENV_PYTHON)
+
+# The recipes below are POSIX: rm -rf, find, test.  On Windows that means
+# running make from Git Bash, Cygwin or MSYS2 rather than from cmd.exe or
+# PowerShell.
+
 # Everything generated lands here: the tool caches, setuptools' metadata,
 # and the compiled bytecode.  One ignored directory rather than five.
 BUILD_DIR ?= build

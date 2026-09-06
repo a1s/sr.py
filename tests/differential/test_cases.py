@@ -101,6 +101,29 @@ def test_a_probe_finds_its_data_and_arguments(tmp_path: Path) -> None:
     assert found["probe/plain"].data is None
 
 
+def test_a_dotted_probe_name_finds_its_own_data(tmp_path: Path) -> None:
+    """A name with a dot in it must not bind another probe's records.
+
+    ``Path.with_suffix`` replaces the last extension rather than appending,
+    so ``strings.v2.kdl`` would look for ``strings.jsonl`` -- which exists
+    here, belongs to another probe, and would be picked up silently.  A
+    probe that builds the wrong data is worse than one not picked up at all.
+
+    """
+    (tmp_path / "strings.kdl").write_text("report {}\n", encoding="utf-8")
+    (tmp_path / "strings.jsonl").write_text('{"which":"v1"}\n', encoding="utf-8")
+    (tmp_path / "strings.v2.kdl").write_text("report {}\n", encoding="utf-8")
+    (tmp_path / "strings.v2.jsonl").write_text('{"which":"v2"}\n', encoding="utf-8")
+    (tmp_path / "strings.v2.args").write_text("scale=2\n", encoding="utf-8")
+
+    found = {case.ident: case for case in probe_cases(tmp_path)}
+    assert set(found) == {"probe/strings", "probe/strings.v2"}
+    dotted = found["probe/strings.v2"]
+    assert dotted.data is not None
+    assert dotted.data.name == "strings.v2.jsonl"
+    assert dotted.params == ("scale=2",)
+
+
 def test_an_include_is_not_a_case_of_its_own(tmp_path: Path) -> None:
     """A template another probe pulls in is not built by itself."""
     probe_tree(tmp_path)

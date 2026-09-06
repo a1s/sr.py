@@ -77,7 +77,11 @@ def parse_ndjson(data: bytes) -> list[Any] | None:
     except UnicodeDecodeError:
         return None
     records: list[Any] = []
-    for line in text.splitlines():
+    # split, not splitlines: the latter also breaks on U+0085, U+2028,
+    # U+2029 and the file separators, and a raw U+0085 is legal inside a
+    # JSON string.  Splitting there would cut one record into two halves
+    # that neither parse, and the whole report would fall back to a hexdump.
+    for line in text.split("\n"):
         if not line.strip():
             continue
         try:
@@ -198,12 +202,24 @@ def mark_report(
         nested_left = marks_of(one)
         nested_right = marks_of(other)
         if (
-            fields == ["marks"]
+            "marks" in fields
             and nested_left is not None
             and nested_right is not None
             and depth < MAX_MARK_DEPTH
         ):
-            lines.append(f"{indent}{label}")
+            # A container that moved is what moves its children, so a box
+            # and a `marks` that both differ is the ordinary case rather
+            # than the awkward one.  Report the container's own fields,
+            # then descend -- never render `marks` as a value, which at this
+            # size is a truncated blob with the interesting part cut off.
+            own = [field for field in fields if field != "marks"]
+            lines.append(
+                f"{indent}{label} differs: {named(own)}" if own else f"{indent}{label}"
+            )
+            for field in own[:MAX_FIELDS_NAMED]:
+                lines += field_report(
+                    one, other, field, left_name, right_name, indent + "  "
+                )
             lines += mark_report(
                 nested_left,
                 nested_right,
@@ -271,8 +287,11 @@ def record_report(
     left_marks = marks_of(left)
     right_marks = marks_of(right)
     if left_marks is not None and right_marks is not None and "marks" in fields:
-        # Anything outside `marks` on a page record is small, and the field
-        # list above named it.  The marks are what a person came here for.
+        # The record's own fields first -- a page that changed size explains
+        # the marks that moved with it -- and then the marks, which are what
+        # a person came here for.  `marks` itself is never shown as a value.
+        for field in (item for item in fields if item != "marks"):
+            lines += field_report(left, right, field, left_name, right_name, "      ")
         return lines + mark_report(
             left_marks, right_marks, left_name, right_name, "    "
         )

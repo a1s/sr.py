@@ -127,6 +127,48 @@ def test_the_diff_descends_into_an_xref() -> None:
     assert "mark 0 (text) differs: box" in report
 
 
+def test_the_diff_descends_when_the_container_moved_too() -> None:
+    """A container that moved is what moved its children.
+
+    So a mark whose own box *and* whose ``marks`` both differ is
+    the ordinary case, not the corner one.  Descending only when
+    nothing else differs would render the children as a truncated
+    JSON blob with the interesting part cut off.
+
+    """
+    inner = text_mark("DVD rental payments")
+    xref = {
+        "kind": "xref",
+        "box": box(394.866, 42.52, 157.89, 28.346),
+        "type": "url",
+        "target": "https://example.invalid/",
+        "marks": [inner],
+    }
+    shifted = dict(
+        xref,
+        box=box(394.87, 42.52, 157.89, 28.346),
+        marks=[text_mark("DVD rental payments", top=42.53)],
+    )
+    report = compare_printouts(
+        ndjson(HEADER, page(xref)), ndjson(HEADER, page(shifted))
+    ).report
+    # The container's own field, with both spellings...
+    assert "mark 0 (xref) differs: box" in report
+    assert "reference {" in report
+    # ...and the child, rather than `marks` rendered as a value.
+    assert "mark 0 (text) differs: box" in report
+    assert "  marks\n" not in report
+
+
+def test_marks_are_never_shown_as_a_value() -> None:
+    """The one field a report must not print is the one holding everything."""
+    left = page(text_mark("one"))
+    right = dict(page(text_mark("two")), number=2)
+    report = compare_printouts(ndjson(left), ndjson(right)).report
+    assert "fields: number, marks" in report
+    assert '"kind": "text"' not in report
+
+
 def test_the_mark_report_is_truncated() -> None:
     count = MAX_MARKS_SHOWN + 4
     left = ndjson(
@@ -161,6 +203,25 @@ def test_equal_records_with_different_bytes_say_so() -> None:
     comparison = compare_printouts(left, right)
     assert not comparison
     assert "the difference is in the encoding" in comparison.report
+
+
+def test_a_record_is_split_only_on_newlines() -> None:
+    """U+0085 is legal raw in a JSON string, and Go does not escape it.
+
+    ``str.splitlines`` breaks on it, which would cut one record into two
+    halves that neither parse and drop the whole report to a hexdump.
+    Go's encoder escapes U+2028 and U+2029, so this is the live one.
+    Spelled with chr() rather than written into the literal, because
+    an invisible control character in a source file is its own small trap.
+
+    """
+    nel = chr(0x85)
+    left = ndjson(HEADER, page(text_mark(f"first line{nel}second line")))
+    right = ndjson(HEADER, page(text_mark(f"first line{nel}other line")))
+    comparison = compare_printouts(left, right)
+    assert not comparison
+    assert "mark 0 (text) differs: lines" in comparison.report
+    assert "@" not in comparison.report, "fell back to the byte-level report"
 
 
 def test_a_binary_printout_falls_back_to_bytes() -> None:
