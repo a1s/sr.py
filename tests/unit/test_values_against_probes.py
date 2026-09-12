@@ -104,7 +104,25 @@ def test_the_probe_the_reference_reads_and_this_engine_does_not() -> None:
     assert (PROBES / "hex-float.answer.jsonl").is_file()
 
 
-@pytest.mark.parametrize("name", ["dimensions", "colors", "hex-float"])
+def test_the_other_probe_the_reference_reads_and_this_engine_does_not() -> None:
+    """`values/non-finite`, the second registered divergence.
+
+    An infinite `maxwidth` clamps nothing, so the reference never
+    notices the value and builds a printout with the mark intact.
+    Here the dimension does not resolve to a finite number of points,
+    which is the whole of the check.
+
+    """
+    doc, drawn = rectangles("non-finite")
+    node = drawn[0]
+    assert node.dimension("maxwidth") is None
+    assert [one.message for one in doc.diagnostics] == [
+        "bad dimension #inf: not finite"
+    ]
+    assert (PROBES / "non-finite.answer.jsonl").is_file()
+
+
+@pytest.mark.parametrize("name", ["dimensions", "colors", "hex-float", "non-finite"])
 def test_each_probe_declares_the_font_it_measures_with(name: str) -> None:
     """Every probe resolves its fonts by path, since builds are strict."""
     doc = kdl.read(PROBES / f"{name}.kdl")

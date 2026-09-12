@@ -21,7 +21,7 @@ import re
 from collections.abc import Iterable
 
 from sr.errors import BadValue
-from sr.units import NUMBER, round_half_away
+from sr.units import parse_number, round_half_away
 
 __all__ = ["NAMES", "channels", "parse_color"]
 
@@ -189,8 +189,13 @@ def channel_from_fraction(text: str, part: str) -> int:
         BadValue: The component is not a number, or is outside 0-1.
 
     """
-    value = float(part.replace("_", "")) if NUMBER.match(part) else None
-    if value is None or not 0.0 <= value <= 1.0:
+    try:
+        value = parse_number(part)
+    except BadValue:
+        raise BadValue(
+            f'bad colour "{text}": component "{part}" is not a number'
+        ) from None
+    if not 0.0 <= value <= 1.0:
         raise BadValue(f'bad colour "{text}": component "{part}" out of 0-1')
     return int(round_half_away(value * FULL))
 

@@ -35,8 +35,10 @@ __all__ = [
     "NUMBER",
     "POINTS_PER_UNIT",
     "TOLERANCE",
+    "as_written",
     "fits",
     "parse_dimension",
+    "parse_number",
     "round_half_away",
     "round_points",
 ]
@@ -126,19 +128,49 @@ def fits(extent: float, limit: float) -> bool:
 def parse_number(text: str) -> float:
     """Return the value of a number written as the grammar spells it.
 
+    A number too large for binary64 comes back as an infinity rather than
+    as a refusal.  Whether that is an error depends on what the number is
+    for, and both callers already have to ask: a dimension is checked for
+    finiteness once, on the points it resolves to, and a colour component
+    has a range that an infinity is outside of.  Refusing here as well
+    would mean two answers to one question.
+
     Args:
         text: The number alone, with no unit and no surrounding whitespace.
 
     Raises:
-        BadValue: The text is not a number, or is one binary64 cannot hold.
+        BadValue: The text is not a number.
 
     """
     if not NUMBER.match(text):
         raise BadValue(f"not a number: {text!r}")
-    value = float(text.replace("_", ""))
-    if not math.isfinite(value):
-        raise BadValue(f"not a finite number: {text!r}")
-    return value
+    return float(text.replace("_", ""))
+
+
+def as_written(value: str | int | float) -> str:
+    """Return a value as a diagnostic should show it.
+
+    A string keeps its quotes and a number does not, so a diagnostic reads
+    back the way the property was written.  A non-finite number is named by
+    the KDL keyword that is the only way to write one, since `width=#inf`
+    quoted back as Python's ``inf`` would send a reader looking for a word
+    that is not in their template.
+
+    The spelling comes from the value rather than from the source text,
+    so it is what the template *could* have written rather than what it did:
+    `1e308` comes back as ``1e+308``.
+
+    Args:
+        value: The property's value, as the KDL reader produced it.
+
+    """
+    if isinstance(value, str):
+        return f'"{value}"'
+    if isinstance(value, float) and not math.isfinite(value):
+        if math.isnan(value):
+            return "#nan"
+        return "#inf" if value > 0 else "#-inf"
+    return str(value)
 
 
 def parse_dimension(value: str | int | float) -> float:
@@ -149,18 +181,41 @@ def parse_dimension(value: str | int | float) -> float:
     and one of the five unit suffixes in lower case -- or no suffix,
     which means points.
 
+    The result is checked rather than the input, which is what it takes to
+    cover both ways a coordinate reaches infinity.  KDL v2 has `#inf`,
+    `#-inf` and `#nan` as number keywords, so a template can write one
+    directly; and a number this side of the limit does not stay there,
+    since :func:`round_points` multiplies by a thousand before it rounds
+    and ``1e308`` pt is an infinity three lines later.
+
     Args:
         value: The property's value, as the KDL reader produced it.
 
     Raises:
-        BadValue: The value is not a dimension.
+        BadValue: The value is not a dimension, or is not a finite one.
 
     """
     if isinstance(value, bool):
         raise BadValue("want a dimension, got boolean")
     if isinstance(value, int | float):
-        return round_points(float(value))
+        points = round_points(float(value))
+    else:
+        points = from_text(value)
+    if not math.isfinite(points):
+        raise BadValue(f"bad dimension {as_written(value)}: not finite")
+    return points
 
+
+def from_text(value: str) -> float:
+    """Return the dimension a string spells, in points.
+
+    Args:
+        value: The property's value, as it was written.
+
+    Raises:
+        BadValue: The string is not a dimension.
+
+    """
     text = value.strip()
     if not text:
         raise BadValue("empty dimension")
@@ -174,4 +229,4 @@ def parse_dimension(value: str | int | float) -> float:
     try:
         return round_points(parse_number(number) * factor)
     except BadValue:
-        raise BadValue(f'bad dimension "{value}"') from None
+        raise BadValue(f"bad dimension {as_written(value)}") from None

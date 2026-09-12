@@ -1,0 +1,29 @@
+// probes/values/non-finite.kdl -- a dimension KDL can write
+// and points cannot hold.
+//
+// `#inf`, `#-inf` and `#nan` are KDL v2 number keywords, so a template
+// can write an infinity without going near a string, and `1e308` reaches
+// one on its own: the rounding multiplies by a thousand.
+// template.md#dimension refuses all of them, judged on the points
+// a dimension resolves to.
+//
+// The reference checks neither.  Where the value reaches a mark it
+// fails late and for the wrong reason -- `json: unsupported value: +Inf`,
+// after the document is built -- and where it does not, as in the `maxwidth`
+// below, it builds a printout with the mark intact, since an infinite clamp
+// clamps nothing.  That is what this probe holds: the reference builds it,
+// this engine refuses it at load, and the entry `non-finite-dimensions`
+// in divergences.toml retires when the Go side checks.
+//
+// One rectangle, not three, because a probe has to build: the two spellings
+// that reach a mark bring the reference down instead.
+
+report name="values/non-finite" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=20 {
+      rectangle left=0 top=0 width=5 height=5 maxwidth=#inf
+    }
+  }
+}

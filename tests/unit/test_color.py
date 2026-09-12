@@ -110,11 +110,23 @@ def test_a_channel_outside_its_range_is_refused(text: str) -> None:
         parse_color(text)
 
 
-@pytest.mark.parametrize(
-    "text", ["1.5,0,0", "-0.5,0,0", "1e2,0,0", "1_0,0,0", "0x10,0,0"]
-)
+@pytest.mark.parametrize("text", ["1.5,0,0", "-0.5,0,0", "1e2,0,0", "1_0,0,0"])
 def test_a_fraction_outside_its_range_is_refused(text: str) -> None:
     with pytest.raises(BadValue, match="out of 0-1"):
+        parse_color(text)
+
+
+@pytest.mark.parametrize("text", ["0x10,0,0", "0,inf,0", "0,0,twelve"])
+def test_a_component_that_is_not_a_number_says_that_instead(text: str) -> None:
+    """Not "out of 0-1", which describes a value that was read.
+
+    The two failures are one message in the reference, because Go's
+    float parser reports them the same way.  doc/template.md#color
+    names them separately, and a component that was never a number
+    is the more confusing of the two to be told a range about.
+
+    """
+    with pytest.raises(BadValue, match="is not a number"):
         parse_color(text)
 
 

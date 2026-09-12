@@ -164,8 +164,17 @@ Spelling the grammar out is deliberate. Host float parsers disagree at
 the edges: Go's takes hexadecimal floats such as `0x1p-2`, Python's takes
 `inf`, `nan` and non-ASCII digit scripts; and a template one engine reads
 and the other refuses is a worse outcome than either rule on its own.
-The value must also be finite: `"1e400"` overflows binary64 and is an error,
-not an infinity that reaches a coordinate.
+
+**A dimension is finite**, and that is judged on the points it resolves to
+rather than on what was written, because there are three ways to reach an
+infinity and only one of them is visible in the source text. A string may
+overflow binary64: `"1e400"`. KDL v2 has `#inf`, `#-inf` and `#nan` as
+number keywords, so `width=#inf` is a number the parser accepts. And the
+rounding below multiplies by a thousand, so `1e308`, which is finite, is
+not finite three decimal places later. All three are errors. None of them
+may reach a coordinate: an infinity there propagates through a band
+measurement into a page break, and surfaces as a printout that will not
+serialize rather than as a template that was refused.
 
 Conversion to points is `number × points-per-unit` in binary64, and
 the result is rounded to 3 decimal places immediately, by the rule in

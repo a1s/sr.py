@@ -167,6 +167,37 @@ def test_a_value_the_parsers_refuse_arrives_with_its_node_attached() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("source", "spelled"),
+    [
+        ("report { layout width=#inf }", "#inf"),
+        ("report { layout width=#-inf }", "#-inf"),
+        ("report { layout width=#nan }", "#nan"),
+        ("report { layout width=1e308 }", "1e+308"),
+    ],
+)
+def test_a_number_too_large_to_be_a_coordinate_is_refused(
+    source: str, spelled: str
+) -> None:
+    """The route a string grammar cannot guard.
+
+    KDL v2 writes an infinity as a keyword, so it arrives as a float
+    and never passes through the dimension grammar at all; `1e308`
+    arrives as an ordinary number and only overflows once the rounding
+    scales it.
+
+    """
+    doc = document(source)
+    report = doc.only_root("report")
+    assert report is not None
+    layout = report.child("layout")
+    assert layout is not None
+    assert layout.dimension("width") is None
+    assert str(doc.diagnostics) == (
+        f"t.kdl: report > layout width=: bad dimension {spelled}: not finite"
+    )
+
+
 def test_a_bad_colour_arrives_the_same_way() -> None:
     doc = document('report { layout { style color="grey" } }')
     report = doc.only_root("report")

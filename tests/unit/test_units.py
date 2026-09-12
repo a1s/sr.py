@@ -87,7 +87,8 @@ def test_the_tolerance_is_an_addition_and_not_a_count_of_thousandths() -> None:
     binary64 addition does not always reach the next three-decimal value:
     20.003 + 0.001 is 20.004 exactly, and 1.001 + 0.001 is a hair under
     1.002.  Comparing thousandths as integers would admit both, and would
-    move a page break on some seven percent of exact fits.
+    move a page break on about one exact fit in five across the height of
+    an A4 page -- half of them in [1, 2), none at all in [4, 8).
 
     """
     assert TOLERANCE == 0.001
@@ -173,6 +174,46 @@ def test_the_grammar_refuses_these(text: str) -> None:
 def test_an_empty_dimension_says_so_rather_than_being_zero() -> None:
     with pytest.raises(BadValue, match="empty dimension"):
         parse_dimension("   ")
+
+
+@pytest.mark.parametrize(
+    ("value", "spelled"),
+    [
+        (math.inf, "#inf"),
+        (-math.inf, "#-inf"),
+        (math.nan, "#nan"),
+    ],
+)
+def test_a_kdl_number_keyword_is_not_a_dimension(value: float, spelled: str) -> None:
+    """`#inf`, `#-inf` and `#nan` reach here as floats, not as text.
+
+    The string grammar never sees them, so a check on the input text
+    is not the check that catches them.
+
+    """
+    with pytest.raises(BadValue) as refused:
+        parse_dimension(value)
+    assert str(refused.value) == f"bad dimension {spelled}: not finite"
+
+
+@pytest.mark.parametrize("value", [1e306, 1e308, "1e306", "1e308", "9e305mm"])
+def test_a_finite_number_that_overflows_the_scaling_is_refused(
+    value: str | float,
+) -> None:
+    """Rounding multiplies by a thousand, so being finite does not last.
+
+    1e308 pt is a number binary64 holds and 1e311 thousandths is not,
+    which is why the check is on the points a dimension resolves to
+    rather than on what was parsed.
+
+    """
+    with pytest.raises(BadValue, match="not finite"):
+        parse_dimension(value)
+
+
+def test_a_number_the_scaling_survives_is_kept() -> None:
+    assert parse_dimension("1e305") == 1e305
+    assert parse_dimension(1e305) == 1e305
 
 
 def test_a_boolean_is_not_a_dimension() -> None:

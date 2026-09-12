@@ -112,10 +112,11 @@ the reference gave, and names the section of `doc/` that answer became.
 | `values/dimensions` | what a dimension string means |
 | `values/colors` | what each colour spelling resolves to |
 | `values/hex-float` | a number the host's parser takes and the grammar does not |
+| `values/non-finite` | a dimension KDL can write and points cannot hold |
 
 Six are [registered divergences](../divergences.toml) and are *expected*
 to differ: the five in the `expressions/` and `data/` groups, where the
 reference refuses two outright -- which the harness treats as a difference
-like any other -- and `values/hex-float`, which is the other way round,
-built by the reference and refused here. The remaining twenty must agree
-byte for byte once this engine builds them.
+like any other -- and `values/hex-float` and `values/non-finite`, which
+go the other way, built by the reference and refused here. The remaining
+twenty must agree byte for byte once this engine builds them.

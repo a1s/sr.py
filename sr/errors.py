@@ -128,7 +128,7 @@ class Location:
         if self.line is not None:
             head = f"{head}:{self.line}" if head else f"line {self.line}"
         parts = [part for part in (head, str(self.path) if self.path else "") if part]
-        text = ": ".join(parts) if len(parts) == 2 else "".join(parts)
+        text = ": ".join(parts)
         if self.prop:
             text = f"{text} {self.prop}=" if text else f"{self.prop}="
         if self.record is not None:

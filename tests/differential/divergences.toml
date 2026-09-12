@@ -127,3 +127,21 @@ the side that changes; no template in the corpus writes one.\
 ticket = "M2: dimension grammar, template.md#dimension"
 since = "2026-09-12"
 affects = ["probe/values/hex-float"]
+
+[[divergence]]
+id = "non-finite-dimensions"
+summary = "the reference takes #inf, #nan and an overflowing number as dimensions; here a dimension is finite"
+reason = """
+KDL v2 has `#inf`, `#-inf` and `#nan` as number keywords, and the rounding \
+multiplies by a thousand, so `1e308` overflows on the way to points.  The \
+reference checks none of the three.  Where the value reaches a mark it fails \
+at serialization -- `json: unsupported value: +Inf`, after the document is \
+built -- and where it does not, it builds a printout: an infinite `maxwidth` \
+clamps nothing and the mark comes out intact.  doc/template.md#dimension \
+already said a dimension is finite, so this is a defect rather than a \
+decision; what M2 added was judging it on the points the dimension resolves \
+to, which is the only place all three routes meet.\
+"""
+ticket = "M2: filed against the Go engine; template.md#dimension already states the rule"
+since = "2026-09-12"
+affects = ["probe/values/non-finite"]

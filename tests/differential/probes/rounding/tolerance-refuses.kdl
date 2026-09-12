@@ -13,8 +13,10 @@
 // `tolerance-admits` is the same construction one thousandth over a remaining
 // 20.003pt, where the addition does land exactly and the band fits.  The pair
 // is what shows the answer depends on the magnitude, which is what rules the
-// integer reading out rather than merely leaving it untested.  About one
-// three-decimal value in fourteen falls the way this one does.
+// integer reading out rather than merely leaving it untested.  The dependence
+// is on the binade rather than on the size: the addition falls short for half
+// the three-decimal values in [1, 2), for none at all in [4, 8), [16, 32) or
+// [64, 256), and for 22.5% of them across the 842pt of an A4 page.
 //
 // doc/layout.md#coordinates-and-rounding is what this became.
 
