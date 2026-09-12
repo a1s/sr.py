@@ -1,0 +1,25 @@
+// probes/values/hex-float.kdl -- a dimension the host's float parser takes
+// and the grammar does not.
+//
+// `0x1p-2` is a Go floating-point literal worth 0.25, and the reference
+// reads it as one: nothing in the engine says what a number is, so whatever
+// `strconv.ParseFloat` accepts is a dimension.  Python's parser refuses the
+// same string and accepts `inf`, `nan` and Arabic-Indic digits, which the Go
+// one refuses -- so left alone, the two engines would disagree about which
+// templates are even readable.
+//
+// doc/template.md#dimension now spells the grammar out, and `0x1p-2`
+// is outside it.  This engine refuses the probe; the reference still
+// builds it, which is the registered divergence `hex-float-dimensions`.
+// The entry retires when the Go side tightens its parser, and this probe
+// then agrees.
+
+report name="values/hex-float" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=20 {
+      rectangle left="0x1p-2" top=0 width="0x1.8p1" height=5   // 0.25 and 3, to the reference
+    }
+  }
+}

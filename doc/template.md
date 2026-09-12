@@ -133,30 +133,96 @@ read it, and some v1 parsers accept v2 input without reading it correctly.
 A length. Bare numbers are PostScript points (1/72 inch).
 Quoted strings may carry a unit suffix:
 
-| Suffix | Unit |
-|---|---|
-| `pt` | point, 1/72 in (the default) |
-| `mil` | 1/1000 in |
-| `mm` | millimetre |
-| `cm` | centimetre |
-| `in` | inch |
+| Suffix | Unit | Points per unit |
+|---|---|---|
+| `pt` | point, 1/72 in (the default) | 1 |
+| `mil` | 1/1000 in | 0.072 |
+| `mm` | millimetre | 72/25.4 |
+| `cm` | centimetre | 72/2.54 |
+| `in` | inch | 72 |
 
 `width=35` and `width="35pt"` are identical.
+
+A dimension is a KDL integer, a KDL number, or a string. A string is
+whitespace, a number, whitespace, an optional suffix, whitespace --
+so `"12mm"`, `"12 mm"` and `" 12mm "` are one value and `"1 2"` is an error.
+The suffix is lower case: `"12MM"` does not name a unit, and no suffix at
+all means points. An empty string, or one that is nothing but whitespace,
+is an error of its own rather than a zero.
+
+A **number** is
+
+```
+[+-]? ( digit+ [ "." digit* ] | "." digit+ ) [ ("e" | "E") [+-]? digit+ ]
+```
+
+over ASCII digits, where any run of digits may be broken by single
+underscores: `1_000` is a thousand, while `_1`, `1_` and `1__0` are errors.
+Nothing else is a number here.
+
+Spelling the grammar out is deliberate. Host float parsers disagree at
+the edges: Go's takes hexadecimal floats such as `0x1p-2`, Python's takes
+`inf`, `nan` and non-ASCII digit scripts; and a template one engine reads
+and the other refuses is a worse outcome than either rule on its own.
+The value must also be finite: `"1e400"` overflows binary64 and is an error,
+not an infinity that reaches a coordinate.
+
+Conversion to points is `number × points-per-unit` in binary64, and
+the result is rounded to 3 decimal places immediately, by the rule in
+[layout.md](layout.md#coordinates-and-rounding). So `"12mm"` is 34.016 pt
+and `"0.0005"` is 0.001 pt. The multiplication is by the single factor in
+the table above rather than by a numerator and a denominator in turn; the
+two associations differ in the last bit, and across the range a page spans
+no value has been found where that difference survives the rounding.
 
 Internally all dimensions are points, rounded to 3 decimal places after
 every computation. Rounding is normative: it decides whether a box fits.
 
 ### Color
 
-Any of:
+A string, in any of four spellings. Whitespace around it is ignored;
+an empty string, or one that is nothing but whitespace, is an error.
+A bare KDL integer is not a colour: the single-integer form is written
+`color="16711935"`, quoted like the rest.
 
-- `"#RRGGBB"`
-- a name, case-insensitive: the 16 HTML 4.01 names plus `cyan`, `darkgray`,
-  `lightgray`, `magenta`, `orange`, `pink`
-- three comma-separated integers 0–255, or three floats 0–1: `"0,89,0"`
-- a single integer, red in bits 16–23, green in 8–15, blue in 0–7
+- **`"#RRGGBB"`** — exactly six hexadecimal digits, either case. `"#abc"` is
+  not a short form and `"#aabbccdd"` is not an alpha channel; both are errors.
+- **A name**, ASCII case-insensitive, from the table below.
+- **Three comma-separated components**, whitespace around each ignored.
+  If all three are integers they are channel values 0–255; otherwise all
+  three are numbers in 0–1, scaled by `round_half_away_from_zero(value × 255)`.
+  The reading is decided by the triple as a whole, so `"1,1,1"` is nearly
+  black while `"0,1,0."` is green: one component is carrying a decimal point.
+  A component outside its range is an error, as is one that is not a number
+  at all, and so is any count but three.
+- **A single integer**, red in bits 16–23, green in 8–15, blue in 0–7.
+  Bits above 23 are ignored, so `"16777216"` is black. It must fit in 64 bits
+  unsigned; a longer run of digits is an error rather than a wrapped value.
 
-The canonical form, and what appears in a printout, is always `"#RRGGBB"`.
+An **integer** here is ASCII digits with an optional leading sign and no
+underscores, leading zeros allowed, so `"00255"` is 255. `"1_0"` is a number
+but not an integer, which is why `"1_0,0,0"` takes the fraction reading and
+is then out of range. The single-integer form takes no sign. A number is as
+[Dimension](#dimension) spells it.
+
+The 22 names:
+
+| | | | | |
+|---|---|---|---|---|
+| `black` `#000000` | `silver` `#C0C0C0` | `gray` `#808080` | `white` `#FFFFFF` | `maroon` `#800000` |
+| `red` `#FF0000` | `purple` `#800080` | `fuchsia` `#FF00FF` | `green` `#008000` | `lime` `#00FF00` |
+| `olive` `#808000` | `yellow` `#FFFF00` | `navy` `#000080` | `blue` `#0000FF` | `teal` `#008080` |
+| `aqua` `#00FFFF` | `cyan` `#00FFFF` | `darkgray` `#A9A9A9` | `lightgray` `#D3D3D3` | `magenta` `#FF00FF` |
+| `orange` `#FFA500` | `pink` `#FFC0CB` | | | |
+
+The first 16 are HTML 4.01. The other six are the CSS extended colours
+of the same names, so `cyan` and `aqua` are one colour and `magenta` and
+`fuchsia` are another. There is no `grey`. The list is closed, and a second
+spelling is worth less than the portability it costs: a template that writes
+one an engine does not have is a template that stops moving between them.
+
+The canonical form, and what appears in a printout, is always `"#RRGGBB"`,
+upper case.
 
 ### Boolean
 
