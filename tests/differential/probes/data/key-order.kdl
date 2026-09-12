@@ -5,8 +5,8 @@
 // Three images with three base names, encountered in an order that is
 // neither the sorted one nor its reverse, so an object built in encounter
 // order and one built in sorted order cannot coincide.
-// Encountered: thelarch.jpg, pic.png, logo.png.
-// Sorted: logo.png, pic.png, thelarch.jpg.
+// Encountered: zebra.png, pic.png, alpha.png.
+// Sorted: alpha.png, pic.png, zebra.png.
 //
 // The three carry different bytes, so none of them shares an entry with another;
 // that is `blob-names.kdl`'s question, and keeping it out of this one is what
@@ -17,9 +17,9 @@ report name="data/key-order" {
   layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
     style font="body" color="black"
     detail height=40 {
-      image file="../../../../example/sakila/thelarch.jpg" left=0 top=0 width=20 height=20  // encountered first, sorts last
-      image file="one/pic.png" left=30 top=0 width=20 height=20                             // encountered second, sorts second
-      image file="../../../../example/invoices/logo.png" left=60 top=0 width=20 height=20   // encountered last, sorts first
+      image file="zebra.png" left=0 top=0 width=20 height=20    // encountered first, sorts last
+      image file="one/pic.png" left=30 top=0 width=20 height=20 // encountered second, sorts second
+      image file="alpha.png" left=60 top=0 width=20 height=20   // encountered last, sorts first
     }
   }
 }

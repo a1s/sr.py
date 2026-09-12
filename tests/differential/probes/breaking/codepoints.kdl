@@ -19,9 +19,9 @@ report name="breaking/codepoints" {
   layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
     style font="body" color="black"
     detail height=140 {
-      field text="中中中中中中中中中中中中" left=0 top=0 width=50 height=12 stretch=#true               // no glyph: .notdef is 7.5pt, so six to a line
-      field text="😀😀😀😀😀😀😀😀😀😀😀😀" left=0 top=26 width=50 height=12 stretch=#true              // an astral codepoint is one unit, not two
-      field text="éééééééééééé" left=0 top=52 width=50 height=12 stretch=#true  // a combining mark is its own unit
+      field text="中中中中中中中中中中中中" left=0 top=0 width=50 height=12 stretch=#true    // no glyph: .notdef is 7.5pt, so six to a line
+      field text="😀😀😀😀😀😀😀😀😀😀😀😀" left=0 top=26 width=50 height=12 stretch=#true   // an astral codepoint is one unit, not two
+      field text="e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}" left=0 top=52 width=50 height=12 stretch=#true  // a combining mark is its own unit
       field text="Šķūnis Šķūnis" left=0 top=78 width=50 height=12 stretch=#true             // and a two-byte letter is still one unit
     }
   }

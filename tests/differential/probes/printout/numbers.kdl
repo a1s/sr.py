@@ -1,0 +1,30 @@
+// probes/printout/numbers.kdl -- how a number reaches the file.
+//
+// Three rules that live in the bytes rather than in any parsed value,
+// so only a byte comparison sees them.  A printout that parses equal can
+// still differ here, which is what makes them worth a probe of their own.
+//
+// - An **integral value carries no fractional part**: `72`, not `72.0`.
+//   A language whose float formatting always writes one has to strip it.
+// - **Negative zero is written `0`.**  Rounding -0.0004 to three places
+//   gives a negative zero, and `-0` would make two printouts differ over
+//   a value that compares equal.
+// - **No exponent notation**, at either end of the range a coordinate can reach.
+//   0.001 is the smallest non-zero magnitude a rounded length has, and languages
+//   that switch to exponents do it near there.
+
+report name="printout/numbers" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=120 {
+      field text="q" left=72 top=0 width=100 height=12         // -> 72 and 100, with no .0 on either
+      field text="q" left=-0.0004 top=16 width=20 height=12    // rounds to a negative zero, written 0
+      field text="q" left=0.0004 top=32 width=20 height=12     // and to a positive one, written the same way
+      field text="q" left=0.001 top=48 width=0.001 height=12   // the smallest non-zero length, not 1e-03
+      field text="q" left=0.0005 top=64 width=0.0015 height=12 // -> 0.001 and 0.002
+      field text="q" left=123456.789 top=80 width=20 height=12 // large and fractional, still written out in full
+      field text="q" left=-0.00049 top=96 width=20 height=12   // another negative zero
+    }
+  }
+}

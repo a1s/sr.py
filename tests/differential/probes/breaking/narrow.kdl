@@ -10,6 +10,13 @@
 // when nothing determined one, and one codepoint per line is not a useful
 // reading of it.  Mandatory breaks still apply there, because those do not
 // consult a width.
+//
+// The last case is worth reading twice.  "xxx xxx" in a 4pt box gives seven
+// lines, `["x","x","x","","x","x","x"]`, and the empty one in the middle is not a
+// mistake: the space is too wide to join the `x` before it and becomes the whole
+// of a line, which is then trimmed to nothing because it ended at a break
+// opportunity.  Seven lines rather than six is 12pt of band height, so an
+// implementation that quietly drops it disagrees about where the page ends.
 
 report name="breaking/narrow" {
   font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10

@@ -5,7 +5,11 @@
 // Both `left` and `width` carry it, so the answer covers coordinates and extents
 // alike, and the rounded value is read straight off the mark's box.
 //
-// Half away from zero explains all eleven.  Half to even contradicts five.
+// Half away from zero explains all 11.  Half to even contradicts
+// 7 of them -- the ones whose comment names both answers.  The
+// remaining 4 land on an even digit either way and prove nothing
+// on their own; they are here so that a reading of the probe does
+// not have to take on trust which is which.
 //
 // 0.1235 is the case that also pins *what* is rounded.  As a binary64 it is
 // 0.12349999999999999866..., which is below the half, so rounding the exact
@@ -18,17 +22,17 @@ report name="rounding/halfway" {
   layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
     style font="body" color="black"
     detail height=196 {
-      field text="q" left=0.0005 top=0 width=0.0005 height=12    // -> 0.001, not 0
-      field text="q" left=0.0015 top=16 width=0.0015 height=12
-      field text="q" left=0.0025 top=32 width=0.0025 height=12   // -> 0.003, not 0.002
-      field text="q" left=0.0035 top=48 width=0.0035 height=12
-      field text="q" left=0.0045 top=64 width=0.0045 height=12   // -> 0.005, not 0.004
-      field text="q" left=0.0055 top=80 width=0.0055 height=12
-      field text="q" left=0.1235 top=96 width=0.1235 height=12   // -> 0.124; the exact binary value is below the half
-      field text="q" left=0.1245 top=112 width=0.1245 height=12  // -> 0.125, not 0.124
-      field text="q" left=1.0005 top=128 width=1.0005 height=12  // -> 1.001, not 1
-      field text="q" left=2.0025 top=144 width=2.0025 height=12  // -> 2.003, not 2.002
-      field text="q" left=10.0005 top=160 width=10.0005 height=12
+      field text="q" left=0.0005 top=0 width=0.0005 height=12     // -> 0.001, where half to even gives 0
+      field text="q" left=0.0015 top=16 width=0.0015 height=12    // -> 0.002, which both modes agree on
+      field text="q" left=0.0025 top=32 width=0.0025 height=12    // -> 0.003, where half to even gives 0.002
+      field text="q" left=0.0035 top=48 width=0.0035 height=12    // -> 0.004, which both modes agree on
+      field text="q" left=0.0045 top=64 width=0.0045 height=12    // -> 0.005, where half to even gives 0.004
+      field text="q" left=0.0055 top=80 width=0.0055 height=12    // -> 0.006, which both modes agree on
+      field text="q" left=0.1235 top=96 width=0.1235 height=12    // -> 0.124, which both modes agree on
+      field text="q" left=0.1245 top=112 width=0.1245 height=12   // -> 0.125, where half to even gives 0.124
+      field text="q" left=1.0005 top=128 width=1.0005 height=12   // -> 1.001, where half to even gives 1
+      field text="q" left=2.0025 top=144 width=2.0025 height=12   // -> 2.003, where half to even gives 2.002
+      field text="q" left=10.0005 top=160 width=10.0005 height=12 // -> 10.001, where half to even gives 10
     }
   }
 }

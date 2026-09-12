@@ -22,9 +22,9 @@ report name="breaking/opportunities" {
       field text="xxxxx xxxxx" left=0 top=0 width=50 height=12 stretch=#true           // U+0020 breaks
       field text="xxxxx\u{9}xxxxx" left=0 top=26 width=50 height=12 stretch=#true      // U+0009 breaks
       field text="xxxxx-xxxxx" left=0 top=52 width=50 height=12 stretch=#true          // a hyphen does not
-      field text="xxxxx­xxxxx" left=0 top=78 width=50 height=12 stretch=#true          // nor a soft hyphen
-      field text="xxxxx xxxxx" left=0 top=104 width=50 height=12 stretch=#true         // nor a no-break space
-      field text="xxxxx​xxxxx" left=0 top=130 width=50 height=12 stretch=#true         // nor a zero-width space
+      field text="xxxxx\u{ad}xxxxx" left=0 top=78 width=50 height=12 stretch=#true     // nor a soft hyphen
+      field text="xxxxx\u{a0}xxxxx" left=0 top=104 width=50 height=12 stretch=#true    // nor a no-break space
+      field text="xxxxx\u{200b}xxxxx" left=0 top=130 width=50 height=12 stretch=#true  // nor a zero-width space
       field text="xxxxx/xxxxx" left=0 top=156 width=50 height=12 stretch=#true         // nor a solidus
       field text="xxxxx—xxxxx" left=0 top=182 width=50 height=12 stretch=#true         // nor an em dash
       field text="xxxxx\u{d}xxxxx" left=0 top=208 width=50 height=12 stretch=#true     // nor a carriage return
@@ -32,9 +32,9 @@ report name="breaking/opportunities" {
       field text="xxxxx\u{c}xxxxx" left=0 top=260 width=50 height=12 stretch=#true     // nor a form feed
       field text="xxxxx\u{85}xxxxx" left=0 top=286 width=50 height=12 stretch=#true    // nor NEL
       field text="xxxxx\u{2028}xxxxx" left=0 top=312 width=50 height=12 stretch=#true  // nor LINE SEPARATOR
-      field text="xxxxx xxxxx" left=0 top=338 width=50 height=12 stretch=#true         // nor an em space
-      field text="xxxxx xxxxx" left=0 top=364 width=50 height=12 stretch=#true         // nor a figure space
-      field text="xxxxx　xxxxx" left=0 top=390 width=50 height=12 stretch=#true         // nor an ideographic space
+      field text="xxxxx\u{2003}xxxxx" left=0 top=338 width=50 height=12 stretch=#true  // nor an em space
+      field text="xxxxx\u{2007}xxxxx" left=0 top=364 width=50 height=12 stretch=#true  // nor a figure space
+      field text="xxxxx\u{3000}xxxxx" left=0 top=390 width=50 height=12 stretch=#true  // nor an ideographic space
     }
   }
 }

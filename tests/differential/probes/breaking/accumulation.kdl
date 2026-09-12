@@ -1,0 +1,35 @@
+// probes/breaking/accumulation.kdl -- how a line's width is arrived at.
+//
+// By accumulation, rounding after every chunk -- not by measuring the candidate
+// line as one string and rounding once at the end.  The two agree almost always,
+// which is why this needs a probe rather than a glance: they differ only when the
+// rounding error the accumulation carries is enough to cross the box's limit.
+//
+// "q q q q q q q q q" is the clearest.  Measured whole it is 72.2802734375pt,
+// which rounds to 72.280; accumulated it passes through 8.340, 16.680, 25.020 ...
+// and arrives at 72.282.  In a box of 72.280 the limit is 72.281, so the whole
+// measurement is inside it and the accumulated one is not.  The engine breaks the
+// line, so accumulation is the rule.
+//
+// Each comment states the limit and which of the two readings that limit admits.
+// The rows go both ways on purpose: accumulation is larger than the whole
+// measurement for some texts and smaller for others, so a probe that only ever
+// caught it being larger would be satisfied by an implementation that rounded up.
+// The last two rows settle nothing by themselves and are labelled as such --
+// they are here so that reading the file does not require trusting which rows
+// carry the argument.
+
+report name="breaking/accumulation" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=176 {
+      field text="q q q q q q q q q" left=0 top=0 width=72.28 height=12 stretch=#true    // limit 72.281: measured whole fits, accumulated does not
+      field text="q q q q q q q q q" left=0 top=26 width=72.281 height=12 stretch=#true  // limit 72.282: both fit -- the companion to the row above
+      field text="mmm mmm mmm mmm" left=0 top=52 width=108.295 height=12 stretch=#true   // limit 108.296: measured whole fits, accumulated does not
+      field text="qq qq qq qq qq" left=0 top=78 width=66.727 height=12 stretch=#true     // limit 66.728: accumulated fits, measured whole does not
+      field text="aa bb cc dd ee ff" left=0 top=104 width=73.938 height=12 stretch=#true // limit 73.939: accumulated fits, measured whole does not
+      field text="qq qq qq qq qq" left=0 top=130 width=66.724 height=12 stretch=#true    // limit 66.725: neither fits -- a plain break, for contrast
+    }
+  }
+}

@@ -1,0 +1,47 @@
+// probes/breaking/cut-edges.kdl -- what a cut does, exactly.
+//
+// Three rules that only a cut exercises.
+//
+// **A chunk that starts a line is walked, codepoint by codepoint**, rounding at
+// each one, and that walk is both the test of whether it fits and the cut if it
+// does not.  `q` advances 5.5615234375pt, so two of them are 11.123 measured as
+// one string and 11.124 walked, and the first three rows put that pair either
+// side of a limit.
+//
+// The 11.123 row is the interesting one.  Its limit is 11.124 in decimal, which
+// is exactly the walked total, and yet the two `q` do not share a line: the
+// comparison happens in binary64, where the limit is 11.123999999999999 and
+// the walked total is not within it.  That is the arithmetic
+// [coordinates and rounding](../../../../doc/layout.md#coordinates-and-rounding)
+// already insists on, showing up where it can be seen.  An implementation that
+// compares exact decimals here fits two `q` and disagrees with this row.
+//
+// **The walked total is then forgotten.**  A chunk that fits contributes its own
+// width rounded once, which is not the same number.  `"qq "` is 13.901 rounded
+// once and 13.902 walked; in a box of 19.462 the following `q` still fits, which
+// it would not if the line had kept the walk's figure.
+//
+// **A cut is not a break opportunity, so it consumes nothing and its line is
+// not trimmed.**  A piece that happens to end in a space keeps it.  Trimming
+// belongs to lines that ended at a break opportunity, and to the last line of
+// a paragraph -- where the whitespace was consumed or the paragraph ran out.
+// That is why the tab in `Wa<tab>` ends up as an empty line while the space
+// above it survives: one is a remainder, the other is a cut piece.
+
+report name="breaking/cut-edges" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=254 {
+      field text="qqqq" left=0 top=0 width=11.122 height=12 stretch=#true   // limit 11.123: walked takes 1, measured whole takes 2
+      field text="qqqq" left=0 top=26 width=11.123 height=12 stretch=#true  // limit 11.124: walked takes 1, measured whole takes 2
+      field text="qqqq" left=0 top=52 width=11.124 height=12 stretch=#true  // limit 11.125: walked takes 2, measured whole takes 2 -- agreeing here
+      field text="qq q" left=0 top=78 width=19.462 height=12 stretch=#true  // the line carries 13.901 for "qq ", not the walk's 13.902
+      field text="qq q" left=0 top=104 width=19.461 height=12 stretch=#true // one unit narrower and it breaks either way
+      field text="xxxxxxxxxxxx  xx" left=0 top=130 width=50 height=12 stretch=#true  // a cut piece with no whitespace to keep
+      field text="WqwMMMmMWlww  " left=0 top=156 width=17.49 height=12 stretch=#true  // a cut piece ending in a space keeps it
+      field text="Wa\u{9}" left=0 top=182 width=6.89 height=12 stretch=#true  // what a cut leaves behind is trimmed instead
+      field text="xxx xxx" left=0 top=208 width=4 height=12 stretch=#true   // the space becomes a line of its own, then is trimmed away
+    }
+  }
+}

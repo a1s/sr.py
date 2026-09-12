@@ -15,12 +15,12 @@ report name="breaking/whitespace" {
       field text="xxxxx  xxxxx" left=0 top=0 width=50 height=12 stretch=#true        // a run of spaces is consumed whole
       field text="xxxxx   xxxxx" left=0 top=26 width=50 height=12 stretch=#true      // however long it is
       field text="xxxxx \u{9} xxxxx" left=0 top=52 width=50 height=12 stretch=#true  // spaces and tabs make one run
-      field text="xxxxx   xxxxx" left=0 top=78 width=50 height=12 stretch=#true      // a no-break space interrupts it
+      field text="xxxxx \u{a0} xxxxx" left=0 top=78 width=50 height=12 stretch=#true // a no-break space interrupts it
       field text="  xxxxx" left=0 top=104 width=50 height=12 stretch=#true           // leading whitespace is kept
       field text="xxxxx  " left=0 top=130 width=50 height=12 stretch=#true           // trailing whitespace is trimmed
       field text="xxxxx\u{9}" left=0 top=156 width=50 height=12 stretch=#true        // a trailing tab likewise
-      field text="xxxxx  " left=0 top=182 width=50 height=12 stretch=#true           // trimming stops at the first non-{space,tab}
-      field text="xxxxx  " left=0 top=208 width=50 height=12 stretch=#true           // so a trailing no-break space stays
+      field text="xxxxx\u{a0} " left=0 top=182 width=50 height=12 stretch=#true      // trimming stops at the first non-{space,tab}
+      field text="xxxxx \u{a0}" left=0 top=208 width=50 height=12 stretch=#true      // so a trailing no-break space stays
       field text="xxxxxxxxxxxx  xx" left=0 top=234 width=50 height=12 stretch=#true  // whitespace inside a line is kept as is
       field text="" left=0 top=260 width=50 height=12 stretch=#true                  // empty text still gives one empty line
       field text="   " left=0 top=286 width=50 height=12 stretch=#true               // and so does whitespace alone

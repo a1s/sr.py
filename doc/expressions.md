@@ -323,9 +323,12 @@ Arithmetic:
   and the two **hash equal**, or a dict keyed on one of them breaks. An int
   is an exact integer and a decimal is an exact number, so nothing is lost
   either way and there is no reason for the types to be strangers.
-- **Mixing a decimal with a float is an error**, in a comparison as well as
-  in arithmetic. That mixing is genuinely lossy, which is the difference.
-  Convert explicitly with `float(d)` or `decimal(str(f))`.
+- **A decimal and a float do not mix.** Arithmetic between them is an error,
+  and so is an ordered comparison; that mixing is genuinely lossy, which is
+  the difference from `int`. Convert deliberately with `float(d)` or
+  `decimal(str(f))`. `==` is the exception, and is **false** rather than
+  an error — the dialect's answer for two values that cannot be compared —
+  so `decimal("1") == 1.0` is false while `decimal("1") == 1` is true.
 
 Helpers:
 

@@ -34,9 +34,14 @@ a band fits, so rounding only at output time gives different page breaks.
 **Halves round away from zero.** 0.0005 becomes 0.001 and -0.0005 becomes
 -0.001; the rule is symmetric about zero, so it is neither truncation
 toward zero nor rounding toward positive infinity, and it is not the
-round-half-to-even that several languages make their default. The same rule
-governs `quantize` and the [`round` builtin](expressions.md#starlark-builtins),
-so one rounding rule covers the whole system.
+round-half-to-even that several languages make their default.
+
+That tie-break is shared with `quantize` and the
+[`round` builtin](expressions.md#starlark-builtins), so a reader never has
+to remember which of three rules applies where. Only the tie-break is shared:
+those work on an exact decimal and on a float respectively, while a coordinate
+is rounded by the binary64 arithmetic below, and reaching for `quantize` to
+round a coordinate gives a different answer.
 
 The arithmetic is normative too, because it is observable. Rounding is
 
@@ -120,8 +125,10 @@ not separate its words with spaces does not wrap at its own boundaries.
 
 Take the paragraph as a sequence of **chunks**, each one a maximal run
 of characters that are neither space nor tab, together with the run of
-spaces and tabs immediately after it. Fill each line with whole chunks
-while they fit, then break.
+spaces and tabs immediately after it. Either run may be empty, which is
+what makes a paragraph's leading whitespace a chunk of its own — an empty
+word and the spaces after it — so that it lands at the start of the first
+line. Fill each line with whole chunks while they fit, then break.
 
 The whitespace inside a chunk counts toward the fit. That is the part worth
 stating outright, because it is where a plausible implementation goes wrong:
@@ -131,39 +138,84 @@ the next one** still fit. `"xxxx xxxx"` set in Go-Regular at size 10 measures
 two widths, a line takes one word rather than two when more text follows,
 and both words when nothing does.
 
-A chunk fits when its rounded width does not exceed the box's rounded width
-by more than the usual 0.001 pt tolerance. Both are rounded first, by the
-rule under [Coordinates and rounding](#coordinates-and-rounding).
+**A line's width is accumulated, and rounded at every step.** Start at zero;
+for each chunk added, add that chunk's own width and round the running total
+to 3 decimals by the rule under [Coordinates and rounding](#coordinates-and-rounding).
+The line still fits while that total is no more than **the limit**: the box's
+own rounded width plus the usual 0.001 pt tolerance.
+
+Measuring the candidate line as one string instead, and rounding once at the
+end, is a different rule and gives different documents. In a box of 72.280 pt —
+limit 72.281 — `"q q q q q q q q q"` at size 10 measures 72.2802734375 pt, which
+rounds to 72.280 and is within the limit; accumulated chunk by chunk it reaches
+72.282 pt, which is not. The engine breaks it, so the accumulation is normative
+rather than an implementation detail — as the rounding rule it follows from
+already implies, since a line's width is a computed extent like any other.
+
+Each chunk contributes **its own width, rounded once** — not the total of a
+walk through its codepoints, which can differ by a unit in the last place. The
+two granularities are separate and neither borrows the other's arithmetic.
 
 ### Overlong runs
 
-A chunk too wide for the space left on the current line moves to a line
-of its own. If it is too wide for a whole line even there, it is **cut**,
-at the last codepoint that still fits. The cut is a last resort and never
-a first choice, so a long word displaces a short one rather than being
-broken beside it.
+A chunk too wide for the space left on the current line moves to a line of
+its own. Whether it fits there is settled by **walking it**, codepoint by
+codepoint: start at zero, add each codepoint's advance, round the running
+total at every one, and stop at the last codepoint that keeps the total
+within the limit.
 
-A line always takes at least one codepoint, however narrow the box.
-That is what keeps wrapping terminating, and it means content overflows
-a box narrower than a single character rather than wrapping forever.
+The walk is both the test and the cut. Reaching the end of the chunk means
+it fits, and it starts the line; stopping short means the codepoints taken
+are a line, and what is left is walked again.
 
-The unit is the **codepoint**: not the byte, not the UTF-16 code unit,
-and not the grapheme cluster. A cut may therefore fall between a letter
-and a combining mark that follows it. Cutting by grapheme cluster would
-be kinder and is not what this does.
+That the walk is what decides takes a worked example, because the two
+measurements are never far apart. A box of 11.122 pt has a **limit**
+of 11.123 pt — the box rounded, plus the tolerance. `"qq"` at size 10
+is 11.123 pt measured as one string, which is within that limit, and
+11.124 pt walked, which is not. The engine puts one `q` on the line,
+so the walk is the figure it consulted.
+
+The walked total is used for nothing else. A chunk that fits contributes
+its own rounded width to the line, as above, and the walk is forgotten.
+
+A line always takes at least one codepoint, however narrow the box. That is
+what keeps wrapping terminating, and it means content overflows a box narrower
+than a single character rather than wrapping forever.
+
+What a cut leaves behind starts the next line, and wrapping goes on from there
+as usual: the remainder is walked again if it is still too wide, and otherwise
+the chunks after it join it in the ordinary way. A cut therefore stops as soon
+as what fits is the whole of what remains — that remainder is the next line's
+beginning rather than a line of its own.
+
+The unit is the **codepoint**: not the byte, not the UTF-16 code unit, and not
+the grapheme cluster. A cut may therefore fall between a letter and a combining
+mark that follows it. Cutting by grapheme cluster would be kinder and is not
+what this does.
 
 ### Whitespace
 
-A break consumes the whole run of spaces and tabs it falls at, so the run
-survives on neither line. Whitespace anywhere else is kept as it is: leading
-whitespace stays at the start of a line, and whitespace inside a line is
-neither collapsed nor trimmed.
+A break at a break opportunity consumes the whole run of spaces and tabs
+it falls at, so the run survives on neither line. Whitespace anywhere else
+is kept as it is: leading whitespace stays at the start of a line, and
+whitespace inside a line is neither collapsed nor trimmed.
 
-Each emitted line has its trailing run of spaces and tabs removed. Trimming
-stops at the first character that is neither, so a trailing no-break space stays
-and takes any whitespace before it with it. Because the trimming happens before
-the line reaches the printout, `align="right"` and `align="center"` measure the
-line without that whitespace, while leading whitespace still counts.
+**Trimming follows from that, and only from that.** A line ended at a break
+opportunity loses its trailing run of spaces and tabs, because the break
+consumed them, and so does the last line of a paragraph. Trimming stops
+at the first character that is neither space nor tab, so a trailing no-break
+space stays and takes any whitespace before it with it.
+
+**A line ended by a cut is not trimmed**, because a cut consumes nothing:
+it falls between two codepoints, wherever they happen to be, and whitespace
+it happens to end on is inside the line rather than at a break. So a box
+too narrow for a word can yield a line that is a single space, kept — while
+the same whitespace reaching the end of a line the ordinary way is removed,
+and a line that was nothing but a consumed run is left empty.
+
+Because trimming happens before the line reaches the printout, `align="right"`
+and `align="center"` measure the line without that whitespace, while leading
+whitespace still counts.
 
 ### A box of zero width
 

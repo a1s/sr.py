@@ -142,11 +142,24 @@ def test_an_empty_data_file_is_not_replaced(tmp_path: Path) -> None:
     assert plain.data.name == "plain.jsonl"
 
 
-def test_the_shared_records_are_not_a_probe(tmp_path: Path) -> None:
-    """The shared file is data, so it never becomes a case of its own."""
+def test_only_templates_become_cases(tmp_path: Path) -> None:
+    """A probe is a template; every other file beside one is its luggage.
+
+    The directory holds records, recorded answers and a stray note as well
+    as templates, and only the templates are built.  Asserting that the
+    shared records file is not a case would pass on its own, since it is
+    not a template and never could be; counting what a full directory yields
+    is a test that can fail.
+
+    """
     probe_tree(tmp_path)
     (tmp_path / "records.jsonl").write_text('{"n":1}\n', encoding="utf-8")
-    assert all(case.ident != "probe/records" for case in probe_cases(tmp_path))
+    (tmp_path / "plain.answer.jsonl").write_text("{}\n", encoding="utf-8")
+    (tmp_path / "nested" / "withdata.answer.jsonl").write_text("{}\n", encoding="utf-8")
+    (tmp_path / "notes.txt").write_text("not a probe\n", encoding="utf-8")
+
+    found = {case.ident for case in probe_cases(tmp_path)}
+    assert found == {"probe/plain", "probe/nested/withdata"}
 
 
 def test_a_dotted_probe_name_finds_its_own_data(tmp_path: Path) -> None:

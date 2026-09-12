@@ -247,10 +247,19 @@ engine assigns one.
 
 **The generated name is the source file's base name** — `logo.png` for
 `../assets/logo.png`. It has to be distinct from every other name in
-the table, so where it is taken already the engine appends `-2`, then `-3`,
-and so on until it is free. Base names collide readily: two directories
-each holding a `logo.png` is the ordinary case, not a contrived one —
-so the suffixed form is expected rather than exceptional.
+the table, so where it is taken already the engine appends `-2` to the
+whole base name, then `-3`, and so on until it is free: `logo.png`, then
+`logo.png-2`, then `logo.png-3`. The suffix goes after the extension,
+not before it, because the name is an identifier in this table rather
+than a filename.
+
+Base names collide readily — two directories each holding a `logo.png` is the
+ordinary case, not a contrived one — so the suffixed form is expected rather
+than exceptional. **Which of the two gets the unsuffixed name is decided by
+document order**: the first mention of an image wins it, where "first" is the
+order elements are built in. That is the one thing about this table that
+document order still decides, and moving an image within a template can
+therefore rename both blobs.
 
 A name is taken if a `data` node declares it or an earlier entry generated it.
 Declared names are reserved whether or not anything refers to them, so an
@@ -273,10 +282,10 @@ a field's text reaches the printout in its mark's `lines`, so the blob
 behind it is not needed. An image with `embed=#false` contributes no entry
 either, since its bytes were never read in.
 
-**Keys are sorted by name**, as [`fonts`](#fonts) is, and for the same
-reason: the table is a lookup, its order carries nothing, and leaving it
-to encounter order would make the bytes of a printout depend on where
-in a template an image happened to be written.
+**Keys are sorted by name**, as [`fonts`](#fonts) is, and for the same reason:
+the table is a lookup and its order carries nothing, so an order that has to be
+chosen may as well be the one a reader can predict. Sorting settles the order
+of the keys only — which name each blob holds is still document order, as above.
 
 ## Page lines
 
