@@ -1,0 +1,34 @@
+// probes/breaking/narrow.kdl -- boxes too narrow to wrap into.
+//
+// Two rules keep wrapping total and terminating.
+//
+// A line always takes at least one codepoint, however narrow the box,
+// so a box narrower than a single character gives one character per line
+// rather than an empty line or no progress at all.
+//
+// A box of exactly zero width is not wrapped: zero is the width a box has
+// when nothing determined one, and one codepoint per line is not a useful
+// reading of it.  Mandatory breaks still apply there, because those do not
+// consult a width.
+//
+// The last case is worth reading twice.  "xxx xxx" in a 4pt box gives seven
+// lines, `["x","x","x","","x","x","x"]`, and the empty one in the middle is not a
+// mistake: the space is too wide to join the `x` before it and becomes the whole
+// of a line, which is then trimmed to nothing because it ended at a break
+// opportunity.  Seven lines rather than six is 12pt of band height, so an
+// implementation that quietly drops it disagrees about where the page ends.
+
+report name="breaking/narrow" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=180 {
+      field text="xxxxx" left=0 top=0 width=0 height=12 stretch=#true         // a zero-width box does not wrap at all
+      field text="xxxxx xxxxx" left=0 top=26 width=0 height=12 stretch=#true  // not even at a break opportunity
+      field text="xxx\u{a}xxx" left=0 top=52 width=0 height=12 stretch=#true  // but a mandatory break still applies
+      field text="xxxxx" left=0 top=78 width=0.001 height=12 stretch=#true    // any positive width does wrap
+      field text="xxxxx" left=0 top=104 width=1 height=12 stretch=#true       // a box narrower than one codepoint takes one anyway
+      field text="xxx xxx" left=0 top=130 width=4 height=12 stretch=#true     // seven lines, and the fourth is empty -- see above
+    }
+  }
+}

@@ -1,0 +1,27 @@
+// probes/data/blob-collision.kdl -- a generated name that is already taken.
+//
+// The suffix is `-2`, then `-3`, and so on until the name is free.
+// Declared `data` names are reserved whether or not anything references
+// them, so the two nodes here push the generated name to `pic.png-3`
+// without appearing in the printout themselves: an entry is written
+// only when something refers to it.
+//
+// That second half is worth stating as much as the first.  It means
+// the printout carries no blob nothing uses, and it means an unused
+// `data` node still changes the name an image gets.
+
+report name="data/blob-collision" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  data "pic.png" {
+    content "reserved, and never referenced"
+  }
+  data "pic.png-2" {
+    content "reserved likewise"
+  }
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=40 {
+      image file="one/pic.png" left=0 top=0 width=20 height=20  // -> "pic.png-3": both shorter names are taken
+    }
+  }
+}

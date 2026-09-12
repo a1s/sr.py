@@ -11,6 +11,7 @@ the formatting mechanism, and variable accumulation semantics.
 - [Names in scope](#names-in-scope)
 - [Predefined variables](#predefined-variables)
 - [Modules and builtins](#modules-and-builtins)
+- [Strings](#strings)
 - [The `decimal` type](#the-decimal-type)
 - [Truth values](#truth-values)
 - [Formatting](#formatting)
@@ -29,8 +30,10 @@ Starlark is Python-like, not Python. What matters for templates:
 - **Integers are arbitrary precision.** `123456789012345678901234567890 + 1` is
   exact.
 - **`/` is float division**, `//` is floor division. `1/3` is a float.
-- **Strings are immutable** and indexable by byte; `.elems()` and `.codepoints()`
-  iterate.
+- **Strings are immutable** and indexed by **codepoint**. `len`, indexing
+  and slicing all count codepoints, so `len("Šķūnis")` is 6 and `title[:20]`
+  cannot cut a UTF-8 sequence in half. `.codepoints()` and `.codepoint_ords()`
+  iterate. See [Strings](#strings).
 - **`set` is available**, which `calc="set"` uses. Sets are a dialect option
   in Starlark rather than part of the core language; the engine enables them
   explicitly and does not rely on the host default.
@@ -175,10 +178,17 @@ content and width, which do not capture a dependence on position.
 
 Available: `abs` `all` `any` `bool` `bytes` `chr` `dict` `dir` `enumerate` `fail`
 `float` `getattr` `hasattr` `hash` `int` `len` `list` `max` `min` `ord` `range`
-`repr` `reversed` `set` `sorted` `str` `tuple` `type` `zip`.
+`repr` `reversed` `round` `set` `sorted` `str` `tuple` `type` `zip`.
 
 `print` is not available — a template has nowhere to print to.
-There is no `round` builtin; use `math.round` or [`format`](#formatting).
+
+`round` is not one of Starlark's own; the engine predeclares it, which both host
+implementations support. It takes **one argument** and rounds **half away from
+zero**, which is the same rule as `quantize`, as decimal division, and as
+[coordinate rounding](layout.md#coordinates-and-rounding) — one rounding rule
+for the whole system rather than three. It is a spelling of `math.round` rather
+than a new capability, and there is no digits argument because `quantize`
+already covers that ground for the type where it matters.
 
 List and dict comprehensions, conditional expressions (`a if c else b`),
 and slicing are all available.
@@ -192,7 +202,7 @@ are usable.
 
 | Type | Methods |
 |---|---|
-| string | `capitalize` `codepoint_ords` `codepoints` `count` `elem_ords` `elems` `endswith` `find` `format` `index` `isalnum` `isalpha` `isdigit` `islower` `isspace` `istitle` `isupper` `join` `lower` `lstrip` `partition` `removeprefix` `removesuffix` `replace` `rfind` `rindex` `rpartition` `rsplit` `rstrip` `split` `splitlines` `startswith` `strip` `title` `upper` |
+| string | `capitalize` `codepoint_ords` `codepoints` `count` `endswith` `find` `format` `index` `isalnum` `isalpha` `isdigit` `islower` `isspace` `istitle` `isupper` `join` `lower` `lstrip` `partition` `removeprefix` `removesuffix` `replace` `rfind` `rindex` `rpartition` `rsplit` `rstrip` `split` `splitlines` `startswith` `strip` `title` `upper` |
 | list | `index` — plus the mutating `append` `clear` `extend` `insert` `pop` `remove` |
 | dict | `get` `items` `keys` `values` — plus the mutating `clear` `pop` `popitem` `setdefault` `update` |
 | set | `difference` `intersection` `issubset` `issuperset` `union` — plus the mutating `add` `clear` `discard` `pop` `remove` `symmetric_difference`. There is no `update`; sets also support `\|` `&` `-` |
@@ -259,6 +269,35 @@ strftime(rental_date, '%d.%m.%Y')
 
 See [Formatting](#formatting).
 
+## Strings
+
+**A string is a sequence of codepoints.** `len`, indexing, slicing and
+comparison all work in those terms, so `len("Šķūnis")` is 6, the six letters —
+and not 9, the number of bytes UTF-8 spends on them.
+
+This matters more than it looks. Under byte indexing `title[:20]` can stop
+in the middle of a multi-byte sequence, and the result is not a string that
+means anything: it does not raise, it reaches the printout, and it surfaces
+as a broken glyph in a PDF. Nothing catches it while the test data is ASCII.
+Every report this engine formats is a candidate for text that is not.
+
+Two methods iterate:
+
+```
+"Šķūnis".codepoints()        # "Š", "ķ", "ū", "n", "i", "s"
+"Šķūnis".codepoint_ords()    # 352, 311, 363, 110, 105, 115
+```
+
+There is deliberately **no `elems` or `elem_ords` on a string**. Those are
+the byte pair, and under codepoint indexing they have nothing left to mean.
+`bytes` keeps its own `elems`, because bytes are bytes and iterating them
+by byte is the whole point.
+
+This is a departure from `starlark-go`, whose string is a Go string and
+therefore a sequence of bytes. It is not a departure from Starlark: the Rust and
+Java implementations both count codepoints, and the byte reading is an artifact
+of one host language rather than a property of the language being hosted.
+
 ## The `decimal` type
 
 A member declared `type="decimal"` produces `decimal` values,
@@ -277,12 +316,19 @@ Arithmetic:
 - `/` between decimals produces a decimal quantized to 6 fractional digits,
   rounding half away from zero. Use `quantize` for a different scale.
 - Comparisons between decimals are exact, and `min`, `max` and `sorted` follow
-  them. A comparison **between a decimal and an int or a float** is not
-  available: an ordered comparison raises, and `==` is false however the values
-  compare. This is the host dialect's rule for two unrelated types rather than
-  a choice, so write `amount > decimal("0")`, not `amount > 0`.
-- **Mixing a decimal with a float is an error.** Convert deliberately with
-  `float(d)` or `decimal(str(f))`.
+  them.
+- **A decimal compares with an `int`**, exactly. Write `amount > 0`. Three
+  things follow together, and an implementation that takes only the first
+  is wrong: ordered comparison works, `decimal("1") == 1` is therefore true,
+  and the two **hash equal**, or a dict keyed on one of them breaks. An int
+  is an exact integer and a decimal is an exact number, so nothing is lost
+  either way and there is no reason for the types to be strangers.
+- **A decimal and a float do not mix.** Arithmetic between them is an error,
+  and so is an ordered comparison; that mixing is genuinely lossy, which is
+  the difference from `int`. Convert deliberately with `float(d)` or
+  `decimal(str(f))`. `==` is the exception, and is **false** rather than
+  an error — the dialect's answer for two values that cannot be compared —
+  so `decimal("1") == 1.0` is false while `decimal("1") == 1` is true.
 
 Helpers:
 

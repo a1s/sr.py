@@ -50,8 +50,21 @@ directly, and serializes only when asked. Serializing is not purely a re-encodin
 Every length is a number of PostScript points (1/72 inch), rounded to at most 3
 decimal places. Colors are `"#RRGGBB"` strings.
 
-Numbers serialize in the shortest form that round-trips. Integral values are
-written without a fractional part, so `72` not `72.0`.
+Numbers serialize in the shortest form that round-trips. Three details make
+that a rule rather than a property, because languages disagree on all three
+and the printout is compared byte for byte.
+
+- **Integral values carry no fractional part**: `72`, not `72.0`.
+  A language whose float formatting always writes one has to strip it.
+- **Negative zero is written `0`.** Rounding -0.0004 to three places gives
+  a negative zero, and `-0` in the output would make two printouts differ
+  over a value that compares equal.
+- **No exponent notation.** Implementations switch to it at different
+  magnitudes — around 1e-5 for some, 1e-7 for others — so the threshold cannot
+  be inherited from a host library. It does not arise in practice: a length is
+  rounded to 3 decimals, so the smallest non-zero magnitude is 0.001, and page
+  geometry bounds the other end. Writing the rule down is what keeps "does not
+  arise" from being a coincidence.
 
 ### Paths
 
@@ -229,9 +242,50 @@ Content is stored decompressed.
 
 Entries come from three places: the template's `data` nodes, which keep their
 declared names; embedded fonts; and images the template gave as `file=` with
-`embed=#true`, the default. Those last have no name in the template, so the engine
-assigns one, stable for a given source file, and distinct from every declared name.
-Two images from the same file share one entry.
+`embed=#true`, the default. Those last have no name in the template, so the
+engine assigns one.
+
+**The generated name is the source file's base name** — `logo.png` for
+`../assets/logo.png`. It has to be distinct from every other name in
+the table, so where it is taken already the engine appends `-2` to the
+whole base name, then `-3`, and so on until it is free: `logo.png`, then
+`logo.png-2`, then `logo.png-3`. The suffix goes after the extension,
+not before it, because the name is an identifier in this table rather
+than a filename.
+
+Base names collide readily — two directories each holding a `logo.png` is the
+ordinary case, not a contrived one — so the suffixed form is expected rather
+than exceptional. **Which of the two gets the unsuffixed name is decided by
+document order**: the first mention of an image wins it, where "first" is the
+order elements are built in. That is the one thing about this table that
+document order still decides, and moving an image within a template can
+therefore rename both blobs.
+
+A name is taken if a `data` node declares it or an earlier entry generated it.
+Declared names are reserved whether or not anything refers to them, so an
+unused `data` node still pushes a generated name along. That is deliberate:
+which names are spoken for is a property of the template, not of what
+a particular build turned out to need.
+
+**Blobs are shared on their content.** Two images with identical bytes
+are one entry however they were named and wherever they were read from,
+which is what makes two references to one file share an entry, and equally
+makes two copies of one file under different names share an entry. Where
+a declared `data` node and a generated blob have identical content, they
+share the **declared** name: a name the template chose outranks a name
+the engine invented, and the order in which the document happens to mention
+them does not come into it.
+
+**Only entries something refers to are written.** A `data` node nothing
+references does not appear, and neither does one a `field` consumed —
+a field's text reaches the printout in its mark's `lines`, so the blob
+behind it is not needed. An image with `embed=#false` contributes no entry
+either, since its bytes were never read in.
+
+**Keys are sorted by name**, as [`fonts`](#fonts) is, and for the same reason:
+the table is a lookup and its order carries nothing, so an order that has to be
+chosen may as well be the one a reader can predict. Sorting settles the order
+of the keys only — which name each blob holds is still document order, as above.
 
 ## Page lines
 

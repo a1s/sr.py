@@ -1,0 +1,22 @@
+// probes/expressions/string-methods.kdl -- the string type's iteration methods.
+//
+// A registered divergence: `codepoints` and `codepoint_ords` only here, all
+// four in the reference.  See `divergences.toml`, entry `string-elems-dropped`.
+//
+// `elems` and `elem_ords` are the byte pair.  Under codepoint indexing they
+// have nothing left to mean, so they come out; `bytes` keeps its own `elems`,
+// since bytes are bytes.  The first two fields therefore agree between the engines
+// and the last two are an error here and an answer there.
+
+report name="expressions/string-methods" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=80 {
+      field expr="str(len(list('Šķūnis'.codepoints())))" left=0 top=0 width=400 height=12 stretch=#true  // 6 in both
+      field expr="str(list('Šķūnis'.codepoint_ords()))" left=0 top=20 width=400 height=12 stretch=#true  // [352, 311, 363, 110, 105, 115] in both
+      field expr="str(len(list('Šķūnis'.elems())))" left=0 top=40 width=400 height=12 stretch=#true      // reference: 9.  here: no such method
+      field expr="str(list('Šķūnis'.elem_ords()))" left=0 top=60 width=400 height=12 stretch=#true       // reference: the nine UTF-8 bytes
+    }
+  }
+}

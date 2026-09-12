@@ -155,6 +155,8 @@ def build_reference() -> ReferenceBinary:
             cwd=tree,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=REFERENCE_BUILD_TIMEOUT,
             check=False,
         )
@@ -182,6 +184,8 @@ def reference_version(binary: Path) -> str:
             [str(binary), "version"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=60.0,
             check=False,
         )

@@ -50,6 +50,17 @@ TEMPLATE_SUFFIX = ".kdl"
 # than one that is not picked up at all.
 INCLUDE_MARKER = ".inc"
 
+# The records a probe gets when it does not bring its own.
+#
+# Nearly every probe wants the same thing: one record, whose contents
+# it never reads, so that the detail band runs once.  Committing that
+# file eighteen times over says the eighteen might differ, and a reader
+# has to diff them to find out they do not.  One file says it once.
+#
+# A probe that wants no records at all ships an empty ``NAME.jsonl``,
+# which is the same thing to the engine as passing no data.
+SHARED_RECORDS = "records.jsonl"
+
 
 @dataclass(frozen=True)
 class Case:
@@ -194,18 +205,26 @@ def probe_cases(directory: Path = PROBE_DIR) -> list[Case]:
     and ``NAME.args`` for its parameters and flags.  ``NAME.inc.kdl``
     is a template another probe pulls in, and is not a case of its own.
 
+    A probe without a ``NAME.jsonl`` of its own gets ``records.jsonl``
+    from the top of the probe directory, which is one record that reads
+    the same to every probe that does not care what its record holds.
+    An empty ``NAME.jsonl`` is how a probe says it wants no records.
+
     Each open specification question is to be answered with a probe;
     dropping the files in is all it takes to have them compared from then on.
 
     """
     if not directory.is_dir():
         return []
+    shared = directory / SHARED_RECORDS
     cases: list[Case] = []
     for template in sorted(directory.rglob("*.kdl")):
         base = template.name.removesuffix(TEMPLATE_SUFFIX)
         if base.endswith(INCLUDE_MARKER):
             continue
         data = template.with_name(base + ".jsonl")
+        if not data.is_file():
+            data = shared
         sidecar = read_sidecar(template.with_name(base + ".args"))
         relative = template.relative_to(directory).with_name(base)
         cases.append(

@@ -12,7 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from tests.differential.cases import Case, corpus
+from tests.differential.answers import answer_path, distil
+from tests.differential.cases import ROOT, Case, corpus, probe_cases
 from tests.differential.diff import compare_printouts
 from tests.differential.engines import Build, BuildFailed, Engine, run
 from tests.differential.register import Divergence, Register
@@ -90,6 +91,81 @@ def test_printouts_agree(
             pytrace=False,
         )
     expected(entry, comparison.report)
+
+
+@pytest.mark.differential
+@pytest.mark.parametrize("case", probe_cases(), ids=lambda case: case.ident)
+def test_the_reference_builds_every_probe(
+    case: Case,
+    oracle: Engine,
+    build_directory: Path,
+    register: Register,
+) -> None:
+    """Every probe still asks the oracle its question.
+
+    A probe is a template whose answer is read out of the reference's
+    printout, so one the reference will not build has stopped measuring
+    anything -- and while this engine produces no printout of its own,
+    the comparison above skips and would not notice.  This holds the
+    corpus up on the oracle alone until M6, and keeps holding it after.
+
+    A refusal the register covers is the answer rather than a fault:
+    two of the dialect amendments are expressions the reference has
+    no name for, and refusing them is exactly the divergence recorded.
+
+    """
+    outcome = attempt(oracle, case, build_directory)
+    if isinstance(outcome, BuildFailed):
+        entry = register.entry_for(case.ident)
+        if entry is not None:
+            expected(entry, str(outcome))
+        pytest.fail(str(outcome), pytrace=False)
+
+
+@pytest.mark.differential
+@pytest.mark.parametrize("case", probe_cases(), ids=lambda case: case.ident)
+def test_the_reference_still_answers_the_same_way(
+    case: Case,
+    oracle: Engine,
+    build_directory: Path,
+    register: Register,
+) -> None:
+    """The oracle says today what it said when the probe was written.
+
+    Building is not answering.  Until this engine produces printouts
+    the comparison above skips, so a reference that changed its mind
+    about line breaking would pass a suite that only checked it still ran.
+    The answer committed beside each probe closes that window, and it is
+    the answer itself -- the `lines`, the boxes, the `data` keys --
+    so a diff in one of those files is a diff in what doc/ was written from.
+
+    Record them again with ``python -m tests.differential.record_answers``,
+    and read what changes before committing it.
+
+    """
+    recorded = answer_path(ROOT / case.template)
+    outcome = attempt(oracle, case, build_directory)
+    if isinstance(outcome, BuildFailed):
+        entry = register.entry_for(case.ident)
+        assert entry is not None, str(outcome)
+        assert not recorded.exists(), (
+            f"{case.ident}: the reference refuses this probe, so "
+            f"{recorded.name} should not exist"
+        )
+        expected(entry, str(outcome))
+    assert recorded.is_file(), (
+        f"{case.ident}: no recorded answer; run "
+        "`python -m tests.differential.record_answers`"
+    )
+    assert isinstance(outcome, Build)
+    got = distil(outcome.printout.decode("utf-8"))
+    want = recorded.read_text(encoding="utf-8")
+    assert got == want, (
+        f"{case.ident}: the reference no longer answers as recorded in "
+        f"{recorded.name}. That is either a change in the oracle, which doc/ "
+        "was written from, or a change to the probe. Re-record with "
+        "`python -m tests.differential.record_answers` once you know which."
+    )
 
 
 @pytest.mark.differential

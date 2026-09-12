@@ -1,0 +1,40 @@
+// probes/breaking/opportunities.kdl -- which characters break a line.
+//
+// In Go-Regular at size 10 an `x` advances exactly 5.000pt, so a box 50pt
+// wide holds exactly ten of them.  Each field holds two five-x runs with
+// one candidate character between them, which is 50pt of `x` plus the
+// candidate: too wide by construction, so the engine has to break somewhere
+// and the only question is where.  That forcing is the point.  A candidate
+// tested in a box it fits inside answers nothing, because a break opportunity
+// that is not needed is not taken.
+//
+// A candidate that breaks gives ["xxxxx", "xxxxx"] with the candidate consumed.
+// One that does not gives a line cut mid-run with the candidate still in it.
+//
+// Only U+0020 and U+0009 break.  Every other whitespace character Unicode
+// defines is an ordinary character here, and so is every punctuation mark.
+
+report name="breaking/opportunities" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=436 {
+      field text="xxxxx xxxxx" left=0 top=0 width=50 height=12 stretch=#true           // U+0020 breaks
+      field text="xxxxx\u{9}xxxxx" left=0 top=26 width=50 height=12 stretch=#true      // U+0009 breaks
+      field text="xxxxx-xxxxx" left=0 top=52 width=50 height=12 stretch=#true          // a hyphen does not
+      field text="xxxxx\u{ad}xxxxx" left=0 top=78 width=50 height=12 stretch=#true     // nor a soft hyphen
+      field text="xxxxx\u{a0}xxxxx" left=0 top=104 width=50 height=12 stretch=#true    // nor a no-break space
+      field text="xxxxx\u{200b}xxxxx" left=0 top=130 width=50 height=12 stretch=#true  // nor a zero-width space
+      field text="xxxxx/xxxxx" left=0 top=156 width=50 height=12 stretch=#true         // nor a solidus
+      field text="xxxxx—xxxxx" left=0 top=182 width=50 height=12 stretch=#true         // nor an em dash
+      field text="xxxxx\u{d}xxxxx" left=0 top=208 width=50 height=12 stretch=#true     // nor a carriage return
+      field text="xxxxx\u{b}xxxxx" left=0 top=234 width=50 height=12 stretch=#true     // nor a vertical tab
+      field text="xxxxx\u{c}xxxxx" left=0 top=260 width=50 height=12 stretch=#true     // nor a form feed
+      field text="xxxxx\u{85}xxxxx" left=0 top=286 width=50 height=12 stretch=#true    // nor NEL
+      field text="xxxxx\u{2028}xxxxx" left=0 top=312 width=50 height=12 stretch=#true  // nor LINE SEPARATOR
+      field text="xxxxx\u{2003}xxxxx" left=0 top=338 width=50 height=12 stretch=#true  // nor an em space
+      field text="xxxxx\u{2007}xxxxx" left=0 top=364 width=50 height=12 stretch=#true  // nor a figure space
+      field text="xxxxx\u{3000}xxxxx" left=0 top=390 width=50 height=12 stretch=#true  // nor an ideographic space
+    }
+  }
+}

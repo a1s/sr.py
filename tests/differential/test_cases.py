@@ -101,6 +101,67 @@ def test_a_probe_finds_its_data_and_arguments(tmp_path: Path) -> None:
     assert found["probe/plain"].data is None
 
 
+def test_a_probe_without_data_takes_the_shared_records(tmp_path: Path) -> None:
+    """One records file stands in for every probe that does not bring one.
+
+    Nearly every probe wants a single record it never reads, so that
+    the detail band runs once.  Committing that file once per probe
+    would suggest the copies might differ.
+
+    """
+    probe_tree(tmp_path)
+    (tmp_path / "records.jsonl").write_text('{"n":1}\n', encoding="utf-8")
+
+    found = {case.ident: case for case in probe_cases(tmp_path)}
+    plain = found["probe/plain"]
+    assert plain.data is not None
+    assert plain.data.name == "records.jsonl"
+
+    # A probe with records of its own is not given the shared ones.
+    withdata = found["probe/nested/withdata"]
+    assert withdata.data is not None
+    assert withdata.data.name == "withdata.jsonl"
+
+
+def test_an_empty_data_file_is_not_replaced(tmp_path: Path) -> None:
+    """An empty ``NAME.jsonl`` is how a probe asks for no records.
+
+    It is a file, so the shared records do not stand in for it, and
+    the engine reads no records from it -- which is what a probe that
+    prints without any needs.  Were the fallback to test the contents
+    rather than the file, that probe would silently acquire a record.
+
+    """
+    probe_tree(tmp_path)
+    (tmp_path / "records.jsonl").write_text('{"n":1}\n', encoding="utf-8")
+    (tmp_path / "plain.jsonl").write_text("", encoding="utf-8")
+
+    found = {case.ident: case for case in probe_cases(tmp_path)}
+    plain = found["probe/plain"]
+    assert plain.data is not None
+    assert plain.data.name == "plain.jsonl"
+
+
+def test_only_templates_become_cases(tmp_path: Path) -> None:
+    """A probe is a template; every other file beside one is its luggage.
+
+    The directory holds records, recorded answers and a stray note as well
+    as templates, and only the templates are built.  Asserting that the
+    shared records file is not a case would pass on its own, since it is
+    not a template and never could be; counting what a full directory yields
+    is a test that can fail.
+
+    """
+    probe_tree(tmp_path)
+    (tmp_path / "records.jsonl").write_text('{"n":1}\n', encoding="utf-8")
+    (tmp_path / "plain.answer.jsonl").write_text("{}\n", encoding="utf-8")
+    (tmp_path / "nested" / "withdata.answer.jsonl").write_text("{}\n", encoding="utf-8")
+    (tmp_path / "notes.txt").write_text("not a probe\n", encoding="utf-8")
+
+    found = {case.ident for case in probe_cases(tmp_path)}
+    assert found == {"probe/plain", "probe/nested/withdata"}
+
+
 def test_a_dotted_probe_name_finds_its_own_data(tmp_path: Path) -> None:
     """A name with a dot in it must not bind another probe's records.
 

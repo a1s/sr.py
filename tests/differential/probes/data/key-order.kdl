@@ -1,0 +1,25 @@
+// probes/data/key-order.kdl -- the order of the header's `data` object.
+//
+// Sorted by name, as `fonts` is.
+//
+// Three images with three base names, encountered in an order that is
+// neither the sorted one nor its reverse, so an object built in encounter
+// order and one built in sorted order cannot coincide.
+// Encountered: zebra.png, pic.png, alpha.png.
+// Sorted: alpha.png, pic.png, zebra.png.
+//
+// The three carry different bytes, so none of them shares an entry with another;
+// that is `blob-names.kdl`'s question, and keeping it out of this one is what
+// makes this probe about ordering alone.
+
+report name="data/key-order" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=40 {
+      image file="zebra.png" left=0 top=0 width=20 height=20    // encountered first, sorts last
+      image file="one/pic.png" left=30 top=0 width=20 height=20 // encountered second, sorts second
+      image file="alpha.png" left=60 top=0 width=20 height=20   // encountered last, sorts first
+    }
+  }
+}

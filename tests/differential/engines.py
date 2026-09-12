@@ -131,6 +131,8 @@ def local_engine() -> Engine:
             cwd=ROOT,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=BUILD_TIMEOUT,
             check=False,
         )
@@ -159,11 +161,18 @@ def run(engine: Engine, case: Case, directory: Path) -> Build:
     out = directory / (engine.name + case.suffix)
     arguments = [*engine.command, *case.argv(out)]
     try:
+        # An engine writes UTF-8, and says so regardless of the machine's
+        # locale.  Left to decode with the console codepage, a diagnostic
+        # naming a character outside it -- a missing-glyph warning quoting
+        # the glyph, which is how the text probes report -- raises inside
+        # the reader thread instead of reaching the failure message.
         completed = subprocess.run(  # the argv is ours, not a shell string
             arguments,
             cwd=ROOT,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=BUILD_TIMEOUT,
             check=False,
         )

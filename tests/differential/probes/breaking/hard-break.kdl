@@ -1,0 +1,40 @@
+// probes/breaking/hard-break.kdl -- U+000A ends a line outright.
+//
+// A newline is a mandatory break, taken whether or not the box needed one,
+// and it is consumed.  The whitespace run before it is trimmed with it;
+// whitespace after it begins the next line and is kept, like any leading
+// whitespace.
+//
+// An empty paragraph gives an empty line rather than disappearing, so
+// a newline at either end of the text, and a run of them anywhere in it,
+// all show up in `lines`.
+//
+// Wrapping runs on the string the field finally holds, so it makes
+// no difference whether the newline came from `text`, from an expression,
+// or from `format`. The last three fields are those three routes to the
+// same two lines.
+
+report name="breaking/hard-break" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=360 {
+      field text="xxx\u{a}xxx" left=0 top=0 width=50 height=12 stretch=#true                    // a newline breaks even where both parts fit
+      field text="xxx \u{a}xxx" left=0 top=26 width=50 height=12 stretch=#true                  // whitespace before it is trimmed
+      field text="xxx\u{9}\u{a}xxx" left=0 top=52 width=50 height=12 stretch=#true              // a tab likewise
+      field text="xxx\u{a} xxx" left=0 top=78 width=50 height=12 stretch=#true                  // whitespace after it is kept
+      field text="\u{a}xxx" left=0 top=104 width=50 height=12 stretch=#true                     // a leading newline gives an empty first line
+      field text="xxx\u{a}" left=0 top=130 width=50 height=12 stretch=#true                     // a trailing newline gives an empty last one
+      field text="xxx\u{a}\u{a}xxx" left=0 top=156 width=50 height=12 stretch=#true             // and consecutive newlines give empty lines
+      field text="\u{a}" left=0 top=182 width=50 height=12 stretch=#true                        // a lone newline is two empty lines
+      field text="xxxxx xxxxx\u{a}xxxxx xxxxx" left=0 top=208 width=50 height=12 stretch=#true  // each paragraph wraps on its own
+
+      // The same break, reached three other ways: from an expression,
+      // from a format string, and through a conversion.  Wrapping happens
+      // after `format` is applied, so the source of the newline is immaterial.
+      field expr="'yyy\\nyyy'" left=0 top=250 width=50 height=12 stretch=#true
+      field expr="(3,)" format="yyy%dyyy\nzzz" left=0 top=276 width=50 height=12 stretch=#true
+      field expr="'%s' % 'a\\nb'" left=0 top=302 width=50 height=12 stretch=#true
+    }
+  }
+}

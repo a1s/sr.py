@@ -1,0 +1,31 @@
+// probes/expressions/decimal-int.kdl -- comparing a decimal with an int.
+//
+// A registered divergence: allowed here, refused by the reference.
+// See `divergences.toml`, entry `decimal-int-comparison`.
+//
+// `amount > 0` rather than `amount > decimal("0")`.  Three things move together
+// and the change is wrong if it takes only the first: ordered comparison works,
+// equality follows from it, and the two hash equal, or a dict keyed on one breaks.
+// The fourth field is the hashing, which is the part easiest to leave out.
+//
+// `float` is the other half of the rule and does not move.  Arithmetic and
+// ordered comparison against a float stay errors in both engines, because
+// that mixing is lossy.  `==` against a float stays **false** in both --
+// false rather than an error, which is the dialect's answer for two values
+// it cannot compare.  The last two fields are those, and they are where
+// the engines agree.
+
+report name="expressions/decimal-int" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=140 {
+      field expr="str(decimal('1') > 0)" left=0 top=0 width=400 height=12 stretch=#true      // True here; a type error in the reference
+      field expr="str(decimal('1') == 1)" left=0 top=20 width=400 height=12 stretch=#true    // True here; False in the reference
+      field expr="str(decimal('1') != 1)" left=0 top=40 width=400 height=12 stretch=#true    // False here; True in the reference
+      field expr="str({decimal('1'): 'd'}.get(1, 'miss'))" left=0 top=60 width=400 height=12 stretch=#true  // 'd' here: the hashes agree
+      field expr="str(decimal('1') == 1.0)" left=0 top=80 width=400 height=12 stretch=#true  // False in both: not an error, just not equal
+      field expr="str(decimal('1') != 1.0)" left=0 top=100 width=400 height=12 stretch=#true // True in both
+    }
+  }
+}
