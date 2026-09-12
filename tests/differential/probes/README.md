@@ -81,9 +81,8 @@ can be changed when a probe needs it to be.
 
 ## What is here
 
-M1 filled this directory. Each probe's own header comment states the question
-it isolates and the answer the reference gave, and names the section of `doc/`
-that answer became.
+Each probe's own header comment states the question it isolates and the answer
+the reference gave, and names the section of `doc/` that answer became.
 
 | | |
 |---|---|
@@ -99,6 +98,8 @@ that answer became.
 | `breaking/tolerance` | the comparison the fit test makes |
 | `rounding/halfway` | which way a coordinate on the half goes |
 | `rounding/negative` | the same question below zero |
+| `rounding/tolerance-refuses` | how the 0.001 pt tolerance is added |
+| `rounding/tolerance-admits` | the same, where the addition lands exactly |
 | `printout/numbers` | how a number reaches the file |
 | `data/blob-names` | the name an embedded image gets |
 | `data/blob-collision` | a generated name that is already taken |
@@ -108,8 +109,14 @@ that answer became.
 | `expressions/string-methods` | the string type's iteration methods |
 | `expressions/round` | the `round` builtin |
 | `expressions/decimal-int` | comparing a decimal with an int |
+| `values/dimensions` | what a dimension string means |
+| `values/colors` | what each colour spelling resolves to |
+| `values/hex-float` | a number the host's parser takes and the grammar does not |
+| `values/non-finite` | a dimension KDL can write and points cannot hold |
 
-The last five are [registered divergences](../divergences.toml) and are
-*expected* to differ; the reference refuses two of them outright, which
-the harness treats as a difference like any other. The other sixteen must
-agree byte for byte once this engine builds them.
+Six are [registered divergences](../divergences.toml) and are *expected*
+to differ: the five in the `expressions/` and `data/` groups, where the
+reference refuses two outright -- which the harness treats as a difference
+like any other -- and `values/hex-float` and `values/non-finite`, which
+go the other way, built by the reference and refused here. The remaining
+twenty must agree byte for byte once this engine builds them.

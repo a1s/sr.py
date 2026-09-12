@@ -1,0 +1,47 @@
+// probes/values/dimensions.kdl -- what a dimension string means.
+//
+// The five suffixes, the shapes a number may take, and where the whitespace
+// may fall.  Each row carries its value twice: in `left`, which the engine
+// resolves against the container, and in `width`, which on a rectangle is
+// the stroke width and reaches the mark as it was parsed.  One conversion,
+// read on both sides of the geometry, so a probe that agreed on placement
+// while disagreeing on the value itself could not pass.
+//
+// The answers are in the marks, and they pin three things beyond the
+// unit table.  `"0.0005"` is 0.001, so the 3-decimal rounding happens
+// at the parse and not at output.  `"1e2"`, `"1_0"`, `"+5"`, `".5in"`
+// and `"12.mm"` are numbers, which is what fixes the grammar rather than
+// leaving it to whichever float parser the host supplies.  And `"12 mm"`
+// and `" 12mm "` agree with `"12mm"`, so the whitespace is not part of it.
+//
+// doc/template.md#dimension is what this became.  The negative case sits
+// in `left` alone: a negative extent is a different question, and
+// `rounding/negative` already asks the rounding half of it.
+
+report name="values/dimensions" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=120 {
+      rectangle left=35 top=0 width=35 height=5                  // a bare integer is points
+      rectangle left=35.5 top=6 width=35.5 height=5              // as is a bare number
+      rectangle left="35" top=12 width="35" height=5             // quoted, no suffix: points
+      rectangle left="35pt" top=18 width="35pt" height=5         // the default spelled out
+      rectangle left="12mm" top=24 width="12mm" height=5         // -> 34.016
+      rectangle left="1in" top=30 width="1in" height=5           // -> 72
+      rectangle left="1000mil" top=36 width="1000mil" height=5   // -> 72, the same inch
+      rectangle left="2.54cm" top=42 width="2.54cm" height=5     // -> 72, again
+      rectangle left="1e2" top=48 width="1e2" height=5           // an exponent is a number
+      rectangle left="1_0" top=54 width="1_0" height=5           // -> 10, underscores group digits
+      rectangle left="+5" top=60 width="+5" height=5             // a leading sign is allowed
+      rectangle left=".5in" top=66 width=".5in" height=5         // -> 36, no leading digit
+      rectangle left="12.mm" top=72 width="12.mm" height=5       // -> 34.016, no trailing digit
+      rectangle left="12 mm" top=78 width="12 mm" height=5       // -> 34.016, space before the suffix
+      rectangle left=" 12mm " top=84 width=" 12mm " height=5     // -> 34.016, and around the whole
+      rectangle left="1e2mm" top=90 width="1e2mm" height=5       // -> 283.465, both parts at once
+      rectangle left="0.0005" top=96 width="0.0005" height=5     // -> 0.001, rounded at the parse
+      rectangle left="-0.0004" top=102 width=1 height=5          // -> 0, and never -0
+      rectangle left="-5mm" top=108 width=1 height=5             // -> -14.173, away from zero
+    }
+  }
+}

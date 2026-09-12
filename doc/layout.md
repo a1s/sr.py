@@ -62,6 +62,27 @@ whose height matches the remaining space exactly fits rather than ejecting.
 Both sides of such a comparison are already rounded, so the tolerance absorbs
 one unit in the last place rather than an accumulated error.
 
+The tolerance is added in binary64 like everything else here, and the test is
+
+```
+extent <= limit + 0.001
+```
+
+which is not the same as comparing thousandths as integers, because adding
+0.001 to a three-decimal value does not always reach the next one. `20.003 +
+0.001` is exactly 20.004, so a band of 20.004 pt fits a remaining 20.003 pt;
+`1.001 + 0.001` is 1.0019999999999998, so a band of 1.002 pt does **not** fit
+a remaining 1.001 pt and the page breaks.
+
+Which way a value falls depends on its binade, not on its size in any smooth
+way. Across the 842 pt of an A4 page the addition falls short for 22.5% of
+three-decimal values, so an implementation comparing thousandths instead
+would disagree about roughly one exact fit in five — but the rate is 49.6%
+in [1, 2), 41.6% in [256, 512), and exactly zero throughout [4, 8), [16, 32)
+and [64, 256). That is why the rule has to be the arithmetic rather than the
+intent: "a tolerance of one unit in the last place" describes what it is for,
+and this expression is what decides where the page breaks.
+
 ## Text metrics
 
 One measurement rule governs every band's height, so both halves of it are

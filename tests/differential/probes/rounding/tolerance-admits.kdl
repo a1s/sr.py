@@ -1,0 +1,27 @@
+// probes/rounding/tolerance-admits.kdl -- the same question, one magnitude up.
+//
+// The frame is 30.003pt tall and the title takes 10, so 20.003pt remains
+// and the detail band asks for 20.004 -- one thousandth over, exactly as
+// in `tolerance-refuses`.  Here `20.003 + 0.001` is 20.004 in binary64,
+// so the band fits and the report is one page.
+//
+// Read on its own this says only that the tolerance exists.  Read against
+// `tolerance-refuses`, which is one thousandth over a remaining 1.001pt
+// and ejects, it says the tolerance is an addition rather than a count
+// of thousandths: nothing about the *relationship* differs between the two,
+// only the magnitude at which binary64 does the addition.
+//
+// doc/layout.md#coordinates-and-rounding is what this became.
+
+report name="rounding/tolerance-admits" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=200 height=30.003 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    title height=10 {
+      rectangle left=0 top=0 width=1 height=5
+    }
+    detail height=20.004 {
+      rectangle left=0 top=0 width=1 height=1
+    }
+  }
+}
