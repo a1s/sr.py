@@ -28,7 +28,7 @@ report name="breaking/narrow" {
       field text="xxx\u{a}xxx" left=0 top=52 width=0 height=12 stretch=#true  // but a mandatory break still applies
       field text="xxxxx" left=0 top=78 width=0.001 height=12 stretch=#true    // any positive width does wrap
       field text="xxxxx" left=0 top=104 width=1 height=12 stretch=#true       // a box narrower than one codepoint takes one anyway
-      field text="xxx xxx" left=0 top=130 width=4 height=12 stretch=#true     // which is what keeps the wrap terminating
+      field text="xxx xxx" left=0 top=130 width=4 height=12 stretch=#true     // seven lines, and the fourth is empty -- see above
     }
   }
 }

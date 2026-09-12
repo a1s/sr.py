@@ -158,15 +158,27 @@ two granularities are separate and neither borrows the other's arithmetic.
 
 ### Overlong runs
 
-A chunk too wide for the space left on the current line moves to a line of
-its own. Whether it fits there is settled by **walking it**, codepoint by
-codepoint: start at zero, add each codepoint's advance, round the running
-total at every one, and stop at the last codepoint that keeps the total
-within the limit.
+A chunk too wide for the space left on the current line moves to a line of its
+own. Whether it fits there is settled by **walking it**, codepoint by codepoint:
+start at zero, add each codepoint's advance, round the running total at every
+one, and stop at the last codepoint that keeps the total within the limit —
+except that **the walk always takes its first codepoint**, whether or not
+that one fits. That exception is what keeps wrapping terminating, and it is
+why content overflows a box narrower than a single character rather than
+wrapping forever.
 
-The walk is both the test and the cut. Reaching the end of the chunk means
-it fits, and it starts the line; stopping short means the codepoints taken
-are a line, and what is left is walked again.
+The walk is both the test and the cut, and what decides between them is **how
+much of the chunk the walk consumed**, not whether the chunk fits. Consuming
+all of it means the chunk starts the line; stopping short means the codepoints
+taken are a line of their own, and what is left is walked again.
+
+Those two are not the same test, and a box narrower than one codepoint is
+where they come apart: there the forced first codepoint may be the whole
+of what remains, so the walk consumed the chunk while nothing about it fits.
+It starts the line. Being the line in progress rather than an emitted cut,
+it is then trimmed at the end of the paragraph like any other — which is
+why `"Wa"` followed by a tab, in a box of 6.89 pt, ends `["W", "a", ""]`
+and not `["W", "a", "<tab>"]`.
 
 That the walk is what decides takes a worked example, because the two
 measurements are never far apart. A box of 11.122 pt has a **limit**
@@ -178,15 +190,9 @@ so the walk is the figure it consulted.
 The walked total is used for nothing else. A chunk that fits contributes
 its own rounded width to the line, as above, and the walk is forgotten.
 
-A line always takes at least one codepoint, however narrow the box. That is
-what keeps wrapping terminating, and it means content overflows a box narrower
-than a single character rather than wrapping forever.
-
 What a cut leaves behind starts the next line, and wrapping goes on from there
-as usual: the remainder is walked again if it is still too wide, and otherwise
-the chunks after it join it in the ordinary way. A cut therefore stops as soon
-as what fits is the whole of what remains — that remainder is the next line's
-beginning rather than a line of its own.
+as usual: the remainder is walked again, cut again if the walk still stops
+short, and otherwise joined by the chunks after it in the ordinary way.
 
 The unit is the **codepoint**: not the byte, not the UTF-16 code unit, and not
 the grapheme cluster. A cut may therefore fall between a letter and a combining

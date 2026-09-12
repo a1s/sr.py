@@ -25,23 +25,30 @@
 // not trimmed.**  A piece that happens to end in a space keeps it.  Trimming
 // belongs to lines that ended at a break opportunity, and to the last line of
 // a paragraph -- where the whitespace was consumed or the paragraph ran out.
-// That is why the tab in `Wa<tab>` ends up as an empty line while the space
-// above it survives: one is a remainder, the other is a cut piece.
+//
+// The `Wa<tab>` row is where that meets the forced first codepoint, and it is
+// the one case that separates two readings of the stopping rule.  The tab is
+// wider than the box, so nothing about it fits; but the walk takes its first
+// codepoint regardless, and in doing so consumes the chunk.  What decides is
+// the consuming, not the fitting: the tab becomes the line in progress and is
+// trimmed at the end of the paragraph, giving `["W", "a", ""]`.
+// An implementation that asks whether the chunk *fits* emits it
+// as a cut instead and ends `["W", "a", "<tab>"]`.
 
 report name="breaking/cut-edges" {
   font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
   layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
     style font="body" color="black"
     detail height=254 {
-      field text="qqqq" left=0 top=0 width=11.122 height=12 stretch=#true   // limit 11.123: walked takes 1, measured whole takes 2
-      field text="qqqq" left=0 top=26 width=11.123 height=12 stretch=#true  // limit 11.124: walked takes 1, measured whole takes 2
-      field text="qqqq" left=0 top=52 width=11.124 height=12 stretch=#true  // limit 11.125: walked takes 2, measured whole takes 2 -- agreeing here
-      field text="qq q" left=0 top=78 width=19.462 height=12 stretch=#true  // the line carries 13.901 for "qq ", not the walk's 13.902
-      field text="qq q" left=0 top=104 width=19.461 height=12 stretch=#true // one unit narrower and it breaks either way
+      field text="qqqq" left=0 top=0 width=11.122 height=12 stretch=#true    // limit 11.123: walked takes 1, measured whole takes 2
+      field text="qqqq" left=0 top=26 width=11.123 height=12 stretch=#true   // limit 11.124: walked takes 1, measured whole takes 2
+      field text="qqqq" left=0 top=52 width=11.124 height=12 stretch=#true   // limit 11.125: walked takes 2, measured whole takes 2 -- agreeing here
+      field text="qq q" left=0 top=78 width=19.462 height=12 stretch=#true   // the line carries 13.901 for "qq ", not the walk's 13.902
+      field text="qq q" left=0 top=104 width=19.461 height=12 stretch=#true  // one unit narrower and it breaks either way
       field text="xxxxxxxxxxxx  xx" left=0 top=130 width=50 height=12 stretch=#true  // a cut piece with no whitespace to keep
-      field text="WqwMMMmMWlww  " left=0 top=156 width=17.49 height=12 stretch=#true  // a cut piece ending in a space keeps it
-      field text="Wa\u{9}" left=0 top=182 width=6.89 height=12 stretch=#true  // what a cut leaves behind is trimmed instead
-      field text="xxx xxx" left=0 top=208 width=4 height=12 stretch=#true   // the space becomes a line of its own, then is trimmed away
+      field text="WqwMMMmMWlww  " left=0 top=156 width=17.49 height=12 stretch=#true // a cut piece ending in a space keeps it
+      field text="Wa\u{9}" left=0 top=182 width=6.89 height=12 stretch=#true // the forced codepoint consumed the chunk: line in progress, so trimmed
+      field text="xxx xxx" left=0 top=208 width=4 height=12 stretch=#true    // the space becomes a line of its own, then is trimmed away
     }
   }
 }

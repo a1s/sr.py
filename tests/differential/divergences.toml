@@ -84,8 +84,10 @@ reason = """
 described as the host dialect's rule for two unrelated types, but `decimal` \
 is our own type in both engines, so the rule is ours to write.  Three things \
 move together: ordered comparison against `int`, `decimal(\"1\") == 1`, and \
-equal hashes.  Comparison against `float` stays an error, because that \
-mixing is genuinely lossy.\
+equal hashes.  Nothing about `float` moves: arithmetic and ordered comparison \
+against one stay errors, because that mixing is genuinely lossy, and `==` \
+against one stays false -- false rather than an error, which is what it \
+already was in both engines.\
 """
 ticket = "M1: dialect amendments, expressions.md"
 since = "2026-09-06"
