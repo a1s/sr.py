@@ -1,0 +1,24 @@
+// probes/expressions/strings.kdl -- what a string counts as its elements.
+//
+// A registered divergence: codepoints here, bytes in the reference.
+// See `divergences.toml`, entry `strings-are-codepoints`.
+//
+// "Šķūnis" is six codepoints and nine UTF-8 bytes, so `len` alone separates the
+// two readings, and the slice shows what is at stake.  The reference yields 9,
+// and indexing it yields a lone 0xC5 -- half of a two-byte sequence, and not
+// a valid string.  This engine yields 6 and the letter.
+//
+// This probe is what moved that figure from inferred to measured.
+
+report name="expressions/strings" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=80 {
+      field expr="str(len('Šķūnis'))" left=0 top=0 width=400 height=12 stretch=#true       // reference: 9.  here: 6
+      field expr="'%r' % ('Šķūnis'[0],)" left=0 top=20 width=400 height=12 stretch=#true   // reference: a broken byte.  here: the letter
+      field expr="'%r' % ('Šķūnis'[:2],)" left=0 top=40 width=400 height=12 stretch=#true  // a slice on a byte index cuts a sequence in half
+      field expr="'%r' % ('Šķūnis'[-1],)" left=0 top=60 width=400 height=12 stretch=#true  // and so does a negative one
+    }
+  }
+}

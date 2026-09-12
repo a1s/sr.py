@@ -101,6 +101,54 @@ def test_a_probe_finds_its_data_and_arguments(tmp_path: Path) -> None:
     assert found["probe/plain"].data is None
 
 
+def test_a_probe_without_data_takes_the_shared_records(tmp_path: Path) -> None:
+    """One records file stands in for every probe that does not bring one.
+
+    Nearly every probe wants a single record it never reads, so that
+    the detail band runs once.  Committing that file once per probe
+    would suggest the copies might differ.
+
+    """
+    probe_tree(tmp_path)
+    (tmp_path / "records.jsonl").write_text('{"n":1}\n', encoding="utf-8")
+
+    found = {case.ident: case for case in probe_cases(tmp_path)}
+    plain = found["probe/plain"]
+    assert plain.data is not None
+    assert plain.data.name == "records.jsonl"
+
+    # A probe with records of its own is not given the shared ones.
+    withdata = found["probe/nested/withdata"]
+    assert withdata.data is not None
+    assert withdata.data.name == "withdata.jsonl"
+
+
+def test_an_empty_data_file_is_not_replaced(tmp_path: Path) -> None:
+    """An empty ``NAME.jsonl`` is how a probe asks for no records.
+
+    It is a file, so the shared records do not stand in for it, and
+    the engine reads no records from it -- which is what a probe that
+    prints without any needs.  Were the fallback to test the contents
+    rather than the file, that probe would silently acquire a record.
+
+    """
+    probe_tree(tmp_path)
+    (tmp_path / "records.jsonl").write_text('{"n":1}\n', encoding="utf-8")
+    (tmp_path / "plain.jsonl").write_text("", encoding="utf-8")
+
+    found = {case.ident: case for case in probe_cases(tmp_path)}
+    plain = found["probe/plain"]
+    assert plain.data is not None
+    assert plain.data.name == "plain.jsonl"
+
+
+def test_the_shared_records_are_not_a_probe(tmp_path: Path) -> None:
+    """The shared file is data, so it never becomes a case of its own."""
+    probe_tree(tmp_path)
+    (tmp_path / "records.jsonl").write_text('{"n":1}\n', encoding="utf-8")
+    assert all(case.ident != "probe/records" for case in probe_cases(tmp_path))
+
+
 def test_a_dotted_probe_name_finds_its_own_data(tmp_path: Path) -> None:
     """A name with a dot in it must not bind another probe's records.
 

@@ -1,0 +1,25 @@
+// probes/breaking/overlong.kdl -- a word wider than its box.
+//
+// It is cut, not allowed to overflow, and the cut falls at the last
+// codepoint that still fits.  The cut is a last resort: a word too wide
+// for the space left on the current line is moved to a line of its own first,
+// and only cut if it is too wide for a whole line.  Case three shows both
+// steps -- "xx" stays behind, the long word starts a new line, and the cut
+// happens there.
+//
+// After a cut the remainder is ordinary text again: it starts the next line
+// and the words after it join it in the usual way.
+
+report name="breaking/overlong" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=150 {
+      field text="xxxxxxxxxxx" left=0 top=0 width=50 height=12 stretch=#true                // 11 x = 55pt: cut after the tenth
+      field text="xxxxxxxxxxxxxxxxxxxxxxxx" left=0 top=26 width=50 height=12 stretch=#true  // 24 x = 120pt: cut twice
+      field text="xx xxxxxxxxxxxx" left=0 top=52 width=50 height=12 stretch=#true           // the long word moves to a fresh line first
+      field text="xxxxxxxxxxxx xx" left=0 top=78 width=50 height=12 stretch=#true           // and what is left of it keeps the next word company
+      field text="xxxxxxxxxxxx  xx" left=0 top=104 width=50 height=12 stretch=#true         // the remainder wraps like ordinary text
+    }
+  }
+}

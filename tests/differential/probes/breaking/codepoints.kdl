@@ -1,0 +1,28 @@
+// probes/breaking/codepoints.kdl -- the unit a cut falls between.
+//
+// Codepoints.  Not bytes, not UTF-16 code units, and not grapheme clusters.
+//
+// The first two cases distinguish all three.  A CJK ideograph and an emoji
+// are both absent from Go-Regular, so both measure as .notdef at 7.5pt and
+// six fit in a 50pt box; were the engine cutting by byte or by UTF-16 code
+// unit the counts would differ and the output would hold broken sequences.
+// The third case shows the other edge: a combining acute is a codepoint
+// of its own and a cut may fall between it and the letter it belongs to,
+// so cutting does not respect grapheme clusters.
+//
+// Nothing else happens between CJK characters: there is no break opportunity
+// between them, and they are cut only because the run overflows, exactly as
+// a long run of Latin letters is.
+
+report name="breaking/codepoints" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=140 {
+      field text="中中中中中中中中中中中中" left=0 top=0 width=50 height=12 stretch=#true               // no glyph: .notdef is 7.5pt, so six to a line
+      field text="😀😀😀😀😀😀😀😀😀😀😀😀" left=0 top=26 width=50 height=12 stretch=#true              // an astral codepoint is one unit, not two
+      field text="éééééééééééé" left=0 top=52 width=50 height=12 stretch=#true  // a combining mark is its own unit
+      field text="Šķūnis Šķūnis" left=0 top=78 width=50 height=12 stretch=#true             // and a two-byte letter is still one unit
+    }
+  }
+}

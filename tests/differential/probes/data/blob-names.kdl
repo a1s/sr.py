@@ -1,0 +1,27 @@
+// probes/data/blob-names.kdl -- the name the engine gives an embedded image.
+//
+// An image given as `file=` with `embed=#true` has no name in the template,
+// so the engine assigns one: the source file's base name.  The header's
+// `data` object is what the probe reads.
+//
+// Four elements, three entries.  The two elements naming one/pic.png share
+// an entry, which is the "two images from the same file" rule.  So do
+// one/pic.png and two/copy-of-one.png, which are different files with
+// identical bytes -- so the sharing is decided on the content, not on
+// the path.
+//
+// two/pic.png has the same base name as one/pic.png and different bytes,
+// so it cannot have the name and gets the suffixed form instead.
+
+report name="data/blob-names" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=40 {
+      image file="one/pic.png" left=0 top=0 width=20 height=20           // -> data entry "pic.png"
+      image file="one/pic.png" left=30 top=0 width=20 height=20          // the same file again: no second entry
+      image file="two/copy-of-one.png" left=60 top=0 width=20 height=20  // same bytes, other name: still no second entry
+      image file="two/pic.png" left=90 top=0 width=20 height=20          // same base name, other bytes: -> "pic.png-2"
+    }
+  }
+}

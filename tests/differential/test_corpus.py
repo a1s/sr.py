@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.differential.cases import Case, corpus
+from tests.differential.cases import Case, corpus, probe_cases
 from tests.differential.diff import compare_printouts
 from tests.differential.engines import Build, BuildFailed, Engine, run
 from tests.differential.register import Divergence, Register
@@ -90,6 +90,35 @@ def test_printouts_agree(
             pytrace=False,
         )
     expected(entry, comparison.report)
+
+
+@pytest.mark.differential
+@pytest.mark.parametrize("case", probe_cases(), ids=lambda case: case.ident)
+def test_the_reference_builds_every_probe(
+    case: Case,
+    oracle: Engine,
+    build_directory: Path,
+    register: Register,
+) -> None:
+    """Every probe still asks the oracle its question.
+
+    A probe is a template whose answer is read out of the reference's
+    printout, so one the reference will not build has stopped measuring
+    anything -- and while this engine produces no printout of its own,
+    the comparison above skips and would not notice.  This holds the
+    corpus up on the oracle alone until M6, and keeps holding it after.
+
+    A refusal the register covers is the answer rather than a fault:
+    two of the dialect amendments are expressions the reference has
+    no name for, and refusing them is exactly the divergence recorded.
+
+    """
+    outcome = attempt(oracle, case, build_directory)
+    if isinstance(outcome, BuildFailed):
+        entry = register.entry_for(case.ident)
+        if entry is not None:
+            expected(entry, str(outcome))
+        pytest.fail(str(outcome), pytrace=False)
 
 
 @pytest.mark.differential

@@ -1,0 +1,26 @@
+// probes/breaking/tolerance.kdl -- the comparison the fit test makes.
+//
+// "xxxx xxxx" measures 42.7783203125pt, which is 42.778pt once rounded.
+// The box widths below bracket that, and show the test is made on rounded
+// values with the same 0.001pt tolerance frame boundaries get: the text fits
+// when its rounded width is no more than the box's rounded width plus 0.001.
+//
+// The fourth and fifth cases are half a unit either side of 42.7765 and pin
+// the rounding mode at the same time -- 42.7765 rounds to 42.777 and fits,
+// which is half away from zero rather than half to even.
+
+report name="breaking/tolerance" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=200 {
+      field text="xxxx xxxx" left=0 top=0 width=42.779 height=12 stretch=#true     // 42.778 against 42.779: fits
+      field text="xxxx xxxx" left=0 top=26 width=42.778 height=12 stretch=#true    // equal after rounding: fits
+      field text="xxxx xxxx" left=0 top=52 width=42.777 height=12 stretch=#true    // one unit under: the tolerance still admits it
+      field text="xxxx xxxx" left=0 top=78 width=42.7765 height=12 stretch=#true   // rounds up to 42.777, so it fits
+      field text="xxxx xxxx" left=0 top=104 width=42.7764 height=12 stretch=#true  // rounds down to 42.776, so it does not
+      field text="xxxx xxxx" left=0 top=130 width=42.776 height=12 stretch=#true   // two units under: breaks
+      field text="xxxx xxxx" left=0 top=156 width=42.775 height=12 stretch=#true   // and further under: breaks
+    }
+  }
+}

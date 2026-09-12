@@ -1,0 +1,30 @@
+// probes/breaking/trailing-space.kdl -- whether the whitespace at a break
+// counts toward the fit.
+//
+// It does, whenever more text follows.  The unit the engine fits is a word
+// together with the whitespace run after it, so a line takes another word
+// only when the word *and* the whitespace before the next one still fit.
+//
+// The first two cases are the discriminator.  "xxxx xxxx" measures 42.778pt
+// and 45.557pt with its trailing space, and the third word means that space
+// is not the last thing on the line.  A box between those two widths therefore
+// takes one word if the space counts and two if it does not.  It takes one.
+//
+// The third case is the same text in the same box with nothing after it,
+// where there is no trailing space to count, and it takes both words.
+
+report name="breaking/trailing-space" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=202 {
+      field text="xxxx xxxx xxxx" left=0 top=0 width=42.8 height=12 stretch=#true            // 42.778 fits, 45.557 with the space does not
+      field text="xxxx xxxx xxxx" left=0 top=26 width=45.6 height=12 stretch=#true           // both fit, so two words go on the line
+      field text="xxxx xxxx" left=0 top=52 width=42.8 height=12 stretch=#true                // at the end of the text there is no space to count
+      field text="xxxx xxxx" left=0 top=78 width=42.7 height=12 stretch=#true                // and 42.778 alone is already too wide
+      field text="xxxx\u{9}xxxx\u{9}xxxx" left=0 top=104 width=47.6 height=12 stretch=#true  // a tab counts the same way
+      field text="xxxx\u{9}xxxx\u{9}xxxx" left=0 top=130 width=55.1 height=12 stretch=#true  // 47.5 fits once 7.5 of tab is spare
+      field text="xx xx xx xx xx xx" left=0 top=156 width=50 height=12 stretch=#true         // four words measure 48.335 but 51.113 with the space
+    }
+  }
+}

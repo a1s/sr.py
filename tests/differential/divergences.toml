@@ -12,9 +12,10 @@
 # `affects` matches case identifiers with shell globs -- `example/sakila`,
 # `probe/expressions/strings`, and so on.  The first matching entry wins.
 #
-# The four below are the dialect decisions M1 writes into doc/, each of
-# which changes the Go engine.  Their probes arrive with M1; until then
-# the entries stand as the record of what was decided.
+# The first four are the dialect decisions M1 wrote into doc/,
+# each of which changes the Go engine.  Every one of them now has a probe,
+# so the entries record a measured difference rather than an intended one.
+#  The fifth is a defect in the reference that M1's probes turned up.
 #
 # The milestone numbers:
 #   M0: Scaffold and oracle
@@ -89,3 +90,20 @@ mixing is genuinely lossy.\
 ticket = "M1: dialect amendments, expressions.md"
 since = "2026-09-06"
 affects = ["probe/expressions/decimal-int*"]
+
+[[divergence]]
+id = "declared-blob-names-survive"
+summary = "a declared data name outlives an embedded image of the same bytes here; in the reference whichever came first wins"
+reason = """
+doc/printout.md stores a blob once and says a template's `data` nodes "keep their declared names".  \
+The reference honours the first only: a declared node and an `embed=#true` image \
+with identical bytes share one entry, and the entry takes the name of whichever \
+the document mentions first.  So moving an unrelated image above the node renames \
+a blob the template named itself.  This engine gives a declared name precedence \
+over a generated one regardless of order, which is what makes the name a property \
+of the template rather than of element order.  Unlike the four above, this is \
+a defect rather than a decision: the reference contradicts its own specification here, \
+so nothing in doc/ changed for it."""
+ticket = "M1: filed against the Go engine; printout.md#data already states the rule"
+since = "2026-09-12"
+affects = ["probe/data/declared-names"]

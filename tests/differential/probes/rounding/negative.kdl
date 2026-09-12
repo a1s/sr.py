@@ -1,0 +1,25 @@
+// probes/rounding/negative.kdl -- the same question below zero.
+//
+// Rounding is symmetric about zero: -0.0005 goes to -0.001 exactly as 0.0005
+// goes to 0.001.  That rules out truncation toward zero and rounding toward
+// positive infinity, which agree with half away from zero on positive values
+// and differ here, as well as half to even, which differs on both signs.
+//
+// A negative coordinate is reachable because an element may sit left of
+// or above its band's origin; only a box's width and height are required
+// to be non-negative.
+
+report name="rounding/negative" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=116 {
+      field text="q" left=-0.0005 top=0 width=20 height=12   // -> -0.001; toward zero would give 0
+      field text="q" left=-0.0015 top=16 width=20 height=12
+      field text="q" left=-0.0025 top=32 width=20 height=12  // -> -0.003; half to even would give -0.002
+      field text="q" left=-0.1235 top=48 width=20 height=12  // -> -0.124; toward zero would give -0.123
+      field text="q" left=-1.0005 top=64 width=20 height=12
+      field text="q" left=-0.0045 top=80 width=20 height=12  // -> -0.005, not -0.004
+    }
+  }
+}

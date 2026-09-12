@@ -1,0 +1,29 @@
+// probes/data/declared-names.kdl -- a declared name against an identical file.
+//
+// A registered divergence, and a defect in the reference rather than a rule
+// to copy.  See `divergences.toml`, entry `declared-blob-names-survive`.
+//
+// `one/pic.png` holds exactly the bytes the `aaa` node declares.  The two
+// therefore share one entry, which is right -- printout.md stores a blob once.
+// What the entry is called is the question, and printout.md answers it already:
+// a template's `data` nodes "keep their declared names".
+//
+// The reference calls it `pic.png` here and `aaa` when the two elements
+// are written the other way round, so a declared name survives or does not
+// depending on where an unrelated image sits in the document.  That is the defect.
+//  This engine names the entry `aaa` either way: a declared name wins over a
+// generated one, whatever the order.
+
+report name="data/declared-names" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  data "aaa" encoding="base64" {
+    content "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAI0lEQVR42mNgiGSAo89vn8MRTvFBqIEoRUjig1HDaDwMCg0ArOyQEA2r1rMAAAAASUVORK5CYII="
+  }
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=40 {
+      image file="one/pic.png" left=0 top=0 width=20 height=20  // encountered first -- the reference names the entry for it
+      image data="aaa" left=30 top=0 width=20 height=20         // the same bytes, under a name the template chose
+    }
+  }
+}

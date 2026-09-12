@@ -1,0 +1,23 @@
+// probes/expressions/round.kdl -- the `round` builtin.
+//
+// A registered divergence: predeclared here, absent in the reference,
+// which refuses the template rather than differing in its output.
+// See `divergences.toml`, entry `round-builtin`.
+//
+// One argument, rounding half away from zero, so that the builtin, `quantize`
+// and coordinate rounding are one rule rather than three.  `math.round` already
+// exists and does the same thing, so this is a spelling rather than a capability;
+// the last field is there to show the two agree.
+
+report name="expressions/round" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=80 {
+      field expr="str(round(1.5))" left=0 top=0 width=400 height=12 stretch=#true        // 2
+      field expr="str(round(2.5))" left=0 top=20 width=400 height=12 stretch=#true       // 3, not 2: half away from zero
+      field expr="str(round(-2.5))" left=0 top=40 width=400 height=12 stretch=#true      // -3, symmetrically
+      field expr="str(math.round(2.5))" left=0 top=60 width=400 height=12 stretch=#true  // the same answer the long spelling gives
+    }
+  }
+}

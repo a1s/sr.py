@@ -7,6 +7,7 @@ a [printout](printout.md).
 
 - [Coordinates and rounding](#coordinates-and-rounding)
 - [Text metrics](#text-metrics)
+- [Line breaking](#line-breaking)
 - [Measure, decide, commit](#measure-decide-commit)
 - [Frames](#frames)
 - [Building a band](#building-a-band)
@@ -30,8 +31,31 @@ Every computed coordinate and extent is rounded to 3 decimal places immediately
 after the computation that produces it. This is normative: it decides whether
 a band fits, so rounding only at output time gives different page breaks.
 
+**Halves round away from zero.** 0.0005 becomes 0.001 and -0.0005 becomes
+-0.001; the rule is symmetric about zero, so it is neither truncation
+toward zero nor rounding toward positive infinity, and it is not the
+round-half-to-even that several languages make their default. The same rule
+governs `quantize` and the [`round` builtin](expressions.md#starlark-builtins),
+so one rounding rule covers the whole system.
+
+The arithmetic is normative too, because it is observable. Rounding is
+
+```
+round_half_away_from_zero(value * 1000) / 1000
+```
+
+evaluated in IEEE 754 binary64, and *not* rounding of the exact decimal the
+source text spelled. The two differ. A `left` written as `0.1235` is held as
+0.12349999999999999866…, which is below the half and would round down to 0.123;
+multiplying by 1000 first gives exactly 123.5, which rounds to 0.124. 0.124 is
+the answer, so the scaling comes first. An implementation that reaches for an
+exact decimal type here disagrees with this one in the last digit, which is
+enough to move a page break.
+
 Comparisons against frame boundaries use a tolerance of 0.001 pt, so a band
 whose height matches the remaining space exactly fits rather than ejecting.
+Both sides of such a comparison are already rounded, so the tolerance absorbs
+one unit in the last place rather than an accumulated error.
 
 ## Text metrics
 
@@ -53,6 +77,101 @@ and therefore where every page after it breaks.
 A character the resolved font lacks is measured and drawn as `.notdef`, which is
 a visible empty box, and recorded as a
 [warning](template.md#missing-glyphs). Metrics are unaffected, so nothing shifts.
+
+## Line breaking
+
+A text mark's [`lines`](printout.md#text) array is part of the printout,
+and how many entries it has decides the height of a stretch field, the height
+of its band, and therefore where the page breaks. So this is normative to the
+character, and two engines that wrap differently agree about nothing further
+down the document.
+
+What is wrapped is the string the element finally holds: `expr`, `text`
+or `data` resolved, and `format` applied. Where a character came from
+makes no difference to how it is treated.
+
+### Mandatory breaks
+
+**U+000A LINE FEED ends a line**, whether or not the box needed a break there.
+It is consumed, appearing on neither side. Nothing else does this: U+000D,
+U+000B, U+000C, U+0085 and U+2028 are ordinary characters, so a CRLF leaves
+its carriage return at the end of the line before it.
+
+A paragraph that is empty stays a line: text beginning with a newline starts
+with an empty line, text ending with one ends with an empty line, and a run
+of newlines gives a run of empty lines. `lines` is never empty, so text that
+is empty or reduces to nothing is one empty line rather than none.
+
+### Break opportunities
+
+Within a paragraph the only break opportunities are **U+0020 SPACE and
+U+0009 TAB**. No other character is one — not a hyphen, a soft hyphen,
+a solidus or an em dash, and not a no-break space, a zero-width space,
+an em space, a figure space or an ideographic space. Nothing happens
+between CJK characters either. Those all measure and draw normally,
+and a line may be cut in the middle of a run of them only by the rule
+for overlong runs below.
+
+That this list is two characters long rather than a Unicode line-breaking
+algorithm is a choice, and the cost of it is that a language which does
+not separate its words with spaces does not wrap at its own boundaries.
+
+### Fitting
+
+Take the paragraph as a sequence of **chunks**, each one a maximal run
+of characters that are neither space nor tab, together with the run of
+spaces and tabs immediately after it. Fill each line with whole chunks
+while they fit, then break.
+
+The whitespace inside a chunk counts toward the fit. That is the part worth
+stating outright, because it is where a plausible implementation goes wrong:
+a line takes another word only when that word **and the whitespace before
+the next one** still fit. `"xxxx xxxx"` set in Go-Regular at size 10 measures
+42.778 pt, and 45.557 pt counting the space after it; in a box between those
+two widths, a line takes one word rather than two when more text follows,
+and both words when nothing does.
+
+A chunk fits when its rounded width does not exceed the box's rounded width
+by more than the usual 0.001 pt tolerance. Both are rounded first, by the
+rule under [Coordinates and rounding](#coordinates-and-rounding).
+
+### Overlong runs
+
+A chunk too wide for the space left on the current line moves to a line
+of its own. If it is too wide for a whole line even there, it is **cut**,
+at the last codepoint that still fits. The cut is a last resort and never
+a first choice, so a long word displaces a short one rather than being
+broken beside it.
+
+A line always takes at least one codepoint, however narrow the box.
+That is what keeps wrapping terminating, and it means content overflows
+a box narrower than a single character rather than wrapping forever.
+
+The unit is the **codepoint**: not the byte, not the UTF-16 code unit,
+and not the grapheme cluster. A cut may therefore fall between a letter
+and a combining mark that follows it. Cutting by grapheme cluster would
+be kinder and is not what this does.
+
+### Whitespace
+
+A break consumes the whole run of spaces and tabs it falls at, so the run
+survives on neither line. Whitespace anywhere else is kept as it is: leading
+whitespace stays at the start of a line, and whitespace inside a line is
+neither collapsed nor trimmed.
+
+Each emitted line has its trailing run of spaces and tabs removed. Trimming
+stops at the first character that is neither, so a trailing no-break space stays
+and takes any whitespace before it with it. Because the trimming happens before
+the line reaches the printout, `align="right"` and `align="center"` measure the
+line without that whitespace, while leading whitespace still counts.
+
+### A box of zero width
+
+A box whose width is zero is **not wrapped**. Zero is the width a box has
+when nothing determined one, and one codepoint per line is not a useful
+reading of that. Mandatory breaks still apply, because they do not consult
+a width. Any positive width wraps, including one narrower than a single
+character.
 
 ## Measure, decide, commit
 
@@ -203,8 +322,9 @@ Given a band template and a context, measurement proceeds:
       clamps. In a band whose height is still unsettled, an extent that depends on
       the band's bottom edge is left for step 6.
    4. **Resolve its content:**
-      - `field`: evaluate `expr` (or take `text` / `data`), apply `format`, wrap
-        to the box width. With `stretch`, the box height grows to the wrapped text;
+      - `field`: evaluate `expr` (or take `text` / `data`), apply `format`,
+        wrap to the box width by the rule in [Line breaking](#line-breaking).
+        With `stretch`, the box height grows to the wrapped text;
         without it, lines beyond the box are dropped at a line boundary.
       - `image`: decode and sniff the type, then apply `scale`. `cut` draws the
         image at natural size clipped to the box, and the retained region becomes
