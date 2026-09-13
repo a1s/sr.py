@@ -1,0 +1,27 @@
+// probes/expressions/decimal-precision.kdl --
+// how far a decimal's digits survive a float conversion.
+//
+// A registered divergence, and only in its last row: see `divergences.toml`,
+// entry `decimal-exponent-is-exact`.
+//
+// doc/expressions.md says the float conversions "accept `decimal` values and
+// format them exactly".  `%f` does, in both engines, and the first three rows
+// show it: thirty-two digits in and thirty-two digits out, with the rounding
+// half away from zero.  `%e` and `%g` do here too, and in the reference they
+// go through binary64 first -- which nothing shows until the precision asks
+// for more digits than a float holds.  At the default of six they agree,
+// which is the fourth row; the fifth asks for thirty and they do not.
+
+report name="expressions/decimal-precision" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=110 {
+      field expr="format('%f', decimal('123456789012345678901234567890.12'))" left=0 top=0 width=500 height=12 stretch=#true    // exact in both
+      field expr="format('%.2f', decimal('123456789012345678901234567890.125'))" left=0 top=20 width=500 height=12 stretch=#true // ...90.13 in both: half away from zero
+      field expr="format('%.2f', decimal('19.995'))" left=0 top=40 width=500 height=12 stretch=#true                             // 20.00 in both
+      field expr="format('%e', decimal('123456789012345678901234567890.12'))" left=0 top=60 width=500 height=12 stretch=#true    // 1.234568e+29 in both
+      field expr="format('%.30e', decimal('123456789012345678901234567890.12'))" left=0 top=80 width=500 height=12 stretch=#true // here: the decimal's own digits.  reference: binary64's
+    }
+  }
+}

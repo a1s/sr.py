@@ -179,3 +179,39 @@ functions answer with floats and go on refusing a decimal in both engines.\
 ticket = "M3: decimal helpers, expressions.md#the-decimal-type"
 since = "2026-09-12"
 affects = ["probe/expressions/decimal-abs*"]
+
+[[divergence]]
+id = "decimal-exponent-is-exact"
+summary = "%e and %g keep a decimal's own digits here; the reference sends them through a float first"
+reason = """
+doc/expressions.md says the float conversions "accept `decimal` values and \
+format them exactly", and `%f` does so in both engines -- thirty-two digits \
+in and thirty-two out.  `%e` and `%g` go through binary64 in the reference, \
+which shows only when the precision asks for more digits than a float holds: \
+at the default of six the two agree, and `%.30e` of a thirty-two digit value \
+gives the decimal's digits here and the float's there.  Exactness is what \
+doc/ already says, so the reference is the side that changes.\
+"""
+ticket = "M3: exact decimal formatting, expressions.md#formatting"
+since = "2026-09-13"
+affects = ["probe/expressions/decimal-precision*"]
+
+[[divergence]]
+id = "null-folds-are-skipped"
+summary = "an accumulator that combines values skips a null here; the reference refuses the build"
+reason = """
+Neither engine said what folding a `None` means, and both took the same \
+answer from the same implementation: seed the accumulator with whatever \
+comes first, then add.  That makes the answer depend on the order of the \
+data, and -- worse -- it builds a report over one null row and refuses the \
+same data one record longer, which is not a rule anyone would write down.  \
+doc/expressions.md#calc now states one: a `None` folds into nothing.  The \
+accumulators that combine values skip it and it counts toward neither \
+`avg`'s divisor nor the sample size of `std` and `var`; the ones that \
+collect values keep it.  That is SQL's rule for its aggregates, and it is \
+the only one under which a nullable member is usable in a variable without \
+a guard.  The reference is the side that changes.\
+"""
+ticket = "M3: null folds, expressions.md#calc"
+since = "2026-09-13"
+affects = ["probe/expressions/null-folds*"]

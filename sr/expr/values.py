@@ -65,6 +65,7 @@ __all__ = [
     "Time",
     "find_location",
     "format_float",
+    "go_general",
     "go_shortest",
     "quantize",
     "starlark_repr",
@@ -94,6 +95,9 @@ EXACT: Final = decimal.Context(
 # says is false.
 NANOSECONDS: Final = 1_000_000_000
 EPOCH: Final = datetime(1970, 1, 1, tzinfo=UTC)
+# The epoch without a zone, for the integer arithmetic `from_datetime`
+# does once the offset has already been taken off.
+NAIVE_EPOCH: Final = datetime(1970, 1, 1)
 ZERO_TIME_NANOS: Final = -62135596800 * NANOSECONDS
 
 
@@ -642,7 +646,7 @@ class Time:
 
     """
 
-    __slots__ = ("nanos", "zone", "zone_name")
+    __slots__ = ("nanos", "wall", "zone", "zone_name")
 
     def __init__(
         self, nanos: int, zone: tzinfo | None = None, zone_name: str = "UTC"
@@ -658,6 +662,7 @@ class Time:
         self.nanos = int(nanos)
         self.zone = UTC if zone is None else zone
         self.zone_name = zone_name
+        self.wall: datetime | None = None
 
     @classmethod
     def from_datetime(cls, moment: datetime, nanosecond: int | None = None) -> Time:
@@ -672,23 +677,38 @@ class Time:
         offset = moment.utcoffset()
         if offset is None:
             raise ExpressionError("a time needs a location")
-        naive = moment.replace(tzinfo=None) - offset
-        whole = round((naive - EPOCH.replace(tzinfo=None)).total_seconds())
         sub = moment.microsecond * 1000 if nanosecond is None else nanosecond
+        # The sub-second part is taken out of the datetime before the whole
+        # seconds are counted, and the count is integer arithmetic rather than
+        # `total_seconds`.  Leaving the microseconds in would add them twice --
+        # once rounded into the seconds and once as `sub` -- which turns
+        # 22:53:30.6 into 22:53:31.6.
+        naive = moment.replace(tzinfo=None, microsecond=0) - offset
+        elapsed = naive - NAIVE_EPOCH
+        whole = elapsed.days * 86400 + elapsed.seconds
         name = moment.tzname() or "UTC"
         zone = moment.tzinfo
         return cls(whole * NANOSECONDS + sub, zone, name)
 
     @property
     def moment(self) -> datetime:
-        """Return the instant as an aware datetime in its own location."""
+        """Return the instant as an aware datetime in its own location.
+
+        Computed once and kept.  A band reading ``.year``, ``.month`` and
+        ``.day`` off one record would otherwise build three datetimes and
+        do three zone conversions, and an instant does not change.
+
+        """
+        if self.wall is not None:
+            return self.wall
         seconds, _ = divmod(self.nanos, NANOSECONDS)
         try:
-            return (EPOCH + timedelta(seconds=seconds)).astimezone(self.zone)
+            self.wall = (EPOCH + timedelta(seconds=seconds)).astimezone(self.zone)
         except (OverflowError, OSError, ValueError):
             raise ExpressionError(
                 f"time out of range in {self.zone_name}: {self.nanos} ns"
             ) from None
+        return self.wall
 
     @property
     def year(self) -> int:
@@ -864,8 +884,17 @@ class Record(Mapping[str, Any]):
         return True
 
     def __hash__(self) -> int:
-        """Hash on identity, since the members need not be hashable."""
-        return object.__hash__(self)
+        """Refuse to hash, which is what the reference does with a record.
+
+        A record compares by its members, so hashing by identity would
+        make two equal records two members of a set -- and hashing by
+        content is not available either, since a `type="list"` member is
+        not hashable.  The reference settles it: ``set([THIS])`` there is
+        ``unhashable type: record``, the same answer a list or a dict
+        gets, and for the same reason.
+
+        """
+        raise ExpressionError("unhashable type: record")
 
     def __eq__(self, other: object) -> bool:
         """Compare two records member by member."""
@@ -1258,16 +1287,36 @@ def go_shortest(value: float) -> str:
     trimmed = trimmed.rstrip("0")
     if not trimmed:
         return f"{sign}0"
+    return sign + go_general(trimmed, point, GO_EXPONENT_LIMIT)
+
+
+def go_general(digits: str, point: int, threshold: int) -> str:
+    """Return significant digits laid out the way Go's ``%g`` lays them.
+
+    The shape rule, kept apart from where the digits came from so that
+    the float path and the exact-decimal path cannot drift: exponent
+    notation when the decimal exponent is below -4 or at least ``threshold``,
+    and positional otherwise.
+
+    Args:
+        digits: The significant digits, no sign and no leading or
+            trailing zeros, and not empty.
+        point: Where the point falls, so that the value is
+            ``0.<digits>`` times ten to the ``point``.
+        threshold: The exponent at which the form turns over -- 6 for a
+            shortest form, and the precision where one was asked for.
+
+    """
     exponent = point - 1
-    if exponent < -4 or exponent >= GO_EXPONENT_LIMIT:
-        head, tail = trimmed[0], trimmed[1:]
+    if exponent < -4 or exponent >= threshold:
+        head, tail = digits[0], digits[1:]
         shown = f"{head}.{tail}" if tail else head
-        return f"{sign}{shown}e{'+' if exponent >= 0 else '-'}{abs(exponent):02d}"
+        return f"{shown}e{'+' if exponent >= 0 else '-'}{abs(exponent):02d}"
     if point <= 0:
-        return f"{sign}0.{'0' * -point}{trimmed}"
-    if point >= len(trimmed):
-        return f"{sign}{trimmed}{'0' * (point - len(trimmed))}"
-    return f"{sign}{trimmed[:point]}.{trimmed[point:]}"
+        return f"0.{'0' * -point}{digits}"
+    if point >= len(digits):
+        return digits + "0" * (point - len(digits))
+    return f"{digits[:point]}.{digits[point:]}"
 
 
 # What a quoted string escapes.  Everything printable and non-ASCII

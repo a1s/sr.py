@@ -50,6 +50,7 @@ from sr.expr.values import (
     Set,
     Time,
     find_location,
+    hashable,
     quantize,
     starlark_repr,
     starlark_str,
@@ -280,19 +281,45 @@ LIST_MUTATORS: Final = ("append", "clear", "extend", "insert", "pop", "remove")
 DICT_MUTATORS: Final = ("clear", "pop", "popitem", "setdefault", "update")
 
 
-def dict_methods(entries: Mapping[Any, Any]) -> dict[str, Callable[..., Any]]:
-    """Return the query methods of a mapping, giving lists rather than views.
+def dict_get(entries: Mapping[Any, Any], key: Any, default: Any = None) -> Any:
+    """Return one value by key, or a default.
 
     Args:
-        entries: The mapping to bind them to.
+        entries: The receiver.
+        key: What to look up.
+        default: What to answer with when it is not there.
 
     """
-    return {
-        "get": lambda key, default=None: entries.get(key, default),
-        "items": lambda: [tuple(pair) for pair in entries.items()],
-        "keys": lambda: list(entries.keys()),
-        "values": lambda: list(entries.values()),
-    }
+    try:
+        return entries.get(key, default)
+    except TypeError:
+        return default
+
+
+def dict_items(entries: Mapping[Any, Any]) -> list[tuple[Any, Any]]:
+    """Return a mapping's pairs as a list, which is what the language has."""
+    return [(key, value) for key, value in entries.items()]
+
+
+def dict_keys(entries: Mapping[Any, Any]) -> list[Any]:
+    """Return a mapping's keys as a list rather than as a view."""
+    return list(entries.keys())
+
+
+def dict_values(entries: Mapping[Any, Any]) -> list[Any]:
+    """Return a mapping's values as a list rather than as a view."""
+    return list(entries.values())
+
+
+# The query half of the dict method table.  Each is a plain function of
+# the receiver, bound with `partial` when it is asked for, so that reading
+# one attribute does not build the other three.
+DICT_QUERIES: Final[dict[str, Callable[..., Any]]] = {
+    "get": dict_get,
+    "items": dict_items,
+    "keys": dict_keys,
+    "values": dict_values,
+}
 
 
 def list_index(items: tuple[Any, ...], value: Any, *bounds: int) -> int:
@@ -310,29 +337,99 @@ def list_index(items: tuple[Any, ...], value: Any, *bounds: int) -> int:
 # ------------------------------------------------------------------ sets
 
 
-def set_methods(members: Set) -> dict[str, Callable[..., Any]]:
-    """Return the methods of a set, bound to one.
+def set_difference(members: Set, other: Any) -> Set:
+    """Return the members not in another set."""
+    return members - as_set(other, "difference")
 
-    Args:
-        members: The set to bind them to.
+
+def set_intersection(members: Set, other: Any) -> Set:
+    """Return the members also in another set."""
+    return members & as_set(other, "intersection")
+
+
+def set_issubset(members: Set, other: Any) -> bool:
+    """Report whether every member is also in another set."""
+    return all(item in as_set(other, "issubset") for item in members)
+
+
+def set_issuperset(members: Set, other: Any) -> bool:
+    """Report whether another set's every member is also in this one."""
+    return all(item in members for item in as_set(other, "issuperset"))
+
+
+def set_union(members: Set, other: Any) -> Set:
+    """Return the members of both, in this set's order first."""
+    return members | as_set(other, "union")
+
+
+def set_add(members: Set, item: Any) -> None:
+    """Add one member."""
+    members.members[hashable(item)] = None
+
+
+def set_clear(members: Set) -> None:
+    """Remove every member."""
+    members.members.clear()
+
+
+def set_discard(members: Set, item: Any) -> None:
+    """Remove one member, or do nothing where it is not one."""
+    members.members.pop(item, None)
+
+
+def set_pop(members: Set) -> Any:
+    """Remove and return the first member.
+
+    Raises:
+        ExpressionError: The set is empty.
 
     """
-    methods: dict[str, Callable[..., Any]] = {
-        "difference": lambda other: members - as_set(other, "difference"),
-        "intersection": lambda other: members & as_set(other, "intersection"),
-        "issubset": lambda other: all(
-            item in as_set(other, "issubset") for item in members
-        ),
-        "issuperset": lambda other: all(
-            item in members for item in as_set(other, "issuperset")
-        ),
-        "union": lambda other: members | as_set(other, "union"),
-    }
-    for name in ("add", "clear", "discard", "pop", "remove", "symmetric_difference"):
-        methods[name] = (
-            frozen("set", name) if members.frozen else set_mutator(members, name)
-        )
-    return methods
+    if not members.members:
+        raise ExpressionError("pop from an empty set")
+    first = next(iter(members.members))
+    del members.members[first]
+    return first
+
+
+def set_remove(members: Set, item: Any) -> None:
+    """Remove one member, which must be one.
+
+    Raises:
+        ExpressionError: The value is not a member.
+
+    """
+    if item not in members.members:
+        raise ExpressionError(f"not a member: {starlark_repr(item)}")
+    del members.members[item]
+
+
+def set_symmetric_difference(members: Set, other: Any) -> None:
+    """Keep the members of exactly one of two sets."""
+    theirs = as_set(other, "symmetric_difference")
+    for item in list(theirs):
+        if item in members.members:
+            del members.members[item]
+        else:
+            members.members[item] = None
+
+
+# The set method table, split the way doc/expressions.md splits it: the
+# queries answer on any set, and the mutators refuse on a frozen one.
+SET_QUERIES: Final[dict[str, Callable[..., Any]]] = {
+    "difference": set_difference,
+    "intersection": set_intersection,
+    "issubset": set_issubset,
+    "issuperset": set_issuperset,
+    "union": set_union,
+}
+SET_MUTATORS: Final[dict[str, Callable[..., Any]]] = {
+    "add": set_add,
+    "clear": set_clear,
+    "discard": set_discard,
+    "pop": set_pop,
+    "remove": set_remove,
+    "symmetric_difference": set_symmetric_difference,
+}
 
 
 def as_set(value: Any, method: str) -> Set:
@@ -353,95 +450,34 @@ def as_set(value: Any, method: str) -> Set:
         ) from None
 
 
-def set_mutator(members: Set, name: str) -> Callable[..., Any]:
-    """Return one mutating set method, bound to a set that is not frozen.
-
-    Args:
-        members: The set to change.
-        name: Which method.
-
-    """
-
-    def add(item: Any) -> None:
-        members.members[item] = None
-
-    def clear() -> None:
-        members.members.clear()
-
-    def discard(item: Any) -> None:
-        members.members.pop(item, None)
-
-    def pop() -> Any:
-        if not members.members:
-            raise ExpressionError("pop from an empty set")
-        first = next(iter(members.members))
-        del members.members[first]
-        return first
-
-    def remove(item: Any) -> None:
-        if item not in members.members:
-            raise ExpressionError(f"not a member: {starlark_repr(item)}")
-        del members.members[item]
-
-    def symmetric_difference(other: Any) -> None:
-        theirs = as_set(other, "symmetric_difference")
-        for item in list(theirs):
-            if item in members.members:
-                del members.members[item]
-            else:
-                members.members[item] = None
-
-    mutators: dict[str, Callable[..., Any]] = {
-        "add": add,
-        "clear": clear,
-        "discard": discard,
-        "pop": pop,
-        "remove": remove,
-        "symmetric_difference": symmetric_difference,
-    }
-    return mutators[name]
-
-
 # ------------------------------------------------------- the value types
 
 
-def time_methods(moment: Time) -> dict[str, Any]:
-    """Return the attributes and methods of a time value.
+# What a time and a duration answer to.  Each entry is a function of the
+# receiver rather than a value, so that reading `.year` computes the year
+# and not the other eight members beside it -- which cost a datetime each.
+TIME_MEMBERS: Final[dict[str, Callable[[Time], Any]]] = {
+    "year": lambda moment: moment.year,
+    "month": lambda moment: moment.month,
+    "day": lambda moment: moment.day,
+    "hour": lambda moment: moment.hour,
+    "minute": lambda moment: moment.minute,
+    "second": lambda moment: moment.second,
+    "nanosecond": lambda moment: moment.nanosecond,
+    "unix": lambda moment: moment.unix,
+    "unix_nano": lambda moment: moment.unix_nano,
+    "in_location": lambda moment: moment.in_location,
+    "format": lambda moment: moment.format,
+}
 
-    Args:
-        moment: The time to bind them to.
-
-    """
-    return {
-        "year": moment.year,
-        "month": moment.month,
-        "day": moment.day,
-        "hour": moment.hour,
-        "minute": moment.minute,
-        "second": moment.second,
-        "nanosecond": moment.nanosecond,
-        "unix": moment.unix,
-        "unix_nano": moment.unix_nano,
-        "in_location": moment.in_location,
-        "format": moment.format,
-    }
-
-
-def duration_members(length: Duration) -> dict[str, Any]:
-    """Return the attributes of a duration, every one of them a float.
-
-    Args:
-        length: The duration to bind them to.
-
-    """
-    return {
-        "hours": length.hours,
-        "minutes": length.minutes,
-        "seconds": length.seconds,
-        "milliseconds": length.milliseconds,
-        "microseconds": length.microseconds,
-        "nanoseconds": length.nanoseconds,
-    }
+DURATION_MEMBERS: Final[dict[str, Callable[[Duration], Any]]] = {
+    "hours": lambda length: length.hours,
+    "minutes": lambda length: length.minutes,
+    "seconds": lambda length: length.seconds,
+    "milliseconds": lambda length: length.milliseconds,
+    "microseconds": lambda length: length.microseconds,
+    "nanoseconds": lambda length: length.nanoseconds,
+}
 
 
 # ------------------------------------------------------------- resolvers
@@ -503,9 +539,9 @@ def attribute_of_dict(entries: dict[Any, Any], name: str) -> Any:
         name: The method's name.
 
     """
-    query = dict_methods(entries).get(name)
+    query = DICT_QUERIES.get(name)
     if query is not None:
-        return query
+        return partial(query, entries)
     if name in DICT_MUTATORS:
         return getattr(entries, name)
     raise ExpressionError(f"dict has no attribute {name!r}")
@@ -519,9 +555,9 @@ def attribute_of_frozen_dict(entries: FrozenDict, name: str) -> Any:
         name: The method's name.
 
     """
-    query = dict_methods(entries).get(name)
+    query = DICT_QUERIES.get(name)
     if query is not None:
-        return query
+        return partial(query, entries)
     if name in DICT_MUTATORS:
         return frozen("dict", name)
     raise ExpressionError(f"dict has no attribute {name!r}")
@@ -555,10 +591,13 @@ def attribute_of_set(members: Set, name: str) -> Any:
         name: The method's name.
 
     """
-    method = set_methods(members).get(name)
-    if method is None:
-        raise ExpressionError(f"set has no attribute {name!r}")
-    return method
+    query = SET_QUERIES.get(name)
+    if query is not None:
+        return partial(query, members)
+    mutator = SET_MUTATORS.get(name)
+    if mutator is not None:
+        return frozen("set", name) if members.frozen else partial(mutator, members)
+    raise ExpressionError(f"set has no attribute {name!r}")
 
 
 def attribute_of_time(moment: Time, name: str) -> Any:
@@ -569,10 +608,10 @@ def attribute_of_time(moment: Time, name: str) -> Any:
         name: What was asked for.
 
     """
-    members = time_methods(moment)
-    if name not in members:
+    read = TIME_MEMBERS.get(name)
+    if read is None:
         raise ExpressionError(f"time has no attribute {name!r}")
-    return members[name]
+    return read(moment)
 
 
 def attribute_of_duration(length: Duration, name: str) -> Any:
@@ -583,10 +622,10 @@ def attribute_of_duration(length: Duration, name: str) -> Any:
         name: What was asked for.
 
     """
-    members = duration_members(length)
-    if name not in members:
+    read = DURATION_MEMBERS.get(name)
+    if read is None:
         raise ExpressionError(f"duration has no attribute {name!r}")
-    return members[name]
+    return read(length)
 
 
 def attribute_of_namespace(module: Namespace, name: str) -> Any:
@@ -955,13 +994,13 @@ def sr_dir(value: Any) -> list[str]:
     if kind is list or kind is FrozenList:
         return sorted([*LIST_QUERIES, *LIST_MUTATORS])
     if kind is dict or kind is FrozenDict:
-        return sorted([*dict_methods({}), *DICT_MUTATORS])
+        return sorted([*DICT_QUERIES, *DICT_MUTATORS])
     if kind is Set:
-        return sorted(set_methods(value))
+        return sorted([*SET_QUERIES, *SET_MUTATORS])
     if kind is Time:
-        return sorted(time_methods(value))
+        return sorted(TIME_MEMBERS)
     if kind is Duration:
-        return sorted(duration_members(value))
+        return sorted(DURATION_MEMBERS)
     if kind is Record:
         return sorted(value.fields)
     if kind is Namespace:

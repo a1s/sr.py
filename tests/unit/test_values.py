@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import decimal as pydecimal
 import math
+from datetime import UTC
 from typing import Any
 
 import pytest
@@ -146,6 +147,26 @@ def test_a_time_keeps_nanoseconds_a_datetime_cannot_hold() -> None:
     assert moment.format("15:04:05.000000000") == "00:00:00.123456789"
 
 
+def test_a_datetime_with_microseconds_is_not_counted_twice() -> None:
+    """Rounding the seconds while the fraction was still in them added it twice."""
+    from datetime import datetime as pydatetime
+
+    moment = Time.from_datetime(pydatetime(2005, 5, 24, 22, 53, 30, 600000, tzinfo=UTC))
+    assert moment.second == 30
+    assert moment.nanosecond == 600_000_000
+    assert moment.format("15:04:05.000") == "22:53:30.600"
+
+
+def test_a_nanosecond_given_apart_from_the_datetime_is_the_one_kept() -> None:
+    from datetime import datetime as pydatetime
+
+    moment = Time.from_datetime(
+        pydatetime(2005, 5, 24, 22, 53, 30, tzinfo=UTC), 123_456_789
+    )
+    assert moment.nanosecond == 123_456_789
+    assert moment.second == 30
+
+
 def test_in_location_changes_the_reading_and_not_the_instant() -> None:
     moment = Time(UTC_MIDNIGHT).in_location("Europe/Riga")
     assert moment.unix_nano == UTC_MIDNIGHT
@@ -204,6 +225,20 @@ def test_a_record_reads_its_members_and_is_true_when_empty() -> None:
     record = Record({"amount": Decimal("1.00")})
     assert record["amount"] == Decimal("1.00")
     assert truthy(Record({}))
+
+
+def test_a_record_compares_by_its_members_and_cannot_be_hashed() -> None:
+    """What the reference answers: `set([THIS])` is `unhashable type: record`.
+
+    Hashing by identity while comparing by value is the combination that
+    quietly breaks: two equal records would both stay in a `calc="set"`.
+
+    """
+    assert Record({"a": 1}) == Record({"a": 1})
+    with pytest.raises(ExpressionError, match="unhashable type: record"):
+        hash(Record({"a": 1}))
+    with pytest.raises(ExpressionError, match="unhashable type: record"):
+        Set([Record({"a": 1})])
 
 
 def test_a_frozen_list_compares_with_a_plain_one() -> None:

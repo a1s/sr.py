@@ -86,6 +86,42 @@ def test_a_decimal_rounds_for_an_integer_conversion_and_a_float_truncates() -> N
     assert format_value("%d", -1.9) == "-1"
 
 
+@pytest.mark.parametrize(
+    ("spec", "value", "shown"),
+    [
+        ("%e", "1234.5", "1.234500e+03"),
+        ("%E", "1234.5", "1.234500E+03"),
+        ("%.0e", "1234.5", "1e+03"),
+        ("%e", "0", "0.000000e+00"),
+        ("%g", "1234567", "1.234567e+06"),
+        ("%g", "123456", "123456"),
+        ("%g", "100.00", "100"),
+        ("%g", "1234.5", "1234.5"),
+        ("%g", "0.0000001", "1e-07"),
+        ("%g", "0", "0"),
+        ("%.3g", "1234.5", "1.23e+03"),
+        ("%g", "-1234567", "-1.234567e+06"),
+    ],
+)
+def test_a_decimal_takes_the_same_shape_a_float_does(
+    spec: str, value: str, shown: str
+) -> None:
+    """Two exponent digits, and the turnover at 1e6 -- both measured.
+
+    Python's own decimal formatting gives neither: it writes `e+3` for
+    the exponent and knows nothing of Go's `%g` shape.
+
+    """
+    assert format_value(spec, Decimal(value)) == shown
+
+
+def test_a_precision_with_no_digits_is_a_precision_of_zero() -> None:
+    """`%.f` is a conversion, not an `int("")`."""
+    assert format_value("%.f", 1.5) == "2"
+    assert format_value("%.f", Decimal("1.5")) == "2"
+    assert format_value("%.f", 7) == "7"
+
+
 def test_percent_g_without_a_precision_is_the_shortest_form() -> None:
     """Go's default for %g is shortest; Python's is six significant digits."""
     assert format_value("%g", 1234567.0) == "1.234567e+06"

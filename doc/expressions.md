@@ -356,10 +356,13 @@ int(d)                      # truncates toward zero
 ```
 
 The `math` module is **not** among these. Its functions take an int or a float
-and refuse a decimal, because every one of them answers with a float and a
-conversion the language makes silently is the one thing the decimal rules exist
-to prevent. Write `math.floor(float(d))`, or `quantize(d, 0)` where the answer
-should stay exact.
+and refuse a decimal, because a conversion the language makes silently is the
+one thing the decimal rules exist to prevent. Write `math.floor(float(d))`, or
+`quantize(d, 0)` where the answer should stay exact.
+
+What they answer with is the host module's business rather than this
+specification's, and it is not uniform: `ceil` and `floor` give an **int**,
+and `round`, `sqrt`, `pow` and the rest give a **float**.
 
 `calc="sum"`, `"avg"`, `"min"`, `"max"` over decimals produce decimals;
 `avg` quantizes like `/`. `"std"` and `"var"` produce floats.
@@ -502,6 +505,23 @@ An empty accumulator reads as `0` for `count`; `None` for `first`, `last`, `sum`
 otherwise. `sum` of nothing is `None` rather than `0`, so "no rows" stays
 distinguishable from "rows summing to zero" — write `total_amount or 0`
 where the distinction does not matter.
+
+A **`None` folds into nothing.** The accumulators that *combine* values --
+`sum`, `avg`, `min`, `max`, `std`, `var` and `chain` -- skip one, and a skipped
+value counts toward nothing: not `avg`'s divisor, and not the *n* of `std` and
+`var`. The ones that *collect* values -- `list`, `set`, `first`, `last` and
+`count` -- keep it, because there a null is something the data had rather than
+something to add.
+
+So a `nullable` member totals the rows that have a number, a column of nothing
+but nulls reads as the empty accumulator above, and one null row behaves the
+same way as two of them. That last is the point: an accumulator that carried
+the first null and failed on the second would build a report over one record
+and refuse the same data one record longer.
+
+`None` is the only value this holds for. A zero, an empty string and an empty
+list are values, and the paragraph above exists to keep a total of zero
+distinguishable from no total at all.
 
 The guard is not an edge case. A page header and footer are
 [measured when the frame begins](layout.md#headerfooter-reservation),

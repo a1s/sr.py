@@ -31,9 +31,11 @@ from typing import Any, Final
 
 from sr.errors import ExpressionError
 from sr.expr.values import (
+    GO_EXPONENT_LIMIT,
     Decimal,
     FrozenDict,
     Record,
+    go_general,
     go_shortest,
     quantize,
     quote,
@@ -67,10 +69,6 @@ BASES: Final = {
     "X": (16, "0X"),
     "b": (2, "0b"),
 }
-
-# Formatting a decimal rounds half away from zero, like every other
-# rounding in the engine, rather than Python's half to even.
-HALF_UP: Final = decimal.Context(prec=decimal.MAX_PREC, rounding=decimal.ROUND_HALF_UP)
 
 
 class Spec:
@@ -165,7 +163,9 @@ def parse_spec(match: re.Match[str]) -> Spec:
     return Spec(
         flags,
         int(width) if width else None,
-        int(precision) if precision is not None else None,
+        # A point with no digits after it is a precision of zero, which is
+        # what `%.f` means and what `int("")` would have raised over.
+        None if precision is None else int(precision or 0),
         verb,
     )
 
@@ -252,8 +252,71 @@ def real_text(value: Any, spec: Spec) -> str:
     return spec.pad(spec.sign_for(negative), body)
 
 
+def decimal_parts(number: decimal.Decimal) -> tuple[str, int]:
+    """Return a decimal's significant digits and where its point falls.
+
+    The value is ``0.<digits>`` times ten to the point, with no leading or
+    trailing zeros; zero has no digits at all.  This is the exact-decimal
+    counterpart of what ``repr`` gives for a float, and it is what keeps
+    ``%e`` and ``%g`` off binary64 on the way to their digits.
+
+    Args:
+        number: A finite decimal, without a sign.
+
+    """
+    _, digits, exponent = number.as_tuple()
+    text = "".join(str(digit) for digit in digits)
+    point = len(text) + int(exponent)
+    stripped = text.lstrip("0")
+    point -= len(text) - len(stripped)
+    stripped = stripped.rstrip("0")
+    return (stripped, point) if stripped else ("", 0)
+
+
+def significant(number: decimal.Decimal, wanted: int) -> tuple[str, int]:
+    """Return a decimal rounded to a number of significant digits.
+
+    Rounded half away from zero, like every other rounding here, and in
+    decimal arithmetic, so a value with more digits than binary64 holds
+    keeps the ones it was asked for.
+
+    Args:
+        number: A finite decimal, without a sign.
+        wanted: How many significant digits to keep.
+
+    """
+    digits, point = decimal_parts(number)
+    if not digits or len(digits) <= wanted:
+        return digits, point
+    return decimal_parts(quantize(Decimal(number), wanted - point).value)
+
+
+def exponent_form(digits: str, point: int, places: int) -> str:
+    """Return significant digits written the way ``%e`` writes them.
+
+    Args:
+        digits: The significant digits, already rounded, possibly none.
+        point: Where the point falls.
+        places: How many digits after the point.
+
+    """
+    if not digits:
+        mantissa = "0" + ("." + "0" * places if places else "")
+        return f"{mantissa}e+00"
+    body = digits.ljust(places + 1, "0")[: places + 1]
+    mantissa = body[0] + ("." + body[1:] if places else "")
+    exponent = point - 1
+    return f"{mantissa}e{'+' if exponent >= 0 else '-'}{abs(exponent):02d}"
+
+
 def decimal_body(value: Decimal, spec: Spec) -> tuple[str, bool]:
     """Return an exact decimal's digits, without a sign.
+
+    Every form is computed in decimal arithmetic rather than through a
+    float, so the digits are the value's own.  The shape is Go's, which
+    Python's ``Decimal.__format__`` does not give: it writes a one-digit
+    exponent where Go writes two, and it knows nothing of the turnover
+    at 1e6 that ``%g`` follows.
 
     Args:
         value: The number to write.
@@ -261,17 +324,25 @@ def decimal_body(value: Decimal, spec: Spec) -> tuple[str, bool]:
 
     """
     negative = value.value < 0
-    size = 6 if spec.precision is None else spec.precision
-    magnitude = abs(value)
+    magnitude = abs(value).value
     if spec.verb == "f":
-        return format(quantize(magnitude, size).value, "f"), negative
-    with decimal.localcontext(HALF_UP):
-        if spec.verb in "eE":
-            text = format(magnitude.value, f".{size}e")
-        else:
-            digits = size if spec.precision is not None else 0
-            text = format(magnitude.value, f".{digits}g" if digits else "g")
-    return exponent_case(text, spec.verb), negative
+        size = 6 if spec.precision is None else spec.precision
+        return format(quantize(Decimal(magnitude), size).value, "f"), negative
+    if spec.verb in "eE":
+        places = 6 if spec.precision is None else spec.precision
+        digits, point = significant(magnitude, places + 1)
+        return exponent_case(exponent_form(digits, point, places), spec.verb), negative
+    if spec.precision is None:
+        digits, point = decimal_parts(magnitude)
+        threshold = GO_EXPONENT_LIMIT
+    else:
+        threshold = max(spec.precision, 1)
+        digits, point = significant(magnitude, threshold)
+        if threshold > len(digits) and len(digits) >= point:
+            threshold = len(digits)
+    if not digits:
+        return "0", negative
+    return exponent_case(go_general(digits, point, threshold), spec.verb), negative
 
 
 def float_body(value: float, spec: Spec) -> tuple[str, bool]:

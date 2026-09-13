@@ -65,7 +65,7 @@ def test_first_and_last_keep_the_ends() -> None:
 
 
 def test_first_keeps_a_none_it_was_actually_given() -> None:
-    """Folded `None` is a value, and is not the same as nothing folded."""
+    """`first` collects rather than combines, so a null is its answer."""
     accumulator = make("first")
     accumulator.fold(None)
     accumulator.fold(2)
@@ -145,6 +145,55 @@ def test_chain_concatenates_the_sequences_it_is_given() -> None:
 def test_chain_refuses_a_value_that_is_not_a_sequence() -> None:
     with pytest.raises(ExpressionError, match="wants a sequence"):
         folded("chain", 1)
+
+
+@pytest.mark.parametrize("order", [[None, 10], [10, None]])
+def test_a_null_is_skipped_by_the_accumulators_that_combine(
+    order: list[Any],
+) -> None:
+    """Order cannot matter, and one null row must behave like two.
+
+    The rule doc/expressions.md#calc now states, and the reason it was
+    written: both engines used to seed the total with whatever came
+    first, so a lone null built a report and a second null failed it.
+
+    """
+    assert folded("sum", *order) == 10
+    assert folded("avg", *order) == 10
+    assert folded("min", *order) == 10
+    assert folded("max", *order) == 10
+
+
+def test_a_skipped_null_does_not_reach_the_divisor() -> None:
+    """`avg` divides by the values there were, as SQL's does."""
+    assert folded("avg", None, 10, 20) == 15
+    assert folded("var", None, 1, 3) == 2.0
+
+
+def test_nothing_but_nulls_reads_as_an_empty_accumulator() -> None:
+    for calc in ("sum", "avg", "min", "max", "std", "var"):
+        assert folded(calc, None, None) is None
+    assert list(folded("chain", None, None)) == []
+
+
+def test_one_null_row_and_two_are_the_same_report() -> None:
+    """The objection that got the rule written down."""
+    for calc in ("sum", "avg", "min", "max"):
+        assert folded(calc, None) == folded(calc, None, None)
+
+
+def test_chain_skips_a_null_because_it_combines_rather_than_collects() -> None:
+    """A nullable `list` member contributes no elements, and no error."""
+    assert list(folded("chain", None, [1], [2])) == [1, 2]
+
+
+def test_the_accumulators_that_collect_keep_a_null() -> None:
+    """There a null is something the data had, not something to add."""
+    assert list(folded("list", None, 10)) == [None, 10]
+    assert list(folded("set", None, 10)) == [None, 10]
+    assert folded("count", None, 10) == 2
+    assert folded("first", None, 10) is None
+    assert folded("last", 10, None) is None
 
 
 def test_a_reset_empties_the_accumulator() -> None:

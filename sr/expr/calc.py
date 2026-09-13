@@ -16,6 +16,12 @@ Three details are the ones worth reading twice.
   Only ``count`` reads as a number, and only ``list``, ``set`` and
   ``chain`` read as something empty.
 
+* **A null folds into nothing.**  The accumulators that *combine* values
+  skip a ``None``; the ones that *collect* them keep it.  ``None`` is
+  the only value this holds for: a zero, an empty string and an empty list
+  are values, and the paragraph above exists to keep a zero total
+  distinguishable from no total at all.
+
 * **``std`` and ``var`` are sample statistics**, dividing by *n*-1,
   so a single value gives ``None`` as well as no values at all.
 
@@ -186,14 +192,40 @@ class Sum(Accumulator):
         self.seen = 0
 
     def fold(self, value: Any) -> None:
-        """Add one value to the running total."""
-        self.total = value if self.total is None else self.total + value
+        """Add one value to the running total, skipping a null.
+
+        A ``None`` is not added and is not counted, so it does not reach
+        ``avg``'s divisor either: a nullable member totals the rows that
+        have a number, and a column of nothing but nulls reads as the
+        empty accumulator.  Emptiness is the count rather than the total,
+        which is what makes one null row and two of them behave alike.
+
+        Both engines used to seed the total with whatever came first,
+        which meant a lone null built a report and a second null failed
+        it -- the same data, one row longer.  doc/expressions.md#calc
+        now states the rule and the reference is the side that changes.
+
+        Raises:
+            ExpressionError: The value cannot be added to the total.
+
+        """
+        if value is None:
+            return
+        if self.seen == 0:
+            self.total = value
+        else:
+            try:
+                self.total = self.total + value
+            except TypeError:
+                raise ExpressionError(
+                    f"cannot sum {type_name(self.total)} and {type_name(value)}"
+                ) from None
         self.seen += 1
 
     @property
     def value(self) -> Any:
         """Return the sum, or ``None`` when nothing was folded."""
-        return self.total
+        return None if self.seen == 0 else self.total
 
     def clear(self) -> None:
         """Forget the total."""
@@ -215,16 +247,25 @@ class Average(Sum):
 
     @property
     def value(self) -> Any:
-        """Return the mean, or ``None`` when nothing was folded.
+        """Return the mean, or ``None`` when there is nothing to divide.
 
         A decimal total divided by an int count is a decimal quantized
         to six places, because that is what ``/`` does; anything else
         is float division, for the same reason.
 
+        The divisor is the number of values folded, and a null was not
+        one of them, so the mean of a null and a ten is ten.
+
+        Raises:
+            ExpressionError: The total is not something to divide.
+
         """
-        if self.total is None:
+        if self.seen == 0:
             return None
-        return self.total / self.seen
+        try:
+            return self.total / self.seen
+        except TypeError:
+            raise ExpressionError(f"cannot average {type_name(self.total)}") from None
 
 
 class Extremum(Accumulator):
@@ -250,10 +291,27 @@ class Extremum(Accumulator):
         self.keep_larger = keep_larger
 
     def fold(self, value: Any) -> None:
-        """Keep the value if it is more extreme than what is held."""
+        """Keep the value if it is more extreme than what is held.
+
+        A null is skipped, as it is in a sum: the smallest of a null and
+        a ten is ten, and the smallest of nothing but nulls is ``None``.
+
+        Raises:
+            ExpressionError: The value does not compare with the one held.
+
+        """
+        if value is None:
+            return
         if not self.seen:
             self.held, self.seen = value, True
-        elif (value > self.held) if self.keep_larger else (value < self.held):
+            return
+        try:
+            further = (value > self.held) if self.keep_larger else (value < self.held)
+        except TypeError:
+            raise ExpressionError(
+                f"cannot compare {type_name(value)} with {type_name(self.held)}"
+            ) from None
+        if further:
             self.held = value
 
     @property
@@ -306,7 +364,13 @@ class Spread(Accumulator):
         self.root = root
 
     def fold(self, value: Any) -> None:
-        """Take one value into the running mean and deviation."""
+        """Take one value into the running mean and deviation.
+
+        A null is skipped, so the spread is of the values there were.
+
+        """
+        if value is None:
+            return
         number = as_float(value)
         self.seen += 1
         delta = number - self.mean
@@ -422,10 +486,18 @@ class Chain(Collecting):
     def fold(self, value: Any) -> None:
         """Add the elements of one sequence to the end.
 
+        A null contributes no elements and is skipped, which is the same
+        rule a sum follows and for the same reason: a nullable `list`
+        member would otherwise build a report over one record and fail
+        over two.  This is the one collecting accumulator that combines,
+        which is why it takes the combining rule.
+
         Raises:
             ExpressionError: The value is not a sequence.
 
         """
+        if value is None:
+            return
         if isinstance(value, str | bytes) or not hasattr(value, "__iter__"):
             raise ExpressionError(
                 f"chain wants a sequence to concatenate, got {type_name(value)}"

@@ -117,6 +117,22 @@ def test_an_optional_fraction_may_be_absent_or_present() -> None:
     assert parse_layout(layout, "2005-05-24T22:53:30.5Z", UTC)[1] == 500_000_000
 
 
+def test_a_seconds_token_takes_a_fraction_the_layout_never_mentions() -> None:
+    """Go's rule, and what lets plain RFC 3339 read `22:53:30.6Z`."""
+    moment, nanosecond = parse_layout(RFC3339, "2005-05-24T22:53:30.6Z", UTC)
+    assert (moment.second, nanosecond) == (30, 600_000_000)
+    assert parse_layout(RFC3339, "2005-05-24T22:53:30,6Z", UTC)[1] == 600_000_000
+    assert parse_layout(RFC3339, "2005-05-24T22:53:30Z", UTC)[1] == 0
+
+
+def test_a_layout_that_names_its_fraction_still_reads_it_itself() -> None:
+    """A fixed-width token stays a requirement rather than an option."""
+    layout = "15:04:05.000"
+    assert parse_layout(layout, "22:53:30.600", UTC)[1] == 600_000_000
+    with pytest.raises(ExpressionError, match="cannot parse"):
+        parse_layout(layout, "22:53:30", UTC)
+
+
 def test_text_that_is_not_the_layout_is_refused() -> None:
     with pytest.raises(ExpressionError, match="cannot parse"):
         parse_layout(RFC3339, "24 May 2005", UTC)

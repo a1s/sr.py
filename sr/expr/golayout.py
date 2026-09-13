@@ -484,6 +484,35 @@ def read_fraction(reader: Reader, token: str) -> int:
     return int(reader.text[digits_start : reader.position].ljust(9, "0"))
 
 
+def trailing_fraction(
+    reader: Reader, chunks: tuple[tuple[str, str], ...], position: int
+) -> int:
+    """Return the fraction that follows a seconds token the layout omits.
+
+    Go's rule, and the reason RFC 3339 reads ``22:53:30.6Z`` with a layout
+    whose seconds are followed straight by a zone: a fractional second in
+    the value is taken after a seconds token even when the layout does not
+    mention one.  A layout that *does* mention one is left alone here and
+    read by its own token, which is what lets a fixed-width ``.000`` stay
+    a requirement.
+
+    Args:
+        reader: The cursor, positioned just after the seconds.
+        chunks: The whole layout, to see what comes next.
+        position: Which chunk the seconds were.
+
+    """
+    following = chunks[position + 1] if position + 1 < len(chunks) else None
+    if following is not None and following[0] == "fraction":
+        return 0
+    rest = reader.text[reader.position :]
+    if len(rest) < 2 or rest[0] not in ".,":
+        return 0
+    if not (rest[1].isascii() and rest[1].isdigit()):
+        return 0
+    return read_fraction(reader, rest[0] + "9")
+
+
 def parse_layout(layout: str, text: str, location: tzinfo) -> tuple[datetime, int]:
     """Return the moment a layout reads out of some text.
 
@@ -507,7 +536,8 @@ def parse_layout(layout: str, text: str, location: tzinfo) -> tuple[datetime, in
     afternoon: bool | None = None
     twelve = False
     offset: int | None = None
-    for kind, token in split_layout(layout):
+    chunks = split_layout(layout)
+    for position, (kind, token) in enumerate(chunks):
         if kind == "literal":
             reader.literal(token)
         elif kind == "long-month":
@@ -544,10 +574,9 @@ def parse_layout(layout: str, text: str, location: tzinfo) -> tuple[datetime, in
             fields["minute"] = reader.digits(2, fixed=True)
         elif kind == "minute":
             fields["minute"] = reader.digits(2)
-        elif kind == "zero-second":
-            fields["second"] = reader.digits(2, fixed=True)
-        elif kind == "second":
-            fields["second"] = reader.digits(2)
+        elif kind in ("zero-second", "second"):
+            fields["second"] = reader.digits(2, fixed=kind == "zero-second")
+            nanosecond = trailing_fraction(reader, chunks, position)
         elif kind in ("pm-upper", "pm-lower"):
             afternoon = reader.name(("AM", "PM"), "AM or PM") == 1
         elif kind == "fraction":
