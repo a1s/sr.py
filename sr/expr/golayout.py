@@ -216,6 +216,36 @@ def offset_text(seconds: int, *, parts: int, colon: bool, iso: bool) -> str:
     return sign + separator.join(f"{field:02d}" for field in fields)
 
 
+def is_digit(text: str, index: int) -> bool:
+    """Say whether a position holds an ASCII digit.
+
+    Python's ``isdigit`` says yes to a dozen other scripts,
+    and a timestamp written in Devanagari is not one this engine
+    and the reference would read the same way.
+
+    Args:
+        text: The value being read.
+        index: The position to look at.
+
+    """
+    character = text[index]
+    return character.isascii() and character.isdigit()
+
+
+def nanoseconds(digits: str) -> int:
+    """Return the nanoseconds a run of fraction digits spells.
+
+    Go keeps the first nine digits and drops the rest -- truncating,
+    not rounding -- so a fraction of ``.999999999999`` is 999999999
+    nanoseconds and not a whole second.
+
+    Args:
+        digits: The digits after the point, however many there are.
+
+    """
+    return int(digits[:9].ljust(9, "0"))
+
+
 def fraction_text(token: str, nanosecond: int) -> str:
     """Return the fractional second a fraction token asks for.
 
@@ -374,11 +404,7 @@ class Reader:
         self.position += len(text)
 
     def digits(self, most: int, *, fixed: bool = False) -> int:
-        """Consume a run of digits and return what it spells.
-
-        ASCII digits only.  Python's ``isdigit`` says yes to a dozen other
-        scripts, and a timestamp written in Devanagari is not one this
-        engine and the reference would read the same way.
+        """Consume a run of digits, at most so many, and return its value.
 
         Args:
             most: The greatest number of digits to take.
@@ -387,8 +413,7 @@ class Reader:
         """
         start = self.position
         while self.position < len(self.text) and self.position - start < most:
-            character = self.text[self.position]
-            if not (character.isascii() and character.isdigit()):
+            if not is_digit(self.text, self.position):
                 break
             self.position += 1
         taken = self.position - start
@@ -396,6 +421,21 @@ class Reader:
             self.position = start
             raise self.fail(f"{most} digits" if fixed else "a number")
         return int(self.text[start : self.position])
+
+    def run(self) -> str:
+        """Consume a run of digits of any length and return the text.
+
+        Go takes "any number of digits, even more than asked for"
+        after a fraction's point, so this one has no bound and
+        the caller decides how many of them mean anything.
+
+        """
+        start = self.position
+        while self.position < len(self.text) and is_digit(self.text, self.position):
+            self.position += 1
+        if self.position == start:
+            raise self.fail("a number")
+        return self.text[start : self.position]
 
     def spaces(self) -> None:
         """Consume the padding an underscore token takes in place of a digit."""
@@ -458,12 +498,18 @@ def read_zone(reader: Reader, kind: str) -> int:
 def read_fraction(reader: Reader, token: str) -> int:
     """Return the nanoseconds a fractional-second token reads.
 
-    A trimming token (``.999``) matches nothing at all, which is
-    what makes RFC 3339's fraction optional.
+    The two kinds of token read a value differently, and Go's rule for
+    each is the one here.  A trimming token (``.999``) matches nothing
+    at all, which is what makes RFC 3339's fraction optional, and when
+    it does match it takes the whole run of digits however long it is --
+    only the first nine of them survive.  A fixed token (``.000``) wants
+    exactly as many digits as it spells, and leaves any further ones for
+    whatever the layout says comes next.
 
     Args:
         reader: The cursor to read from.
-        token: The token, whose digit says whether it is optional.
+        token: The token, whose digit says whether it is optional
+            and whose length gives a fixed one its width.
 
     """
     optional = token[1] != "0"
@@ -475,13 +521,16 @@ def read_fraction(reader: Reader, token: str) -> int:
     reader.position += 1
     try:
         digits_start = reader.position
-        reader.digits(9)
+        if optional:
+            reader.run()
+        else:
+            reader.digits(len(token) - 1, fixed=True)
     except ExpressionError:
         if not optional:
             raise
         reader.position = start
         return 0
-    return int(reader.text[digits_start : reader.position].ljust(9, "0"))
+    return nanoseconds(reader.text[digits_start : reader.position])
 
 
 def trailing_fraction(
@@ -506,9 +555,7 @@ def trailing_fraction(
     if following is not None and following[0] == "fraction":
         return 0
     rest = reader.text[reader.position :]
-    if len(rest) < 2 or rest[0] not in ".,":
-        return 0
-    if not (rest[1].isascii() and rest[1].isdigit()):
+    if len(rest) < 2 or rest[0] not in ".," or not is_digit(rest, 1):
         return 0
     return read_fraction(reader, rest[0] + "9")
 

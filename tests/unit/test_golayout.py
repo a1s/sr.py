@@ -133,6 +133,30 @@ def test_a_layout_that_names_its_fraction_still_reads_it_itself() -> None:
         parse_layout(layout, "22:53:30", UTC)
 
 
+def test_a_fixed_fraction_wants_exactly_the_digits_it_spells() -> None:
+    """Three is three: two are too few, and the fourth is not its own."""
+    layout = "15:04:05.000"
+    with pytest.raises(ExpressionError, match="3 digits"):
+        parse_layout(layout, "22:53:30.12", UTC)
+    with pytest.raises(ExpressionError, match="the end of the value"):
+        parse_layout(layout, "22:53:30.12345", UTC)
+
+
+def test_a_fraction_longer_than_nine_digits_keeps_the_first_nine() -> None:
+    """Go takes the whole run and truncates it; it does not stop at nine.
+
+    Both readers do it: the one a layout names, and the one
+    a seconds token takes without being asked.
+
+    """
+    layout = "2006-01-02T15:04:05.999999999Z07:00"
+    value = "2005-05-24T22:53:30.1234567891Z"
+    assert parse_layout(layout, value, UTC)[1] == 123_456_789
+    assert parse_layout(RFC3339, value, UTC)[1] == 123_456_789
+    twelve = "2005-05-24T22:53:30.999999999999Z"
+    assert parse_layout(RFC3339, twelve, UTC)[1] == 999_999_999
+
+
 def test_text_that_is_not_the_layout_is_refused() -> None:
     with pytest.raises(ExpressionError, match="cannot parse"):
         parse_layout(RFC3339, "24 May 2005", UTC)
