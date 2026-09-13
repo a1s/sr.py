@@ -1,0 +1,30 @@
+// probes/expressions/time-fields.kdl -- what `time.time` does
+// with the fields it is not given.
+//
+// A registered divergence, and only in its last row:
+// see `divergences.toml`, entry `time-before-year-one`.
+//
+// Every field defaults to **zero** rather than to its lowest legal value,
+// and out-of-range fields carry the way Go's `time.Date` carries them.
+// So `time.time(year=2005)` is month 0 and day 0 of 2005, which is the day
+// before the first of the month before January -- 30 November 2004.  That looks
+// like a bug until it is written down, which is why it is written down here.
+//
+// The first three rows agree between the engines.  The fourth names nothing
+// at all and therefore lands in the year -1: the reference builds it, and this
+// engine refuses, because it reads a time's fields through a type that starts
+// at year 1 and a date it can neither read nor render is not worth a calendar
+// of its own to reach.
+
+report name="expressions/time-fields" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=80 {
+      field expr="time.time(year=2005, month=5, day=24, hour=22, minute=53, second=30).format('2006-01-02T15:04:05Z07:00')" left=0 top=0 width=400 height=12 stretch=#true   // 2005-05-24T22:53:30Z in both
+      field expr="time.time(year=2005).format('2006-01-02')" left=0 top=20 width=400 height=12 stretch=#true   // 2004-11-30 in both: month 0, day 0
+      field expr="time.time(year=2005, month=3, day=0).format('01-02')" left=0 top=40 width=400 height=12 stretch=#true   // 02-28 in both: the day before 1 March
+      field expr="str(time.time())" left=0 top=60 width=400 height=12 stretch=#true   // reference: -0001-11-30 00:00:00 +0000 UTC.  here: refused
+    }
+  }
+}

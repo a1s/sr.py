@@ -109,14 +109,19 @@ the reference gave, and names the section of `doc/` that answer became.
 | `expressions/string-methods` | the string type's iteration methods |
 | `expressions/round` | the `round` builtin |
 | `expressions/decimal-int` | comparing a decimal with an int |
+| `expressions/decimal-abs` | the one builtin that will not take a decimal |
+| `expressions/time-fields` | what `time.time` does with the fields it is not given |
 | `values/dimensions` | what a dimension string means |
 | `values/colors` | what each colour spelling resolves to |
 | `values/hex-float` | a number the host's parser takes and the grammar does not |
 | `values/non-finite` | a dimension KDL can write and points cannot hold |
 
-Six are [registered divergences](../divergences.toml) and are *expected*
-to differ: the five in the `expressions/` and `data/` groups, where the
-reference refuses two outright -- which the harness treats as a difference
+Eight are [registered divergences](../divergences.toml) and are *expected*
+to differ: the six in the `expressions/` and `data/` groups, where the
+reference refuses three outright -- which the harness treats as a difference
 like any other -- and `values/hex-float` and `values/non-finite`, which
-go the other way, built by the reference and refused here. The remaining
-twenty must agree byte for byte once this engine builds them.
+go the other way, built by the reference and refused here.
+`expressions/time-fields` is the odd one of the eight: three of its four
+rows agree and the fourth is a date before year 1, which this engine
+declines to build. The remaining twenty must agree byte for byte once
+this engine builds them.

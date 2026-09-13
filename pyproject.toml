@@ -27,6 +27,12 @@ dependencies = [
     "cbor2",      # the .srp.cbor encoding
     "pillow",     # image decode, for the renderer only
     "qrcode",     # QR matrices; provisional
+    # The IANA zone database, which `zoneinfo` reads and Windows
+    # does not ship.  A dependency rather than a host lookup on purpose:
+    # a template that names Europe/Riga must mean the same thing on every
+    # machine that builds it, and the version then comes from a pinned wheel
+    # instead of from whatever the operating system was last updated to.
+    "tzdata",
 ]
 
 [project.urls]

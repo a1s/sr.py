@@ -1,0 +1,28 @@
+// probes/expressions/decimal-abs.kdl -- the one builtin that will not
+// take a decimal.
+//
+// A registered divergence: allowed here, refused by the reference,
+// which answers "got decimal, want int or float" and declines to build
+// the template at all.  See `divergences.toml`, entry `abs-takes-a-decimal`.
+//
+// `decimal` is the engine's own type in both implementations, and the rest
+// of the family already takes one: the second and third rows are `min` and
+// `float`, which the reference is perfectly happy with.  `abs` alone is not,
+// which makes it an oversight rather than a rule -- doc/expressions.md now
+// lists `abs(d)` among the decimal helpers.
+//
+// The `math` module is the other half of the boundary and does not move:
+// its functions answer with floats and refuse a decimal in both engines,
+// which is the decimal rules doing their job rather than failing to.
+
+report name="expressions/decimal-abs" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=60 {
+      field expr="str(abs(decimal('-1.5')))" left=0 top=0 width=400 height=12 stretch=#true    // 1.5 here; the reference refuses the template
+      field expr="str(min(decimal('2'), decimal('1')))" left=0 top=20 width=400 height=12 stretch=#true  // 1 in both
+      field expr="str(float(decimal('1.5')))" left=0 top=40 width=400 height=12 stretch=#true  // 1.5 in both
+    }
+  }
+}

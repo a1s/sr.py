@@ -6,8 +6,10 @@
 //
 // One argument, rounding half away from zero, so that the builtin, `quantize`
 // and coordinate rounding are one rule rather than three.  `math.round` already
-// exists and does the same thing, so this is a spelling rather than a capability;
-// the last field is there to show the two agree.
+// rounds the same way, so this is a spelling rather than a capability -- but it
+// answers with a float where this one answers with an int, which the last field
+// is here to show.  `math` is the host Starlark's own module and what its
+// functions return is not this engine's to change; a predeclared name is.
 
 report name="expressions/round" {
   font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
@@ -17,7 +19,7 @@ report name="expressions/round" {
       field expr="str(round(1.5))" left=0 top=0 width=400 height=12 stretch=#true        // 2
       field expr="str(round(2.5))" left=0 top=20 width=400 height=12 stretch=#true       // 3, not 2: half away from zero
       field expr="str(round(-2.5))" left=0 top=40 width=400 height=12 stretch=#true      // -3, symmetrically
-      field expr="str(math.round(2.5))" left=0 top=60 width=400 height=12 stretch=#true  // the same answer the long spelling gives
+      field expr="str(math.round(2.5))" left=0 top=60 width=400 height=12 stretch=#true  // 3.0: the same rounding, spelled as a float
     }
   }
 }

@@ -6,7 +6,7 @@ and doc/expressions.md adds the record index for an error raised while
 a band is being built.  Those four parts are what a :class:`Location` holds,
 and assembling them is all this module does.
 
-Two shapes of failure, because they behave differently:
+Three shapes of failure, because they behave differently:
 
 * A **bad value** is local.  ``units`` and ``color`` raise :class:`BadValue`
   with the message and nothing else, since a parser that knew about node
@@ -16,6 +16,12 @@ Two shapes of failure, because they behave differently:
   and reports every diagnostic it found, so one run of the tool fixes
   several mistakes; :class:`Diagnostics` accumulates them and
   :class:`TemplateError` carries them out.
+* A **failed expression** is local too, and carries one thing a bad value
+  does not: an offset into the expression's own text.  doc/expressions.md
+  asks a compile error to name "the position within the expression",
+  which is a coordinate in a string rather than in the file, so
+  :class:`ExpressionError` holds it and the rest of the location
+  is attached by whoever had the node.
 
 The section a band belongs to is not a separate field.  A node path
 ends up naming it (``report > layout > detail > field`` says `detail`),
@@ -34,6 +40,7 @@ __all__ = [
     "BuildWarning",
     "Diagnostic",
     "Diagnostics",
+    "ExpressionError",
     "Location",
     "NodePath",
     "SrError",
@@ -59,6 +66,40 @@ class BadValue(SrError):
     that knows the node needs only to prepend one.
 
     """
+
+
+class ExpressionError(SrError):
+    """An expression that would not compile, or would not evaluate.
+
+    One class for both ends, because the difference between them is
+    what the caller knows rather than what went wrong: a compile error
+    happens at template load and a runtime error while a band is being
+    built, and each attaches the parts of a :class:`Location` it has.
+    What is held here is the part neither of them can supply -- where
+    in the expression's own text the problem is.
+
+    Attributes:
+        message: What went wrong, without any location.
+        offset: The 0-based character offset into the expression,
+            for a problem the parser could point at.
+
+    """
+
+    def __init__(self, message: str, *, offset: int | None = None) -> None:
+        """Carry the message, and the offset where the caller knew one.
+
+        Args:
+            message: What went wrong, without any location.
+            offset: The 0-based character offset into the expression.
+
+        """
+        self.message = message
+        self.offset = offset
+        super().__init__(message)
+
+    def where(self) -> str:
+        """Return the offset as a diagnostic spells it, or an empty string."""
+        return "" if self.offset is None else f"at offset {self.offset}"
 
 
 @dataclass(frozen=True)
