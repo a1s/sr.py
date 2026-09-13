@@ -190,6 +190,13 @@ for the whole system rather than three. It is a spelling of `math.round` rather
 than a new capability, and there is no digits argument because `quantize`
 already covers that ground for the type where it matters.
 
+It answers with an **int**, where `math.round` answers with a **float**:
+`round(2.5)` is `3` and `math.round(2.5)` is `3.0`. That is the only way
+the two spellings differ. `math` is the host Starlark's own module and what
+its functions return is not this engine's to change; `round` is predeclared
+here and is free to be the convenient shape. A decimal keeps its exactness on
+the way through: `round(decimal("2.5"))` is `3` without becoming a float first.
+
 List and dict comprehensions, conditional expressions (`a if c else b`),
 and slicing are all available.
 
@@ -229,6 +236,14 @@ nanosecond=, location=)`, `time.parse_time(s, format=, location=)`,
 
 `time.now` is **not** available; see [Determinism](#determinism).
 `time.is_valid_timezone(name)` is.
+
+Every constructor that is not given a location produces a time in **UTC**,
+`time.from_timestamp` included. A timestamp read in the host's local zone
+would give a report whose text depended on the machine that built it, which
+is the thing [Determinism](#determinism) rules out. `time.time` takes each
+calendar field as **zero** where it is not given, and carries an
+out-of-range one, so `time.time(year=2005)` is 30 November 2004: month 0
+is the month before January and day 0 the day before the first of it.
 
 A time value has `.year .month .day .hour .minute .second .nanosecond .unix
 .unix_nano`, plus `.in_location(name)` and `.format(layout)`.
@@ -334,10 +349,20 @@ Helpers:
 
 ```
 quantize(d, places)         # round to `places` fractional digits, half away from zero
+abs(d)                      # magnitude, exact
 float(d)                    # explicit, lossy
 str(d)                      # plain decimal text, no exponent
 int(d)                      # truncates toward zero
 ```
+
+The `math` module is **not** among these. Its functions take an int or a float
+and refuse a decimal, because a conversion the language makes silently is the
+one thing the decimal rules exist to prevent. Write `math.floor(float(d))`, or
+`quantize(d, 0)` where the answer should stay exact.
+
+What they answer with is the host module's business rather than this
+specification's, and it is not uniform: `ceil` and `floor` give an **int**,
+and `round`, `sqrt`, `pow` and the rest give a **float**.
 
 `calc="sum"`, `"avg"`, `"min"`, `"max"` over decimals produce decimals;
 `avg` quantizes like `/`. `"std"` and `"var"` produce floats.
@@ -401,12 +426,29 @@ the count must match exactly. The default is `"%s"`.
 Supported conversions: `%s` `%q` `%d` `%i` `%o` `%x` `%X` `%b` `%e` `%E` `%f` `%g`
 `%G` `%c` `%%`, each accepting the flags `-` `+` `#` `0` `' '`, a width, and a
 precision. `%q` is a quoted string; `%i` is an alias for `%d`. There is no `%r`.
+A literal percent sign is `%%`, in both formatters: every `%` begins a conversion,
+so an unknown letter after one is an error and a `%` that ends the string is a
+truncated conversion rather than a percent sign.
 
 `%d` and the float conversions accept `decimal` values and format them exactly:
 `%.2f` on a decimal rounds half away from zero without going through a float.
+An **integer** conversion of a decimal rounds it the same way — `%d` of
+`decimal("1.9")` is `2` — while an integer conversion of a **float** truncates
+toward zero, so `%d` of `1.9` is `1`. The two differ because a decimal is exact
+and there is a right answer to round to; and `int(d)` is a conversion rather
+than a rendering.
 
 `%s` on a float uses the shortest representation that round-trips, so `1.0/3`
 renders as `0.3333333333333333`. Give a precision.
+
+Shortest is a count of digits and not a shape, so the shape is fixed here too:
+a float is written in **exponent notation when its decimal exponent is below −4
+or at least 6**, and positionally otherwise, with a trailing `.0` on a
+positional form that would otherwise read as an integer. `123456.0` stays
+itself, `1234567.0` is `1.234567e+06`, and `0.0001` stays positional while
+`0.00001` is `1e-05`. `%g` with no precision is the same rule; `%e` and `%f`
+are always their own shape. Two implementations that each write the shortest
+digits can still disagree about where to turn over, and this is where.
 
 ### The `format` builtin
 
@@ -466,6 +508,23 @@ An empty accumulator reads as `0` for `count`; `None` for `first`, `last`, `sum`
 otherwise. `sum` of nothing is `None` rather than `0`, so "no rows" stays
 distinguishable from "rows summing to zero" — write `total_amount or 0`
 where the distinction does not matter.
+
+A **`None` folds into nothing.** The accumulators that *combine* values --
+`sum`, `avg`, `min`, `max`, `std`, `var` and `chain` -- skip one, and a skipped
+value counts toward nothing: not `avg`'s divisor, and not the *n* of `std` and
+`var`. The ones that *collect* values -- `list`, `set`, `first`, `last` and
+`count` -- keep it, because there a null is something the data had rather than
+something to add.
+
+So a `nullable` member totals the rows that have a number, a column of nothing
+but nulls reads as the empty accumulator above, and one null row behaves the
+same way as two of them. That last is the point: an accumulator that carried
+the first null and failed on the second would build a report over one record
+and refuse the same data one record longer.
+
+`None` is the only value this holds for. A zero, an empty string and an empty
+list are values, and the paragraph above exists to keep a total of zero
+distinguishable from no total at all.
 
 The guard is not an edge case. A page header and footer are
 [measured when the frame begins](layout.md#headerfooter-reservation),

@@ -1,0 +1,45 @@
+// probes/expressions/null-folds.kdl -- what a null does to an accumulator.
+//
+// A registered divergence: the reference refuses this template rather than
+// building it, with `variable "total": cannot sum NoneType and int`.
+// See `divergences.toml`, entry `null-folds-are-skipped`.
+//
+// The data is one null row and one row of ten.  Both engines used to seed the
+// accumulator with whatever came first, so the answer depended on the order --
+// and worse, one null row built a report while two of them failed it, which is
+// the same data one record longer.  doc/expressions.md#calc now says a `None`
+// folds into nothing: the accumulators that combine values skip it, the ones
+// that collect values keep it, and a skipped value counts toward neither
+// `avg`'s divisor nor the sample size of `std` and `var`.
+//
+// So the summary here reads a total of 10, a mean of 10, a smallest of 10,
+// a count of 2 -- the null is a record, and `count` counts records -- and
+// a list of [None, 10], because a list is collecting what the data had.
+//
+// `std` and `var` are absent: one non-null value is not a sample, and they
+// would print `None` for a reason that has nothing to do with the null.
+
+report name="expressions/null-folds" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  records {
+    member "amount" type="int" nullable=#true
+  }
+  variable "total"    expr="amount" calc="sum"   reset="report"
+  variable "mean"     expr="amount" calc="avg"   reset="report"
+  variable "smallest" expr="amount" calc="min"   reset="report"
+  variable "counted"  expr="amount" calc="count" reset="report"
+  variable "every"    expr="amount" calc="list"  reset="report"
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=14 {
+      field expr="str(amount)" left=0 top=0 width=400 height=12 stretch=#true
+    }
+    summary height=80 {
+      field expr="'total ' + str(total)" left=0 top=0 width=400 height=12 stretch=#true          // 10
+      field expr="'mean ' + str(mean)" left=0 top=14 width=400 height=12 stretch=#true           // 10.0
+      field expr="'smallest ' + str(smallest)" left=0 top=28 width=400 height=12 stretch=#true   // 10
+      field expr="'counted ' + str(counted)" left=0 top=42 width=400 height=12 stretch=#true     // 2
+      field expr="'every ' + str(every)" left=0 top=56 width=400 height=12 stretch=#true         // [None, 10]
+    }
+  }
+}

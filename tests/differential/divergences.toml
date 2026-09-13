@@ -12,11 +12,13 @@
 # `affects` matches case identifiers with shell globs -- `example/sakila`,
 # `probe/expressions/strings`, and so on.  The first matching entry wins.
 #
-# The first four are the dialect decisions M1 wrote into doc/,
-# each of which changes the Go engine.  Every one of them now has a probe,
-# so the entries record a measured difference rather than an intended one.
-# The fifth is a defect in the reference, and the sixth is a grammar that
-# had been left to the host.
+# The first four are the dialect decisions M1 wrote into doc/, each of
+# which changes the Go engine.  Every one of them has a probe, so the
+# entries record a measured difference rather than an intended one.
+# The rest came from building against the oracle: two are defects in
+# the reference, one is a grammar that had been left to the host, one
+# is a clause doc/ was missing, and one -- `time-before-year-one` --
+# is a difference this engine chose and will keep.
 #
 # The milestone numbers:
 #   M0: Scaffold and oracle
@@ -145,3 +147,71 @@ to, which is the only place all three routes meet.\
 ticket = "M2: filed against the Go engine; template.md#dimension already states the rule"
 since = "2026-09-12"
 affects = ["probe/values/non-finite"]
+
+[[divergence]]
+id = "time-before-year-one"
+summary = "a time before year 1 is refused here and built by the reference"
+reason = """
+`time.time()` names no field, every field defaults to zero, and Go's \
+`time.Date` carries the zeros back to 30 November of the year -1.  This \
+engine holds a time as an instant and reads its fields through a type that \
+starts at year 1, so it refuses the construction instead.  What differs is \
+only what no report can use: a date before year 1 has no field access and no \
+layout that renders it.  Every call naming a year, a month and a day agrees \
+exactly, carrying included -- `time.time(year=2005)` is 30 November 2004 in \
+both engines.\
+"""
+ticket = "M3: accepted, and not worth a calendar of its own to close"
+since = "2026-09-12"
+affects = ["probe/expressions/time-fields*"]
+
+[[divergence]]
+id = "abs-takes-a-decimal"
+summary = "abs() takes a decimal here; the reference wants an int or a float"
+reason = """
+`decimal` is the engine's own type in both implementations, and `min`, `max`, \
+`sorted`, `float`, `int` and `str` all take one in the reference; `abs` alone \
+answers "got decimal, want int or float" and refuses the template.  \
+doc/expressions.md now lists `abs(d)` among the decimal helpers, so the \
+reference is the side that changes.  Nothing about `math` moves: its \
+functions answer with floats and go on refusing a decimal in both engines.\
+"""
+ticket = "M3: decimal helpers, expressions.md#the-decimal-type"
+since = "2026-09-12"
+affects = ["probe/expressions/decimal-abs*"]
+
+[[divergence]]
+id = "decimal-exponent-is-exact"
+summary = "%e and %g keep a decimal's own digits here; the reference sends them through a float first"
+reason = """
+doc/expressions.md says the float conversions "accept `decimal` values and \
+format them exactly", and `%f` does so in both engines -- thirty-two digits \
+in and thirty-two out.  `%e` and `%g` go through binary64 in the reference, \
+which shows only when the precision asks for more digits than a float holds: \
+at the default of six the two agree, and `%.30e` of a thirty-two digit value \
+gives the decimal's digits here and the float's there.  Exactness is what \
+doc/ already says, so the reference is the side that changes.\
+"""
+ticket = "M3: exact decimal formatting, expressions.md#formatting"
+since = "2026-09-13"
+affects = ["probe/expressions/decimal-precision*"]
+
+[[divergence]]
+id = "null-folds-are-skipped"
+summary = "an accumulator that combines values skips a null here; the reference refuses the build"
+reason = """
+Neither engine said what folding a `None` means, and both took the same \
+answer from the same implementation: seed the accumulator with whatever \
+comes first, then add.  That makes the answer depend on the order of the \
+data, and -- worse -- it builds a report over one null row and refuses the \
+same data one record longer, which is not a rule anyone would write down.  \
+doc/expressions.md#calc now states one: a `None` folds into nothing.  The \
+accumulators that combine values skip it and it counts toward neither \
+`avg`'s divisor nor the sample size of `std` and `var`; the ones that \
+collect values keep it.  That is SQL's rule for its aggregates, and it is \
+the only one under which a nullable member is usable in a variable without \
+a guard.  The reference is the side that changes.\
+"""
+ticket = "M3: null folds, expressions.md#calc"
+since = "2026-09-13"
+affects = ["probe/expressions/null-folds*"]
