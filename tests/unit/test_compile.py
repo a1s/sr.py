@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from sr.errors import ExpressionError
-from sr.expr.compile import compile_expression, evaluate
+from sr.expr.compile import RUNTIME, compile_expression, evaluate
 from sr.expr.values import Decimal, Namespace, Record, Time
 
 # Every predefined name of doc/expressions.md#predefined-variables,
@@ -97,11 +97,27 @@ def test_the_globals_need_no_declaring() -> None:
         ("(x for x in y)", "no generator expressions"),
         ("1j", "no complex numbers"),
         ("_sr_getattr(1, 'a')", "may not begin"),
+        ("{**other}", r"no \*\* in a dict literal"),
     ],
 )
 def test_a_construct_the_dialect_lacks_is_refused(source: str, complaint: str) -> None:
     with pytest.raises(ExpressionError, match=complaint):
         compile_expression(source)
+
+
+def test_the_namespace_an_expression_runs_against_is_not_reachable() -> None:
+    """`__builtins__` is Python's name in the runtime, and undefined here.
+
+    It has to be in the dict the compiled code runs against, because
+    Python puts one there otherwise.  Were it also a name an expression
+    could read, the dict resolvers would hand a template `setdefault`
+    on the one namespace every expression in the process shares.
+    """
+    with pytest.raises(ExpressionError, match="undefined: __builtins__"):
+        compile_expression("__builtins__", known=set())
+    with pytest.raises(ExpressionError, match="undefined: __builtins__"):
+        evaluate("__builtins__.setdefault('leaked', 1)")
+    assert RUNTIME["__builtins__"] == {}
 
 
 def test_a_refusal_says_where_in_the_expression_it_is() -> None:

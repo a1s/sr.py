@@ -426,6 +426,9 @@ the count must match exactly. The default is `"%s"`.
 Supported conversions: `%s` `%q` `%d` `%i` `%o` `%x` `%X` `%b` `%e` `%E` `%f` `%g`
 `%G` `%c` `%%`, each accepting the flags `-` `+` `#` `0` `' '`, a width, and a
 precision. `%q` is a quoted string; `%i` is an alias for `%d`. There is no `%r`.
+A literal percent sign is `%%`, in both formatters: every `%` begins a conversion,
+so an unknown letter after one is an error and a `%` that ends the string is a
+truncated conversion rather than a percent sign.
 
 `%d` and the float conversions accept `decimal` values and format them exactly:
 `%.2f` on a decimal rounds half away from zero without going through a float.

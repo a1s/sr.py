@@ -51,7 +51,7 @@ FUNCTION_NAME: Final = "_sr_expr"
 
 # What the compiled code runs against: the language's names, the four
 # resolvers, and an empty `__builtins__` where Python's would be.  One
-# dict shared by every expression, because no expression can write to it.
+# dict shared by every expression.
 RUNTIME: Final[dict[str, Any]] = {
     "__builtins__": {},
     **GLOBALS,
@@ -60,6 +60,15 @@ RUNTIME: Final[dict[str, Any]] = {
     "_sr_getslice": getslice_,
     "_sr_mod": mod_,
 }
+
+# The names an expression may read without them being in scope, which is
+# the runtime minus the one name in it that is Python's rather than ours.
+# `__builtins__` is a dict like any other to the resolvers, so a name
+# test that let it through would hand a template `setdefault` on the
+# namespace every expression in the process shares.  Left out, it is a
+# free name like any other, and every caller has the same answer for a
+# free name nothing defines: undefined.
+DEFINED: Final[frozenset[str]] = frozenset(RUNTIME) - {"__builtins__"}
 
 # Node kinds the dialect does not have, and what to say about each.
 # The message names the Starlark spelling wherever there is one, because
@@ -171,6 +180,18 @@ class Rejector(ast.NodeVisitor):
         message = REFUSED_OPERATORS.get(type(node.ops[0]))
         if message is not None:
             raise self.refuse(node, message)
+        self.generic_visit(node)
+
+    def visit_Dict(self, node: ast.Dict) -> None:
+        """Refuse the dict unpacking a ``None`` key stands for.
+
+        ``{**a}`` is Python's spelling and Starlark has no equivalent
+        inside a literal, which is why it is refused at a call.
+        The union operator does the job and both engines have it.
+
+        """
+        if any(key is None for key in node.keys):
+            raise self.refuse(node, "there is no ** in a dict literal; write a | b")
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> None:
@@ -401,7 +422,7 @@ def compile_expression(
     Rejector(source).visit(tree)
     finder = Names()
     finder.visit(tree)
-    free = tuple(name for name in finder.found if name not in RUNTIME)
+    free = tuple(name for name in finder.found if name not in DEFINED)
     if known is not None:
         unknown = [name for name in free if name not in known]
         if unknown:

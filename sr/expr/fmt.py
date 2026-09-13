@@ -46,9 +46,10 @@ from sr.expr.values import (
 
 __all__ = ["apply_format", "format_value", "interpolate"]
 
-# The engine's formatter: flags, then width, then precision,
-# then one letter.  `%` itself is matched as a conversion so that
-# a stray one is a diagnostic rather than a silent literal.
+# The engine's formatter: flags, then width, then precision, then one
+# letter.  The letter is any character rather than a known verb, so that
+# `%y` is an unknown conversion rather than a literal; `%` itself is one
+# of the verbs, which is what makes `%%` a percent sign.
 CONVERSION: Final = re.compile(r"%([-+#0 ]*)([0-9]*)(?:\.([0-9]*))?(.)")
 
 # Which conversions take an integer, which a real number, and which the
@@ -405,6 +406,27 @@ def convert(value: Any, spec: Spec) -> str:
     raise ExpressionError(f"unknown conversion %{spec.verb}")
 
 
+def check_tail(spec: str, tail: str) -> None:
+    """Refuse a ``%`` that ends a format string with nothing to convert.
+
+    Every other ``%`` is matched as a conversion, right or wrong,
+    because the pattern takes whichever character follows it.  One at
+    the very end has no character following it and matches nothing at all,
+    so this is where a truncated conversion is caught -- in both formatters,
+    and after both of them have written everything they could.
+
+    Args:
+        spec: The whole format string, for the diagnostic.
+        tail: What is left of it after the last conversion.
+
+    Raises:
+        ExpressionError: The format ends in a ``%`` on its own.
+
+    """
+    if tail.endswith("%"):
+        raise ExpressionError(f"truncated conversion at the end of format {spec!r}")
+
+
 def format_value(spec: str, *args: Any) -> str:
     """Return a format string with its conversions filled in.
 
@@ -440,6 +462,7 @@ def format_value(spec: str, *args: Any) -> str:
             )
         written.append(convert(args[taken], conversion))
         taken += 1
+    check_tail(spec, spec[position:])
     written.append(spec[position:])
     if taken != len(args):
         raise ExpressionError(
@@ -517,6 +540,7 @@ def interpolate(spec: str, operand: Any) -> str:
             )
         written.append(convert(values[taken], Spec("", None, None, verb)))
         taken += 1
+    check_tail(spec, spec[position:])
     written.append(spec[position:])
     if mapping is None and taken != len(values):
         raise ExpressionError(

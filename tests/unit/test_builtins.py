@@ -124,10 +124,28 @@ def test_splitlines_splits_on_newline_and_nothing_else() -> None:
 
 
 def test_format_takes_braces_and_refuses_a_format_spec() -> None:
-    assert getattr_("{} and {1}", "format")("a", "b") == "a and b"
+    assert getattr_("{} and {}", "format")("a", "b") == "a and b"
     assert getattr_("{x!r}", "format")(x="a") == '"a"'
     with pytest.raises(ExpressionError, match="format spec"):
         getattr_("{:>10}", "format")("a")
+
+
+def test_a_placeholder_is_numbered_or_automatic_and_not_both() -> None:
+    """A keyword is neither, and goes with either."""
+    assert getattr_("{0} and {1}", "format")("a", "b") == "a and b"
+    assert getattr_("{x} and {}", "format")("a", x="b") == "b and a"
+    with pytest.raises(ExpressionError, match="switch from an automatic"):
+        getattr_("{} and {1}", "format")("a", "b")
+    with pytest.raises(ExpressionError, match="switch from a numbered"):
+        getattr_("{1} and {}", "format")("a", "b")
+
+
+def test_a_field_index_is_written_in_ASCII() -> None:
+    """An Arabic-Indic one is a keyword name, which is what Go reads."""
+    arabic = "{" + chr(0x661) + "}"
+    assert getattr_("{0}", "format")("a", "b") == "a"
+    with pytest.raises(ExpressionError, match="wants a keyword"):
+        getattr_(arabic, "format")("a", "b")
 
 
 def test_join_refuses_a_value_that_is_not_a_string() -> None:

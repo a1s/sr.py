@@ -151,6 +151,17 @@ def test_an_unknown_conversion_is_refused() -> None:
         format_value("%z", 1)
 
 
+def test_a_format_that_ends_in_a_percent_is_truncated_rather_than_literal() -> None:
+    """The one `%` no conversion pattern can match, in both formatters."""
+    for spec in ("100%", "%", "%%%", "%d%"):
+        with pytest.raises(ExpressionError, match="truncated conversion"):
+            format_value(spec, *([5] if "d" in spec else []))
+        with pytest.raises(ExpressionError, match="truncated conversion"):
+            interpolate(spec, (5,) if "d" in spec else ())
+    assert format_value("100%%") == "100%"
+    assert format_value("%d%%", 5) == "5%"
+
+
 def test_a_conversion_refuses_a_value_it_cannot_write() -> None:
     with pytest.raises(ExpressionError, match="%d wants a number"):
         format_value("%d", "a")

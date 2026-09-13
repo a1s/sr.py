@@ -168,11 +168,13 @@ def string_format(template: str, *args: Any, **kwargs: Any) -> str:
 
     Raises:
         ExpressionError: A placeholder is malformed, names a format spec,
-            or has no value to fill it.
+            mixes automatic numbering with manual indices, or has no value
+            to fill it.
 
     """
     written: list[str] = []
     automatic = 0
+    manual = False
     index = 0
     while index < len(template):
         character = template[index]
@@ -198,9 +200,20 @@ def string_format(template: str, *args: Any, **kwargs: Any) -> str:
         if conversion not in ("", "r", "s"):
             raise ExpressionError(f"unknown conversion !{conversion}")
         if not name:
+            if manual:
+                raise ExpressionError(
+                    f"format {template!r} cannot switch from a numbered "
+                    "placeholder back to an automatic one"
+                )
             value = positional(args, automatic, template)
             automatic += 1
-        elif name.isdigit():
+        elif name.isascii() and name.isdigit():
+            if automatic:
+                raise ExpressionError(
+                    f"format {template!r} cannot switch from an automatic "
+                    "placeholder to a numbered one"
+                )
+            manual = True
             value = positional(args, int(name), template)
         elif name in kwargs:
             value = kwargs[name]
