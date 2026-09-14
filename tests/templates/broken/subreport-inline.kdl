@@ -1,0 +1,21 @@
+// broken/subreport-inline.kdl -- an inline subreport asking for what it does not own.
+//
+// expect: it cannot restart their numbering
+// expect: so its layout defines no header
+// expect: cannot swap with a page footer it does not own
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    embedded "one" {
+      header height=5 { field text="h" }
+      summary swapfooter=#true height=5 { field text="s" }
+      detail height=10 { field text="y" }
+    }
+    detail height=10 {
+      field text="x"
+      subreport embedded="one" seq=1 data="[]" inline=#true ownpageno=#true
+    }
+  }
+}

@@ -1,0 +1,14 @@
+// valid/collapsing-band.kdl -- a band that declares no height and can have none.
+//
+// warn: it collapses to nothing
+
+report name="probe" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail {
+      rectangle
+      field text="x" top=2
+    }
+  }
+}

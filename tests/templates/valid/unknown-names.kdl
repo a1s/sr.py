@@ -1,0 +1,21 @@
+// valid/unknown-names.kdl -- a node and a property that belong nowhere.
+//
+// doc/template.md#unknown-names: neither refuses the template.
+// Each is warned about and then ignored, which is what lets
+// a template written for another implementation still load here.
+//
+// warn: unknown property `wobble`
+// warn: unknown node `sprocket`
+
+report name="probe" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=10 wobble=#true {
+      field text="x"
+      sprocket teeth=9 {
+        cog ratio=2
+      }
+    }
+  }
+}

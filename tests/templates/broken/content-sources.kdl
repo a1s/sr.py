@@ -1,0 +1,15 @@
+// broken/content-sources.kdl -- a field and a barcode taking their content from the wrong count.
+//
+// expect: a field without evaltime takes exactly one of expr, text or data; this one has 2
+// expect: a barcode without evaltime takes exactly one of expr, text or data; this one has 0
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=20 {
+      field expr="1" text="x"
+      barcode type="Code128"
+    }
+  }
+}

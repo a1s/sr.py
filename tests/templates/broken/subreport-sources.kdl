@@ -1,0 +1,17 @@
+// broken/subreport-sources.kdl -- a subreport naming both layouts, or neither.
+//
+// expect: a subreport names exactly one of template or embedded
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    embedded "one" {
+      detail height=10 { field text="y" }
+    }
+    detail height=10 {
+      field text="x"
+      subreport seq=1 data="[]"
+    }
+  }
+}

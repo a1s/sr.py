@@ -1,0 +1,15 @@
+// broken/three-of-three.kdl -- an axis given all three of its values.
+//
+// expect: left, right and width are one too many
+// expect: top, bottom and height are one too many
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=20 {
+      field text="x" left=1 right=1 width=10
+      field text="y" top=1 bottom=1 height=10
+    }
+  }
+}

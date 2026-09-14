@@ -1,0 +1,7 @@
+// broken/root-not-report.kdl -- a document whose root node is not a report.
+//
+// expect: a template's root node is a single `report`
+
+layout pagesize="A4" {
+  detail height=10 { field text="x" }
+}

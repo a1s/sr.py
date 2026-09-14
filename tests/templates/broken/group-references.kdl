@@ -1,0 +1,16 @@
+// broken/group-references.kdl -- itergrp and resetgrp against the groups that exist.
+//
+// expect: no group named 'nosuch'
+// expect: iter="group" names the group with a itergrp
+
+report name="probe" {
+  variable "a" expr="1" calc="sum" reset="group" resetgrp="nosuch"
+  variable "b" expr="1" calc="sum" iter="group"
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body"
+    group "one" expr="1" {
+      detail height=10 { field text="x" }
+    }
+  }
+}

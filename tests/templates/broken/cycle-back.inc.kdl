@@ -1,0 +1,16 @@
+// broken/cycle-back.inc.kdl -- the far side of `cycle`.
+//
+// Not a case of its own: it is valid, and what makes the pair invalid is
+// that each names the other.  The `.inc.kdl` suffix keeps the corpus
+// driver from loading it on its own.
+
+report name="back" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=10 {
+      field text="y"
+      subreport template="cycle.kdl" seq=1 data="[]"
+    }
+  }
+}

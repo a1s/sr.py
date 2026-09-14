@@ -1,0 +1,10 @@
+// broken/neither-group-nor-detail.kdl -- a level holding neither a group nor a detail.
+//
+// expect: holds exactly one group or one detail
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    title height=10 { field text="x" }
+  }
+}

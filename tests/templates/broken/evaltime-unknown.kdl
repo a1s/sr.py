@@ -1,0 +1,13 @@
+// broken/evaltime-unknown.kdl -- an evaltime that names no scope.
+//
+// expect: 'nosuch' is not a scope
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=20 {
+      field expr="FINAL.PAGE_NUMBER" evaltime="nosuch" width=50
+    }
+  }
+}

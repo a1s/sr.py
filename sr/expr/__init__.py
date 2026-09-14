@@ -20,6 +20,7 @@ record fields -- is the caller's business.
 
 from __future__ import annotations
 
+from sr.expr.builtins import GLOBALS, GROUP_SUFFIXES, PREDEFINED
 from sr.expr.calc import Accumulator, make
 from sr.expr.compile import Expression, compile_expression, evaluate
 from sr.expr.fmt import apply_format, format_value, interpolate
@@ -37,6 +38,9 @@ from sr.expr.values import (
 )
 
 __all__ = [
+    "GLOBALS",
+    "GROUP_SUFFIXES",
+    "PREDEFINED",
     "Accumulator",
     "Decimal",
     "Duration",

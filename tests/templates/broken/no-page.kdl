@@ -1,0 +1,10 @@
+// broken/no-page.kdl -- a layout that names neither a page size nor both extents.
+//
+// expect: a layout needs a pagesize, or both a width and a height
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=200 {
+    detail height=10 { field text="x" }
+  }
+}

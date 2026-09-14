@@ -61,11 +61,38 @@ from sr.expr.values import (
 
 __all__ = [
     "GLOBALS",
+    "GROUP_SUFFIXES",
+    "PREDEFINED",
     "getattr_",
     "getitem_",
     "getslice_",
     "mod_",
 ]
+
+# The predefined variables of doc/expressions.md#predefined-variables,
+# in the order that table lists them.  Their *values* are the engine's
+# to supply as a report is built; what is here is only the fact that
+# the names are taken, which is what makes a `parameter` or a `variable`
+# of the same name unreachable and therefore a validation error.
+PREDEFINED: Final[tuple[str, ...]] = (
+    "THIS",
+    "ITEM_NUMBER",
+    "DATA_COUNT",
+    "REPORT_COUNT",
+    "PAGE_COUNT",
+    "COLUMN_COUNT",
+    "PAGE_NUMBER",
+    "COLUMN_NUMBER",
+    "VERTICAL_POSITION",
+    "VERTICAL_SPACE",
+    "BUILD_TIME",
+    "FINAL",
+)
+
+# What defining a `group` named X adds to the names above.  A group
+# may not be called `PAGE`, because `PAGE_COUNT` is taken already,
+# and these are the two suffixes that rule is read through.
+GROUP_SUFFIXES: Final[tuple[str, ...]] = ("_COUNT", "_PAGE_NUMBER")
 
 
 def frozen(kind: str, method: str) -> Callable[..., Any]:

@@ -1,0 +1,43 @@
+// probes/expressions/date-layout.kdl -- a point that is not a fraction.
+//
+// A Go layout writes a fractional second as a point or a comma and then
+// a run of `0`s or `9`s, so `02.01.2006` looks at first like a day, one
+// digit of fraction, and then a month and a year.  It is not: Go takes
+// the run as a fraction only when the digits end there, and in this
+// layout they run straight on into `01`.  So the point is a separator
+// and this is the European date doc/template.md#parameter writes with
+// `format="02.01.2006"` -- which is where the question came from,
+// that spelling being the specification's own example.
+//
+// Three rows: the layout used to parse a `default`, the same layout
+// used to format, and a layout where the digits really do end at the run,
+// so that the row that is a fraction sits beside the row that is not.
+//
+// This is a correction rather than a discovery: the Python engine read
+// `.0` as a fraction wherever it appeared, and the reference is what
+// says the guard exists.
+
+report name="expressions/date-layout" {
+  parameter "due" type="date" format="02.01.2006" default="31.12.2005"
+
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=400 height=200 leftmargin=0 rightmargin=0 \
+         topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=60 {
+      // Parsed with the layout above: the last day of December, not of
+      // February, which is where the fraction reading lands.
+      field expr="(due.year, due.month, due.day)" format="parsed %d-%d-%d" \
+            left=0 top=0 right=0 height=12
+      field expr="due.format('02.01.2006')" format="formatted %s" \
+            left=0 top=14 right=0 height=12
+      // The same point, with the run of zeros ending where the token
+      // does: this one is a fraction, and prints the seconds' zeros.
+      field expr="due.format('15:04:05.00')" format="fraction %s" \
+            left=0 top=28 right=0 height=12
+      // And a comma, which Go takes as the decimal separator too.
+      field expr="due.format('15:04:05,000')" format="comma %s" \
+            left=0 top=42 right=0 height=12
+    }
+  }
+}

@@ -1,0 +1,13 @@
+// broken/final-unknown-name.kdl -- a FINAL name no scope holds a value for.
+//
+// expect: and 'nosuch' is neither
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=20 {
+      field expr="FINAL.nosuch" evaltime="report" width=50
+    }
+  }
+}

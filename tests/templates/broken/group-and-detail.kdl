@@ -1,0 +1,13 @@
+// broken/group-and-detail.kdl -- a level holding both a group and a detail.
+//
+// expect: holds exactly one group or one detail
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    detail height=10 { field text="x" }
+    group "one" expr="1" {
+      detail height=10 { field text="x" }
+    }
+  }
+}

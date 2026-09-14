@@ -1,0 +1,17 @@
+// broken/bad-values.kdl -- a dimension and a colour that are not well formed.
+//
+// expect: want a dimension
+// expect: bad dimension "1 2"
+// expect: bad colour "#abc"
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=10 {
+      field text="x" left=#true
+      field text="y" width="1 2"
+      rectangle { style color="#abc" }
+    }
+  }
+}

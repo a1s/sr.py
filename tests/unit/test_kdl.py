@@ -15,6 +15,7 @@ import pytest
 
 from sr import kdl
 from sr.errors import TemplateError
+from sr.kdl import one_edit
 
 TEMPLATE = """
 report name="sales" {
@@ -229,23 +230,134 @@ def test_an_enumeration_takes_a_value_that_is_in_it() -> None:
     assert not doc.diagnostics
 
 
-def test_a_property_the_node_does_not_take_is_reported() -> None:
+# -- names the format does not define ---------------------------------
+#
+# doc/template.md#unknown-names.  The rule is a warning by default, an
+# error for a near miss, and silence for a name that says it is meant.
+
+
+def test_a_property_the_node_does_not_take_is_a_warning() -> None:
     doc = document('report name="x" bogus="y" { }')
     report = doc.only_root("report")
     assert report is not None
     report.known_properties("name")
-    assert str(doc.diagnostics) == "t.kdl: report bogus=: unknown property"
+    assert not doc.diagnostics
+    assert str(doc.warnings) == (
+        "t.kdl: report bogus=: unknown property `bogus`, accepted and ignored"
+    )
 
 
-def test_a_node_the_parent_does_not_take_is_reported() -> None:
+def test_a_node_the_parent_does_not_take_is_a_warning() -> None:
     doc = document('report { nosuchnode "x" }')
     report = doc.only_root("report")
     assert report is not None
     report.known_children("font", "layout")
-    assert str(doc.diagnostics) == (
-        't.kdl: report > nosuchnode "x": '
-        "unexpected node here; report accepts: font layout"
+    assert not doc.diagnostics
+    assert str(doc.warnings) == (
+        't.kdl: report > nosuchnode "x": unknown node `nosuchnode`, '
+        "accepted and ignored; report accepts: font layout"
     )
+
+
+def test_a_property_one_edit_from_a_real_one_is_an_error() -> None:
+    doc = document('report nam="x" { }')
+    report = doc.only_root("report")
+    assert report is not None
+    report.known_properties("name")
+    assert not doc.warnings
+    assert str(doc.diagnostics) == (
+        "t.kdl: report nam=: unknown property `nam`; did you mean `name`?"
+    )
+
+
+def test_a_near_miss_is_an_error_however_lenient_the_run() -> None:
+    # Leniency is about names an engine does not know, and a near miss is
+    # the case where it probably does know the name that was meant.
+    doc = document('report nam="x" { }')
+    report = doc.only_root("report")
+    assert report is not None
+    assert not doc.names.strict
+    report.known_properties("name")
+    assert doc.diagnostics
+
+
+def test_a_reserved_name_says_nothing_at_all() -> None:
+    doc = document('report x-vendor="y" { X-Other "z" }')
+    report = doc.only_root("report")
+    assert report is not None
+    report.known_properties("name")
+    report.known_children("font")
+    assert not doc.diagnostics
+    assert not doc.warnings
+
+
+def test_a_registered_name_says_nothing_at_all() -> None:
+    doc = document('report bogus="y" { nosuchnode "z" }')
+    doc.names.accepted.update({"bogus", "nosuchnode"})
+    report = doc.only_root("report")
+    assert report is not None
+    report.known_properties("name")
+    report.known_children("font")
+    assert not doc.diagnostics
+    assert not doc.warnings
+
+
+def test_strict_names_turns_the_warning_into_an_error() -> None:
+    doc = document('report bogus="y" { }')
+    doc.names.strict = True
+    report = doc.only_root("report")
+    assert report is not None
+    report.known_properties("name")
+    assert not doc.warnings
+    assert str(doc.diagnostics) == "t.kdl: report bogus=: unknown property `bogus`"
+
+
+def test_strictness_does_not_reach_a_name_that_says_it_is_meant() -> None:
+    doc = document('report x-vendor="y" bogus="z" { }')
+    doc.names.strict = True
+    doc.names.accepted.add("bogus")
+    report = doc.only_root("report")
+    assert report is not None
+    report.known_properties("name")
+    assert not doc.diagnostics
+    assert not doc.warnings
+
+
+def test_a_warning_carries_the_kind_the_printout_header_gives_it() -> None:
+    doc = document('report bogus="y" { }')
+    report = doc.only_root("report")
+    assert report is not None
+    report.known_properties("name")
+    assert [one.kind for one in doc.warnings] == ["unknown"]
+
+
+@pytest.mark.parametrize(
+    ("written", "real"),
+    [
+        ("printwhn", "printwhen"),  # a deletion
+        ("printwhenn", "printwhen"),  # an insertion
+        ("printwhon", "printwhen"),  # a substitution
+        ("pritnwhen", "printwhen"),  # a transposition
+        ("PrintWhen", "printwhen"),  # nothing but case
+        ("printwhen", "printwhen"),  # the name itself
+    ],
+)
+def test_one_edit_is_the_four_edits_and_case(written: str, real: str) -> None:
+    assert one_edit(written, real)
+
+
+@pytest.mark.parametrize(
+    ("written", "real"),
+    [
+        ("prntwhn", "printwhen"),  # two deletions
+        ("whenprint", "printwhen"),  # a rearrangement, not a transposition
+        ("height", "printwhen"),  # nothing alike
+        ("", "printwhen"),  # nothing at all
+        ("pirntwhen", "printwhne"),  # one transposition each, so two edits
+    ],
+)
+def test_two_edits_or_more_is_not_a_near_miss(written: str, real: str) -> None:
+    assert not one_edit(written, real)
 
 
 def test_children_come_back_in_document_order() -> None:

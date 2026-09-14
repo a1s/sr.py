@@ -1,0 +1,14 @@
+// broken/cycle.kdl -- a subreport template chain that reaches where it started.
+//
+// expect: reaches the template it came from
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=10 {
+      field text="x"
+      subreport template="cycle-back.inc.kdl" seq=1 data="[]"
+    }
+  }
+}

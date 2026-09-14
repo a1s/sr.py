@@ -1,0 +1,14 @@
+// broken/inline-page.kdl -- an inline subreport of the wrong page size.
+//
+// expect: an inline subreport prints on the host's pages
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=10 {
+      field text="x"
+      subreport template="inline-page.inc.kdl" seq=1 data="[]" inline=#true
+    }
+  }
+}

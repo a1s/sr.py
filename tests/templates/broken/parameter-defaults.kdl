@@ -1,0 +1,16 @@
+// broken/parameter-defaults.kdl -- a parameter whose default does not say what it claims to.
+//
+// expect: default and defaultexpr are alternatives
+// expect: not an integer
+// expect: format reads a date, and this parameter is a string
+
+report name="probe" {
+  parameter "both" default="1" defaultexpr="1"
+  parameter "count" type="int" default="one"
+  parameter "plain" format="2006-01-02"
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=10 { field text="x" }
+  }
+}

@@ -168,7 +168,12 @@ Making the printout's own directory self-contained is a separate, deliberate act
 | `page` | Default page geometry, inherited by every page that does not override it. |
 | `fonts` | Resolved font table. |
 | `data` | Shared blobs, keyed by name. |
-| `warnings` | Present only when the build produced any. An array of objects with `kind`, `node`, `record`, and `message`. `kind` is `overflow` for an error `--allow-overflow` suppressed, `glyph` for a [character the resolved font lacks](template.md#missing-glyphs), or `font` for a `typeface` that reached the [substitute](template.md#the-substitute-face). Diagnostics about fonts on the host that this report did not use are [not warnings](template.md#host-enumeration). |
+| `warnings` | Present only when the build produced any. An array of objects with `kind`, `node`, `record`, and `message`. `kind` is `overflow` for an error `--allow-overflow` suppressed, `glyph` for a [character the resolved font lacks](template.md#missing-glyphs), `font` for a `typeface` that reached the [substitute](template.md#the-substitute-face), or `unknown` for a [name the format does not define](template.md#unknown-names). Diagnostics about fonts on the host that this report did not use are [not warnings](template.md#host-enumeration). |
+
+`record` is absent from a warning that no record produced, which is every
+warning raised at load: an `unknown` is found while the template is read
+and before any data is. A warning about a property carries a `prop` key
+naming it, and one about a node does not.
 
 ### `fonts`
 

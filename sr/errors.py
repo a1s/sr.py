@@ -51,7 +51,7 @@ __all__ = [
 # The `kind` of a warning the printout header carries, per
 # doc/printout.md#header-line.  Warnings are not errors and do not change
 # the exit code: they say what is wrong with a document that exists.
-WARNING_KINDS = ("overflow", "glyph", "font")
+WARNING_KINDS = ("overflow", "glyph", "font", "unknown")
 
 
 class SrError(Exception):
@@ -179,10 +179,22 @@ class Location:
 
 @dataclass(frozen=True)
 class Diagnostic:
-    """One thing that is wrong, and where."""
+    """One thing that is wrong, and where.
+
+    Attributes:
+        message: What is wrong, without its location.
+        location: Where, in as much detail as the caller had.
+        kind: For a warning, which of :data:`WARNING_KINDS` it is,
+            so that one raised at load reaches the printout header
+            under the name doc/printout.md#header-line gives it.
+            An error has none: nothing carries an error into a printout,
+            because a document with one is not produced.
+
+    """
 
     message: str
     location: Location = Location()
+    kind: str | None = None
 
     def at(
         self,
@@ -217,6 +229,7 @@ class Diagnostic:
                 line=was.line if line is None else line,
                 record=was.record if record is None else record,
             ),
+            self.kind,
         )
 
     def __str__(self) -> str:
@@ -272,6 +285,7 @@ class Diagnostics:
         prop: str | None = None,
         line: int | None = None,
         record: int | None = None,
+        kind: str | None = None,
     ) -> Diagnostic:
         """Record one diagnostic and return it.
 
@@ -281,11 +295,13 @@ class Diagnostics:
             prop: The property on that node.
             line: The line in the file, where it is known.
             record: The record being formatted, where there is one.
+            kind: For a warning, the printout's name for its kind.
 
         """
         diagnostic = Diagnostic(
             message,
             Location(file=self.file, path=path, prop=prop, line=line, record=record),
+            kind,
         )
         self.found.append(diagnostic)
         return diagnostic
@@ -332,6 +348,7 @@ class BuildWarning:
         kind: One of :data:`WARNING_KINDS`.
         message: What happened.
         node: The node path it happened at, where there is one.
+        prop: The property on that node, where it is about one.
         record: The record being formatted, where there is one.
 
     """
@@ -339,6 +356,7 @@ class BuildWarning:
     kind: str
     message: str
     node: str | None = None
+    prop: str | None = None
     record: int | None = None
 
     def __post_init__(self) -> None:
@@ -351,7 +369,8 @@ class BuildWarning:
 
     def __str__(self) -> str:
         """Spell the warning the way the command line reports one."""
-        parts = [self.node] if self.node else []
+        node = f"{self.node} {self.prop}=" if self.node and self.prop else self.node
+        parts = [node] if node else []
         if self.record is not None:
             parts.append(f"record {self.record}")
         where = f" ({', '.join(parts)})" if parts else ""
