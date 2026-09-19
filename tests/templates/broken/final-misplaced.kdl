@@ -1,0 +1,14 @@
+// broken/final-misplaced.kdl -- FINAL written where nothing could bind it.
+//
+// expect: FINAL belongs in the expr of a field or barcode with an evaltime
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=20 printwhen="FINAL.PAGE_NUMBER > 0" {
+      field text="x" { style when="FINAL.PAGE_COUNT" color="red" }
+      field expr="FINAL.PAGE_NUMBER"
+    }
+  }
+}

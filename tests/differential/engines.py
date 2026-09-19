@@ -106,6 +106,25 @@ class Build:
     stderr: str
 
 
+def implements(command: str) -> bool:
+    """Report whether this engine's command line has a command yet.
+
+    Read from the module rather than by running the command, because
+    a command that is not there exits 1 and so does one that ran and
+    failed, and those have to stay distinguishable.  This is the one
+    place the harness imports the engine instead of running it.
+
+    Args:
+        command: The subcommand to ask about.
+
+    """
+    try:
+        from sr.cli import COMMANDS
+    except ImportError:
+        return False
+    return command in COMMANDS
+
+
 def reference_engine(binary: ReferenceBinary) -> Engine:
     """Return the engine that runs the Go reference binary."""
     return Engine("reference", (str(binary.path),), binary.version)
@@ -114,14 +133,20 @@ def reference_engine(binary: ReferenceBinary) -> Engine:
 def local_engine() -> Engine:
     """Return the engine that runs this repository's entry point.
 
+    What decides whether there is an engine to compare is whether
+    the command line can **build**, not whether the entry point exists:
+    it arrived in M4 with ``validate``, which reads a template and writes
+    no printout.  ``sr.cli.COMMANDS`` is the one place that says which
+    commands work, so asking it keeps this in step by itself.
+
     Raises:
-        EngineNotImplemented: while there is no entry point at all.
-        EngineUnavailable: when the entry point exists but will not run.
+        EngineNotImplemented: while the engine cannot build a printout.
+        EngineUnavailable: when it can and the entry point will not run.
 
     """
-    if not ENTRY_POINT.is_file():
+    if not ENTRY_POINT.is_file() or not implements("build"):
         raise EngineNotImplemented(
-            f"{ENTRY_POINT.name} does not exist yet; the Python engine "
+            f"{ENTRY_POINT.name} does not build yet; the Python engine "
             "produces its first printout in M6"
         )
     command = (sys.executable, str(ENTRY_POINT))

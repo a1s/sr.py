@@ -1,0 +1,16 @@
+// broken/image-sources.kdl -- an image taking its bytes from the wrong count, or from a reference.
+//
+// expect: an image takes exactly one of file, data or a content child
+// expect: embed=#false writes a file reference
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  data "blob" expr="'x'"
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=40 {
+      image file="a.png" data="blob" width=10 height=10
+      image data="blob" embed=#false width=10 height=10 top=12
+    }
+  }
+}

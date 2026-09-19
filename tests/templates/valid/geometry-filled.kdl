@@ -1,0 +1,19 @@
+// valid/geometry-filled.kdl -- every row of the two-of-three table, all of them legal.
+//
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=60 {
+      field text="nothing"
+      field text="left" left=5
+      field text="width" width=30 top=10
+      field text="right" right=5 top=20
+      field text="both" left=5 width=30 top=30
+      field text="clamped" left=5 right=5 maxwidth=50 top=40 height=8
+      line width=2 left=0 right=0 top=50 height=0
+      rectangle width=1 left=0 right=0 top=52 height=6
+    }
+  }
+}

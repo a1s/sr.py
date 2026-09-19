@@ -1,0 +1,17 @@
+// broken/reserved-names.kdl -- declarations the engine's own names would hide.
+//
+// expect: 'THIS' is a predefined name
+// expect: 'len' is a predefined name
+// expect: a group named 'PAGE' derives 'PAGE_COUNT'
+
+report name="probe" {
+  parameter "THIS"
+  variable "len" expr="1" calc="sum"
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body"
+    group "PAGE" expr="1" {
+      detail height=10 { field text="x" }
+    }
+  }
+}

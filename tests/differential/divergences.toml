@@ -215,3 +215,27 @@ a guard.  The reference is the side that changes.\
 ticket = "M3: null folds, expressions.md#calc"
 since = "2026-09-13"
 affects = ["probe/expressions/null-folds*"]
+
+[[divergence]]
+id = "unknown-names-accepted"
+summary = "a node or property the format does not define is accepted here; the reference refuses it"
+reason = """
+Neither doc/ nor either engine's messages ever stated the rule: the \
+validation list covered nesting, cardinality, required properties and \
+value ranges, and none of those implies refusing an extra.  Both engines \
+refused anyway.  doc/template.md#unknown-names now states the opposite, \
+and states the cost of each direction rather than leaving it to taste.  \
+An unknown name is accepted and warned about, so a template written for a \
+newer, an older or a different implementation still builds; a name one \
+edit from a name legal on that node is an error, because `printwhn=` is a \
+misspelling far more often than an extension and accepting it silently \
+paints an element the template meant to suppress; and `x-` names, names \
+listed in a template's `accept`, and names given to `--accept` are \
+accepted in silence, which is how an extension says it is one.  \
+`--strict-names` restores the old behaviour for anyone who wants it.  \
+The reference is the side that changes, and the `accept` node is the part \
+of it that it does not have yet.\
+"""
+ticket = "M4: unknown names, template.md#unknown-names"
+since = "2026-09-13"
+affects = ["probe/values/unknown-names*"]

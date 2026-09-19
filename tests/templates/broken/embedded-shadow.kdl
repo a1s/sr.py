@@ -1,0 +1,20 @@
+// broken/embedded-shadow.kdl -- a nested embedded layout repeating an enclosing name.
+//
+// expect: is declared in an enclosing layout
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    embedded "outer" {
+      embedded "outer" {
+        detail height=10 { field text="z" }
+      }
+      detail height=10 { field text="y" }
+    }
+    detail height=10 {
+      field text="x"
+      subreport embedded="outer" seq=1 data="[]"
+    }
+  }
+}

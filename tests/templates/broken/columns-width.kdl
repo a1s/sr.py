@@ -1,0 +1,12 @@
+// broken/columns-width.kdl -- a columns block whose columns would have no width.
+//
+// expect: leave no width in a frame
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 {
+    style font="body" color="black"
+    columns count=2 gap="900pt" { }
+    detail height=10 { field text="x" }
+  }
+}

@@ -1,7 +1,7 @@
 """The KDL layer: typed property access, node paths, cardinality.
 
 ``ckdl`` reads the document; this module is everything between that
-and a loader.  Three jobs, and they are here rather than in
+and a loader.  Four jobs, and they are here rather than in
 ``template/load.py`` because each of them is about the shape
 of a KDL document rather than about what a report is:
 
@@ -16,6 +16,11 @@ of a KDL document rather than about what a report is:
   in one collector and the caller raises at the end, which is what lets
   one run of ``sr.py validate`` report every problem in a template
   rather than the first.
+* **A name the format does not define is weighed rather than refused.**
+  doc/template.md#unknown-names accepts one, and what it costs -- silence,
+  a warning, or an error -- depends on how close it is to a name that is
+  defined and on what the document and the caller have said they meant.
+  :class:`Names` is that policy and :meth:`Node.unknown` applies it.
 
 A parse error is the exception to the last of those:
 after it there is no tree to walk, so it raises.
@@ -32,9 +37,9 @@ a reader supplies one.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TypeVar
+from typing import TypeVar, overload
 
 import ckdl
 
@@ -50,7 +55,7 @@ from sr.errors import (
 )
 from sr.units import parse_dimension
 
-__all__ = ["Document", "Node", "Value", "parse", "read"]
+__all__ = ["Document", "Names", "Node", "Value", "one_edit", "parse", "read"]
 
 # doc/template.md#parser-requirements: KDL v2 specifically.
 # Not "any", which would read a v1 document as far as its
@@ -63,6 +68,12 @@ DOCUMENT = "<document>"
 # What a document parsed from a string in memory is called.
 UNNAMED = "<text>"
 
+# doc/template.md#unknown-names reserves this prefix, in either case,
+# for a name an engine other than this one defines.  A name carrying it
+# is never reported and never measured against a real one: the prefix is
+# itself the statement that the name is deliberate.
+EXTENSION_PREFIX = "x-"
+
 # Every value a KDL property or argument can hold, once a type annotation
 # has been unwrapped.  KDL calls an annotation a hint, and nothing in the
 # template format reads one, so `size=(u8)10` is the integer 10.
@@ -72,6 +83,65 @@ Value = str | int | float | bool | None
 # that runs one passes the first through and hands back the second.
 Given = TypeVar("Given")
 Parsed = TypeVar("Parsed")
+
+
+def one_edit(name: str, other: str) -> bool:
+    """Report whether one edit turns one name into the other.
+
+    An edit is an insertion, a deletion, a substitution, or a transposition
+    of two adjacent characters, which is doc/template.md#unknown-names'
+    definition of a near miss.  Upper case folds to lower first,
+    so ``PrintWhen`` is a near miss of ``printwhen`` at no distance at all.
+
+    Args:
+        name: The name that was written.
+        other: A name legal where it was written.
+
+    """
+    first = name.lower()
+    second = other.lower()
+    if abs(len(first) - len(second)) > 1:
+        return False
+    if len(first) == len(second):
+        differ = [at for at in range(len(first)) if first[at] != second[at]]
+        if len(differ) <= 1:
+            return True
+        return (
+            len(differ) == 2
+            and differ[1] == differ[0] + 1
+            and first[differ[0]] == second[differ[1]]
+            and first[differ[1]] == second[differ[0]]
+        )
+    longer, shorter = (first, second) if len(first) > len(second) else (second, first)
+    return any(longer[:at] + longer[at + 1 :] == shorter for at in range(len(longer)))
+
+
+@dataclass
+class Names:
+    """Which node and property names a document tolerates without a word.
+
+    doc/template.md#unknown-names is the rule this carries.  One of these
+    belongs to a document and is shared by every node in it, which is what
+    lets a loader fill in the document's own ``accept`` list -- read from
+    the tree -- before the walk that consults it.
+
+    Attributes:
+        accepted: Names to take in silence, from ``accept`` and ``--accept``.
+        strict: Whether an unknown name is an error rather than a warning.
+
+    """
+
+    accepted: set[str] = field(default_factory=set)
+    strict: bool = False
+
+    def silent(self, name: str) -> bool:
+        """Report whether an unknown name is to be taken without a word.
+
+        Args:
+            name: The name that was written.
+
+        """
+        return name.lower().startswith(EXTENSION_PREFIX) or name in self.accepted
 
 
 def kind_of(value: Value) -> str:
@@ -117,6 +187,10 @@ class Node:
         children: Its child nodes, in document order.
         path: Where this node sits, for every diagnostic about it.
         diagnostics: The collector for the document it came from.
+        warnings: The same document's collector for what is wrong with it
+            without being fatal, kept apart because the caller raises
+            on one list and not on the other.
+        names: The document's policy for names the format does not define.
 
     """
 
@@ -126,6 +200,8 @@ class Node:
     children: tuple[Node, ...]
     path: NodePath
     diagnostics: Diagnostics
+    warnings: Diagnostics
+    names: Names
 
     @property
     def identity(self) -> str | None:
@@ -148,6 +224,57 @@ class Node:
 
         """
         return self.diagnostics.error(message, path=self.path, prop=prop)
+
+    def warn(self, message: str, kind: str, prop: str | None = None) -> Diagnostic:
+        """Record something wrong with this node that is not fatal.
+
+        Args:
+            message: What is wrong, without its location.
+            kind: The printout header's name for the kind of warning.
+            prop: The property it is about, where it is about one.
+
+        """
+        return self.warnings.error(message, path=self.path, prop=prop, kind=kind)
+
+    def unknown(
+        self,
+        what: str,
+        name: str,
+        known: Iterable[str],
+        *,
+        prop: str | None = None,
+        suffix: str = "",
+    ) -> None:
+        """Report one name the format does not define, as the rule has it.
+
+        doc/template.md#unknown-names, in the order its table is written:
+        a reserved or registered name says nothing, a name one edit from
+        a name legal here is an error however lenient the run, and anything
+        else is an error under ``--strict-names`` and a warning otherwise.
+
+        Args:
+            what: ``node`` or ``property``, as the message spells it.
+            name: The name that was written.
+            known: The names legal where it was written.
+            prop: The property to name in the location, for a property.
+            suffix: What to add after the message, where there is a list
+                of what would have been legal worth printing.
+
+        """
+        if self.names.silent(name):
+            return
+        near = [one for one in known if one_edit(name, one)]
+        if near:
+            wanted = " or ".join(f"`{one}`" for one in near)
+            self.error(f"unknown {what} `{name}`; did you mean {wanted}?", prop)
+        elif self.names.strict:
+            self.error(f"unknown {what} `{name}`{suffix}", prop)
+        else:
+            self.warn(
+                f"unknown {what} `{name}`, accepted and ignored{suffix}",
+                "unknown",
+                prop,
+            )
 
     # -- values -------------------------------------------------------
 
@@ -184,6 +311,20 @@ class Node:
             self.error("required", prop)
         return False, None
 
+    # Every accessor below returns its `default` on each path that is
+    # not a good value, so a caller that names one never sees `None`.
+    # The overloads say that in the type, which is what keeps the
+    # call sites free of an `or` after the call: written that way,
+    # an explicit `minrows=0` or `format=""` would be read and then
+    # thrown away for the default, because both are false.
+
+    @overload
+    def string(self, prop: str, *, default: str, required: bool = False) -> str: ...
+    @overload
+    def string(
+        self, prop: str, *, default: None = None, required: bool = False
+    ) -> str | None: ...
+
     def string(
         self, prop: str, *, default: str | None = None, required: bool = False
     ) -> str | None:
@@ -202,6 +343,13 @@ class Node:
             self.error(f"want a string, got {kind_of(value)}", prop)
             return default
         return value
+
+    @overload
+    def integer(self, prop: str, *, default: int, required: bool = False) -> int: ...
+    @overload
+    def integer(
+        self, prop: str, *, default: None = None, required: bool = False
+    ) -> int | None: ...
 
     def integer(
         self, prop: str, *, default: int | None = None, required: bool = False
@@ -222,6 +370,13 @@ class Node:
             return default
         return value
 
+    @overload
+    def boolean(self, prop: str, *, default: bool, required: bool = False) -> bool: ...
+    @overload
+    def boolean(
+        self, prop: str, *, default: None = None, required: bool = False
+    ) -> bool | None: ...
+
     def boolean(
         self, prop: str, *, default: bool | None = None, required: bool = False
     ) -> bool | None:
@@ -240,6 +395,15 @@ class Node:
             self.error(f"want #true or #false, got {kind_of(value)}", prop)
             return default
         return value
+
+    @overload
+    def dimension(
+        self, prop: str, *, default: float, required: bool = False
+    ) -> float: ...
+    @overload
+    def dimension(
+        self, prop: str, *, default: None = None, required: bool = False
+    ) -> float | None: ...
 
     def dimension(
         self, prop: str, *, default: float | None = None, required: bool = False
@@ -260,6 +424,13 @@ class Node:
             return default
         return self.parsed(parse_dimension, value, prop, default)
 
+    @overload
+    def color(self, prop: str, *, default: str, required: bool = False) -> str: ...
+    @overload
+    def color(
+        self, prop: str, *, default: None = None, required: bool = False
+    ) -> str | None: ...
+
     def color(
         self, prop: str, *, default: str | None = None, required: bool = False
     ) -> str | None:
@@ -275,6 +446,20 @@ class Node:
         if text is None:
             return default
         return self.parsed(parse_color, text, prop, default)
+
+    @overload
+    def enum(
+        self, prop: str, allowed: Iterable[str], *, default: str, required: bool = False
+    ) -> str: ...
+    @overload
+    def enum(
+        self,
+        prop: str,
+        allowed: Iterable[str],
+        *,
+        default: None = None,
+        required: bool = False,
+    ) -> str | None: ...
 
     def enum(
         self,
@@ -334,13 +519,16 @@ class Node:
     def known_properties(self, *known: str) -> None:
         """Report every property that is not one of ``known``.
 
+        What is said about one, and whether it is fatal,
+        is :meth:`unknown`'s to decide.
+
         Args:
             *known: The properties this node takes.
 
         """
         for prop in self.properties:
             if prop not in known:
-                self.error("unknown property", prop)
+                self.unknown("property", prop, known, prop=prop)
 
     # -- children -----------------------------------------------------
 
@@ -376,15 +564,19 @@ class Node:
     def known_children(self, *known: str) -> None:
         """Report every child whose name is not one of ``known``.
 
+        The diagnostic is filed against the child, so that the path
+        names the node that was not expected rather than the one that
+        did not expect it.  What is said, and whether it is fatal,
+        is :meth:`unknown`'s to decide.
+
         Args:
             *known: The nodes this one accepts, in the order to list them.
 
         """
+        accepts = f"; {self.name} accepts: {' '.join(known)}" if known else ""
         for child in self.children:
             if child.name not in known:
-                child.error(
-                    f"unexpected node here; {self.name} accepts: {' '.join(known)}"
-                )
+                child.unknown("node", child.name, known, suffix=accepts)
 
 
 @dataclass(frozen=True)
@@ -395,12 +587,18 @@ class Document:
         file: The document, named as the caller named it.
         nodes: Its root nodes, in order.
         diagnostics: Everything reading it has collected so far.
+        warnings: What reading it found that is not fatal.
+        names: Its policy for names the format does not define.
+            A loader fills this in from the document's own ``accept`` nodes,
+            and from what the caller supplied, before it walks the tree.
 
     """
 
     file: str
     nodes: tuple[Node, ...]
     diagnostics: Diagnostics
+    warnings: Diagnostics
+    names: Names
 
     @property
     def path(self) -> NodePath:
@@ -422,13 +620,25 @@ class Document:
         return None
 
 
-def convert(node: ckdl.Node, parent: NodePath, diagnostics: Diagnostics) -> Node:
+def convert(
+    node: ckdl.Node,
+    parent: NodePath,
+    diagnostics: Diagnostics,
+    warnings: Diagnostics,
+    names: Names,
+) -> Node:
     """Turn one ckdl node and its subtree into nodes of our own.
+
+    The three collectors belong to the document rather than to a node,
+    and are passed down by reference, so a loader can still add
+    to ``names`` after the tree is built and before it is walked.
 
     Args:
         node: What ``ckdl`` parsed.
         parent: The path of the node above it.
         diagnostics: The collector for this document.
+        warnings: Its collector for what is not fatal.
+        names: Its unknown-name policy.
 
     """
     args = tuple(unwrap(argument) for argument in node.args)
@@ -438,9 +648,14 @@ def convert(node: ckdl.Node, parent: NodePath, diagnostics: Diagnostics) -> Node
         name=node.name,
         args=args,
         properties={name: unwrap(value) for name, value in node.properties.items()},
-        children=tuple(convert(child, path, diagnostics) for child in node.children),
+        children=tuple(
+            convert(child, path, diagnostics, warnings, names)
+            for child in node.children
+        ),
         path=path,
         diagnostics=diagnostics,
+        warnings=warnings,
+        names=names,
     )
 
 
@@ -457,6 +672,8 @@ def parse(text: str, file: str = UNNAMED) -> Document:
 
     """
     diagnostics = Diagnostics(file=file)
+    warnings = Diagnostics(file=file)
+    names = Names()
     try:
         parsed = ckdl.parse(text, version=KDL_VERSION)
     except ckdl.ParseError as refused:
@@ -465,8 +682,13 @@ def parse(text: str, file: str = UNNAMED) -> Document:
         ) from refused
     return Document(
         file=file,
-        nodes=tuple(convert(node, NodePath(), diagnostics) for node in parsed.nodes),
+        nodes=tuple(
+            convert(node, NodePath(), diagnostics, warnings, names)
+            for node in parsed.nodes
+        ),
         diagnostics=diagnostics,
+        warnings=warnings,
+        names=names,
     )
 
 

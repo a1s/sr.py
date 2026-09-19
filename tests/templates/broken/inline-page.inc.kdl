@@ -1,0 +1,15 @@
+// broken/inline-page.inc.kdl -- the layout `inline-page` runs inline.
+//
+// Not a case of its own: it is a valid template, and what makes the pair
+// invalid is that it is A5 and the report that inlines it is A4.  An
+// inline subreport prints on the host's pages, so it has to be their
+// size.  The `.inc.kdl` suffix keeps the corpus driver from loading it
+// on its own.
+
+report name="inner" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A5" {
+    style font="body" color="black"
+    detail height=10 { field text="y" }
+  }
+}

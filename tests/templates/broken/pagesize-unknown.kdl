@@ -1,0 +1,10 @@
+// broken/pagesize-unknown.kdl -- a page size the format does not have.
+//
+// expect: unknown value "A9"
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A9" {
+    detail height=10 { field text="x" }
+  }
+}

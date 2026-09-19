@@ -1,0 +1,23 @@
+// broken/subreport-place.kdl -- a subreport on a band that cannot carry one.
+//
+// expect: a subreport belongs on a detail, a title or a summary
+// expect: sits beyond the frame's own reservation
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    embedded "one" {
+      detail height=10 { field text="y" }
+    }
+    header height=10 {
+      field text="h"
+      subreport embedded="one" seq=1 data="[]"
+    }
+    title swapheader=#true height=10 {
+      field text="t"
+      subreport embedded="one" seq=1 data="[]"
+    }
+    detail height=10 { field text="x" }
+  }
+}

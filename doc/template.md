@@ -18,6 +18,7 @@ and paginated are in [layout.md](layout.md). Expressions are specified in
 - [Ordering rules](#ordering-rules)
 - [Element reference](#element-reference)
   - [`report`](#report)
+  - [`accept`](#accept)
   - [`parameter`](#parameter)
   - [`records`](#records)
   - [Data input](#data-input)
@@ -51,6 +52,7 @@ A template has a declaration part and a layout part.
 
 ```
 report
+├── accept*           names this template carries on purpose
 ├── parameter*        values supplied by the caller
 ├── records?          declared types of the input record members
 ├── variable*         accumulators evaluated as data is consumed
@@ -125,6 +127,53 @@ The format uses a consistent subset of KDL:
 The format uses KDL **v2** specifically: `#true` / `#false` / `#null`, raw
 strings `#"…"#`, and triple-quoted multi-line strings. A v1 parser cannot
 read it, and some v1 parsers accept v2 input without reading it correctly.
+
+### Unknown names
+
+A node or a property this format does not define is **accepted, not refused**.
+It carries no meaning -- nothing reads it and it changes nothing about the
+document around it -- so an engine meeting a template written for a newer,
+an older or a different implementation reads the parts it knows and reports
+the rest. What it reports depends on the name, and the first row that matches
+wins:
+
+| The name | |
+|---|---|
+| begins `x-`, in either case | accepted in silence |
+| is named by [`accept`](#accept) or `--accept` | accepted in silence |
+| is one edit from a name legal on that node | **an error** |
+| anything else | accepted, with a warning |
+
+A name is *one edit* from another when one insertion, one deletion, one
+substitution, or one transposition of two adjacent characters turns the first
+into the second, the two compared with upper case folded to lower. The
+comparison is against the names legal **on that node** -- the properties
+it takes, or, for a node, the children its parent accepts -- so `height=`
+on a node that has no height is an ordinary unknown property rather than
+a near miss.
+
+An unknown node is reported once and then not read: its properties and its
+children are part of the thing the format does not define, so nothing inside it
+is examined and nothing inside it is reported. One unknown node yields one
+diagnostic however much it contains.
+
+A near miss is an error because `printwhn=` is a misspelling far more often than
+it is an extension, and the cost of guessing wrong is silent rather than loud:
+the element paints on every record instead of the ones `printwhen` would have
+kept, and the page looks entirely plausible. Nothing in a template marks the
+version of the format it was written against, so there is no way to tell a new
+property from a mistyped one by inspection -- and a name close enough to be
+a typo is therefore treated as one. A name that really is an extension says so,
+by beginning `x-` or by appearing in `accept`.
+
+`--strict-names` makes every unknown name an error, near miss or not.
+An `x-` name and a registered name stay silent under it: each is already
+a statement that the name is deliberate, which is the only question strictness
+asks.
+
+A warning reaches the [printout header](printout.md#header-line) as a warning
+of kind `unknown`. A build also prints it on standard error, and
+[`sr validate`](cli.md#sr-validate) lists it among its `warnings`.
 
 ## Value types
 
@@ -264,16 +313,47 @@ not `target="top"`.
 | `encoding` | `base64` |
 | `compress` | `zlib` `gzip` |
 
-Page size names accepted by `layout pagesize=`:
-
-- ISO 216: `A1` `A2` `A3` `A4` `A5` `A6` `B3` `B4` `B5` `B6`
-- North American: `Letter` `Legal` `Ledger` `Executive` `Statement` `Quatro`
-  `Royal` `BusinessCard`
-- ISO 269 envelopes: `EnvelopeC3` `EnvelopeC4` `EnvelopeC5` `EnvelopeC6`
-  `EnvelopeDL` `EnvelopeB4` `EnvelopeB5`
-- North American envelopes: `Envelope#10` `EnvelopeA2` `EnvelopeA6` `EnvelopeA7`
-
+Page size names accepted by `layout pagesize=`, with the size each one names.
 All are given portrait (width × height); `landscape=#true` swaps them.
+
+ISO 216, in millimetres:
+
+| | | | | |
+|---|---|---|---|---|
+| `A1` 594 × 841 | `A2` 420 × 594 | `A3` 297 × 420 | `A4` 210 × 297 | `A5` 148 × 210 |
+| `A6` 105 × 148 | `B3` 353 × 500 | `B4` 250 × 353 | `B5` 176 × 250 | `B6` 125 × 176 |
+
+North American, in inches:
+
+| | | | |
+|---|---|---|---|
+| `Letter` 8.5 × 11 | `Legal` 8.5 × 14 | `Ledger` 11 × 17 | `Executive` 7.25 × 10.5 |
+| `Statement` 5.5 × 8.5 | `Quatro` 8 × 10 | `Royal` 20 × 25 | `BusinessCard` 2.125 × 3.37 |
+
+ISO 269 envelopes, in millimetres:
+
+| | | | |
+|---|---|---|---|
+| `EnvelopeC3` 324 × 458 | `EnvelopeC4` 229 × 324 | `EnvelopeC5` 162 × 229 | `EnvelopeC6` 114 × 162 |
+| `EnvelopeDL` 110 × 220 | `EnvelopeB4` 250 × 353 | `EnvelopeB5` 176 × 250 | |
+
+North American envelopes, in inches:
+
+| | | | |
+|---|---|---|---|
+| `Envelope#10` 4.125 × 9.5 | `EnvelopeA2` 4.375 × 5.75 | `EnvelopeA6` 4.75 × 6.5 | `EnvelopeA7` 5.25 × 7.25 |
+
+Each size is stated in the unit its standard states it in, and reaches
+points by the same conversion a [dimension](#dimension) goes through:
+one multiplication by the unit's factor, rounded to 3 decimal places.
+So `A4` is 595.276 × 841.89 pt and `Letter` is 612 × 792 pt exactly.
+Writing the ISO sizes in inches instead would not give the same numbers,
+which is why the unit is part of the table rather than a note under it.
+
+`BusinessCard` is ISO 7810 ID-1, which the standard states on its side
+as 85.60 × 53.98 mm. It is the one entry whose millimetres are the derived
+form: portrait, 2.125 × 3.37 in is exact and 53.975 × 85.598 mm is what
+those inches come to.
 
 ## Geometry
 
@@ -421,8 +501,35 @@ Root node.
 `basedir` is the base for resolving relative paths in `image file=`,
 `font file=`, and `subreport template=`.
 
-Children: `parameter*`, `records?`, `variable*`, `font*`, `data*`, `layout`
-(exactly one).
+Children: `accept*`, `parameter*`, `records?`, `variable*`, `font*`, `data*`,
+`layout` (exactly one).
+
+### `accept`
+
+Names this template carries deliberately, so that [unknown
+names](#unknown-names) among them are accepted in silence instead of
+being warned about or, for a near miss, refused.
+
+| Argument | Type |
+|---|---|
+| *names* | one or more strings |
+
+```kdl
+accept "wobble" "trapezoid"
+```
+
+The node takes no properties, may appear more than once, and the lists add up.
+
+A registered name is accepted wherever it appears in the document, as a node
+name or as a property name. There is deliberately no way to register one for
+a single node: the list says that a name is meant, and a name is meant or it
+is not. Registering a name the format already defines does nothing, and is not
+an error.
+
+The list belongs to the document that declares it. A `subreport template=` file
+is its own document with its own `accept`, which is what lets a template be
+read on its own terms wherever it is used. `--accept` on the command line adds
+to the list of every template in a build, including those reached that way.
 
 ### `parameter`
 
@@ -1458,6 +1565,9 @@ the likelier failure — a template using `…` or `—` needs a font that has t
 Validation runs once, at load, before any data is read. It checks:
 
 - Node nesting and cardinality.
+- [Unknown names](#unknown-names): a node or property the format does not
+  define is accepted, and is an error only when it is one edit from a name
+  legal on that node, or when `--strict-names` is set.
 - Required properties present; property values in range for their type.
 - Exactly one of `group` / `detail` at each level that takes them.
 - `layout` has `pagesize`, or both `width` and `height`.
@@ -1516,6 +1626,7 @@ Validation runs once, at load, before any data is read. It checks:
 
 It warns when a band that declares no `height` contains only elements whose
 vertical extent is [container-dependent](layout.md#building-a-band), since
-such a band collapses to zero height.
+such a band collapses to zero height. It warns about each unknown name that
+is neither reserved nor registered nor a near miss.
 
 Every diagnostic names the file, the node path, and the property.

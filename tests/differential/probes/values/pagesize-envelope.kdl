@@ -1,0 +1,20 @@
+// probes/values/pagesize-envelope.kdl -- what a page size name is worth.
+//
+// One of the four; see `pagesize-iso` for the question all four ask.
+//
+// The table holds `EnvelopeDL` portrait, 110 x 220 mm, and `landscape`
+// swaps that to a page 220 mm wide and 110 mm tall: 623.622 x 311.811 pt.
+// The swap happens after the conversion, not before it.
+//
+// doc/template.md#enumerations is what this became.
+
+report name="values/pagesize-envelope" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="EnvelopeDL" landscape=#true \
+         leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=10 {
+      rectangle left=0 top=0 width=1 height=1
+    }
+  }
+}

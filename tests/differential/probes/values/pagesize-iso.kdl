@@ -1,0 +1,33 @@
+// probes/values/pagesize-iso.kdl -- what a page size name is worth.
+//
+// template.md listed 27 page size names and no dimension for any
+// of them, while the page's width and height go straight into the
+// printout header and decide every frame under it.  So the names
+// were a table of contents for a table that was not there.
+//
+// The four probes here read the answer out of `page` in the header,
+// one per family, because each family is stated in a different unit
+// and the conversion is where the families can disagree: `A4` is
+// millimetres and rounds, `Executive` is inches and lands exact,
+// `EnvelopeDL` is millimetres under `landscape`, and `BusinessCard`
+// is the odd entry whose round number is in inches rather than
+// in the millimetres its standard uses.  All 27 were read off
+// the reference the same way; the table they became is held to
+// by the unit tests.
+//
+// A4 is 210 x 297 mm, so 595.276 x 841.89 pt: the conversion is
+// one multiplication by 72/25.4 rounded to three places, exactly
+// as for a `width="210mm"`.
+//
+// doc/template.md#enumerations is what this became.
+
+report name="values/pagesize-iso" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" \
+         leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=10 {
+      rectangle left=0 top=0 width=1 height=1
+    }
+  }
+}

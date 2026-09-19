@@ -182,13 +182,21 @@ def split_layout(layout: str) -> tuple[tuple[str, str], ...]:
     position = 0
     while position < len(layout):
         for token in ORDERED_TOKENS:
-            if layout.startswith(token, position):
-                if literal:
-                    chunks.append(("literal", "".join(literal)))
-                    literal = []
-                chunks.append((TOKENS[token], token))
-                position += len(token)
-                break
+            if not layout.startswith(token, position):
+                continue
+            if TOKENS[token] == "fraction" and is_digit(layout, position + len(token)):
+                # Go's rule: a fractional second is a point or comma and
+                # then digits *to the end of the run*.  `02.01.2006` is a
+                # day, a point and a month, not a day and one digit of
+                # fraction, and it is the layout doc/template.md#parameter
+                # writes a European date with.
+                continue
+            if literal:
+                chunks.append(("literal", "".join(literal)))
+                literal = []
+            chunks.append((TOKENS[token], token))
+            position += len(token)
+            break
         else:
             literal.append(layout[position])
             position += 1
@@ -223,11 +231,18 @@ def is_digit(text: str, index: int) -> bool:
     and a timestamp written in Devanagari is not one this engine
     and the reference would read the same way.
 
+    A position past the end holds nothing, which is not a digit.
+    That is the reading Go's own helper takes, and it is what lets
+    a caller ask about the character after a token without first
+    asking whether there is one.
+
     Args:
         text: The value being read.
         index: The position to look at.
 
     """
+    if index >= len(text):
+        return False
     character = text[index]
     return character.isascii() and character.isdigit()
 

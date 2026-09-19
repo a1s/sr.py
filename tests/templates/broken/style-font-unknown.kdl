@@ -1,0 +1,13 @@
+// broken/style-font-unknown.kdl -- a style naming a font that is not declared.
+//
+// expect: no font named 'nosuch'
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=10 {
+      field text="x" { style font="nosuch" }
+    }
+  }
+}

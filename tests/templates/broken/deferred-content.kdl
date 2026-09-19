@@ -1,0 +1,20 @@
+// broken/deferred-content.kdl -- the rules that tie evaltime, FINAL and a placeholder together.
+//
+// expect: evaltime defers the expr, so there has to be one
+// expect: this expr never names FINAL
+// expect: at most one placeholder
+// expect: so a deferred one needs a text or data placeholder
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  data "blob" expr="'x'"
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=40 {
+      field text="a" evaltime="page"
+      field expr="PAGE_NUMBER" evaltime="page" width=50
+      field expr="FINAL.PAGE_NUMBER" evaltime="report" stretch=#true text="9" data="blob"
+      barcode type="Code128" expr="FINAL.PAGE_COUNT" evaltime="page"
+    }
+  }
+}

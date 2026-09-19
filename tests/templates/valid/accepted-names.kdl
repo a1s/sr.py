@@ -1,0 +1,19 @@
+// valid/accepted-names.kdl -- the two ways a name says it is deliberate.
+//
+// doc/template.md#unknown-names: an `x-` name is reserved for another
+// implementation and a name in `accept` is registered by this one,
+// so neither is warned about.  The file states no `warn:`, which
+// the driver reads as "and nothing else is warned about either".
+
+report name="probe" {
+  accept "wobble"
+  accept "sprocket" "teeth"
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" x-vendor-mode="duplex" {
+    style font="body" color="black"
+    detail height=10 wobble=#true {
+      field text="x" X-Vendor-Hint="upper case is the same prefix"
+      sprocket teeth=9
+    }
+  }
+}

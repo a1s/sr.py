@@ -1,0 +1,17 @@
+// broken/missing-required.kdl -- nodes with a required property left off.
+//
+// expect: required
+
+report name="probe" {
+  variable "total" calc="sum"
+  font "body" file="../../../example/fonts/Go-Regular.ttf"
+  layout pagesize="A4" {
+    style font="body" color="black"
+    columns { }
+    detail height=20 {
+      outline level=2
+      xref { field text="x" }
+      barcode text="x"
+    }
+  }
+}

@@ -1,0 +1,25 @@
+// broken/subreport-args.kdl -- arg nodes against the parameters they feed.
+//
+// expect: the subreport declares no parameter named 'nosuch'
+// expect: 'heading' is supplied twice
+// expect: the subreport requires 'needed'
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    embedded "one" {
+      parameter "heading"
+      parameter "needed"
+      detail height=10 { field text="y" }
+    }
+    detail height=10 {
+      field text="x"
+      subreport embedded="one" seq=1 data="[]" {
+        arg "heading" value="'a'"
+        arg "heading" value="'b'"
+        arg "nosuch" value="'c'"
+      }
+    }
+  }
+}

@@ -1,0 +1,22 @@
+// broken/blob-sources.kdl -- a data node and a font naming things that are not there.
+//
+// expect: a data node holds exactly one of expr or a content child
+// expect: content is not base64
+// expect: a font names exactly one of typeface, file or data
+// expect: no data node named 'nosuch'
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  font "two" typeface="Helvetica" file="../../../example/fonts/Go-Regular.ttf" size=10
+  font "three" data="nosuch" size=10
+  data "both" expr="'x'" {
+    content "abc"
+  }
+  data "corrupt" encoding="base64" {
+    content "not base64 at all!!"
+  }
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=10 { field text="x" }
+  }
+}

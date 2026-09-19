@@ -1,0 +1,18 @@
+// broken/accept-arguments.kdl -- an `accept` that registers nothing usable.
+//
+// doc/template.md#accept takes one or more strings.  A node with no
+// arguments registers nothing and is a mistake rather than a no-op, and
+// a name that is not a string is not a name.
+//
+// expect: an `accept` names at least one node or property
+// expect: an `accept` name is a string, not integer
+
+report name="probe" {
+  accept
+  accept 42
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=10 { field text="x" }
+  }
+}

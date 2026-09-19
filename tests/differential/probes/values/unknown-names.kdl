@@ -1,0 +1,34 @@
+// probes/values/unknown-names.kdl -- a name the format does not define.
+//
+// A registered divergence: built here, refused by the reference, which
+// takes all four of the names below for mistakes -- `accept` included,
+// the node it does not have yet -- and says `unexpected node here` or
+// `unknown property` for each.  There is no flag that relaxes it.
+// See `divergences.toml`, entry `unknown-names-accepted`.
+//
+// doc/template.md#unknown-names: a node or a property the format does not
+// define is accepted rather than refused, so a template written for a
+// newer, an older or a different implementation still loads.  A name is
+// warned about unless it says it is deliberate -- an `x-` prefix, or a
+// listing in `accept` -- and only a near miss of a name legal on that node
+// is an error, because `printwhn=` is a misspelling far more often than an
+// extension, and taking it for one paints an element on every record that
+// `printwhen` meant to suppress.
+//
+// The three tiers this carries are `wobble`, registered by `accept`;
+// `x-vendor-hint`, reserved by its prefix; and `sprocket`, which is
+// neither and is the one warning the load produces.  No near miss is
+// here, since this probe is about what builds and that one does not.
+
+report name="values/unknown-names" {
+  accept "wobble"
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=20 {
+      field text="x" left=0 top=0 width=100 height=10 wobble=#true
+      field text="y" left=0 top=10 width=100 height=10 x-vendor-hint="ignored"
+      sprocket teeth=9
+    }
+  }
+}

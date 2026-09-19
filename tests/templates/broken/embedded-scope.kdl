@@ -1,0 +1,21 @@
+// broken/embedded-scope.kdl -- an embedded name that is not in scope, and one declared twice.
+//
+// expect: no embedded layout named 'nosuch' is in scope here
+// expect: an embedded layout named 'twice' is declared twice here
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    embedded "twice" {
+      detail height=10 { field text="y" }
+    }
+    embedded "twice" {
+      detail height=10 { field text="z" }
+    }
+    detail height=10 {
+      field text="x"
+      subreport embedded="nosuch" seq=1 data="[]"
+    }
+  }
+}

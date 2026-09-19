@@ -1,0 +1,22 @@
+// broken/near-miss.kdl -- an unknown name one edit from a real one.
+//
+// doc/template.md#unknown-names: accepting these is what the leniency
+// costs, so it is not paid.  `printwhn=` would paint the element on
+// every record rather than on the ones it names, and the page would
+// look right.  A transposition and a wrong case are near misses too.
+//
+// expect: unknown property `printwhn`; did you mean `printwhen`?
+// expect: unknown node `rectangel`; did you mean `rectangle`?
+// expect: unknown property `Height`; did you mean `height`?
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=10 {
+      field text="x" printwhn="True"
+      field text="y" Height=4
+      rectangel width=1
+    }
+  }
+}

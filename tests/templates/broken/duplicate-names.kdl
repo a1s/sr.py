@@ -1,0 +1,26 @@
+// broken/duplicate-names.kdl -- one name declared twice in each namespace that forbids it.
+//
+// expect: a font named 'body' is declared twice
+// expect: a parameter named 'once' is declared twice
+// expect: a variable named 'total' is declared twice
+// expect: a data named 'blob' is declared twice
+// expect: a group named 'one' is declared twice
+
+report name="probe" {
+  parameter "once"
+  parameter "once"
+  variable "total" expr="1" calc="sum"
+  variable "total" expr="2" calc="sum"
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=12
+  data "blob" expr="'a'"
+  data "blob" expr="'b'"
+  layout pagesize="A4" {
+    style font="body"
+    group "one" expr="1" {
+      group "one" expr="2" {
+        detail height=10 { field text="x" }
+      }
+    }
+  }
+}

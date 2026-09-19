@@ -1,0 +1,16 @@
+// broken/xref-outline-missing.kdl -- a link to an outline entry that no band emits.
+//
+// expect: no outline is named 'nowhere'
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=20 {
+      outline title="'here'" name="'top'"
+      xref type="outline" target="'nowhere'" {
+        field text="x"
+      }
+    }
+  }
+}

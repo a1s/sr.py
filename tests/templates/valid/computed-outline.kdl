@@ -1,0 +1,23 @@
+// valid/computed-outline.kdl -- an outline name only the data knows.
+//
+// Both sides of an outline reference are expressions, so a target can be
+// called unreachable only when every name in the document is a literal.
+// Here one of them is built from a record field, so the set of names
+// is not knowable at load and the `xref` below is left alone -- which is
+// the difference between this and `broken/xref-outline-missing`.
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    title height=10 {
+      outline title="'anchors'" name="'section-' + region"
+      field text="t"
+    }
+    detail height=20 {
+      xref type="outline" target="'section-north'" {
+        field text="x"
+      }
+    }
+  }
+}

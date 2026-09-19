@@ -1,0 +1,7 @@
+// broken/no-layout.kdl -- a report with no layout.
+//
+// expect: a report has exactly one `layout`
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+}

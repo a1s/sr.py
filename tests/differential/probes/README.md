@@ -113,17 +113,27 @@ the reference gave, and names the section of `doc/` that answer became.
 | `expressions/time-fields` | what `time.time` does with the fields it is not given |
 | `expressions/decimal-precision` | how far a decimal's digits survive a float conversion |
 | `expressions/null-folds` | what a null does to an accumulator |
+| `expressions/date-layout` | a point in a layout that is not a fraction |
 | `values/dimensions` | what a dimension string means |
 | `values/colors` | what each colour spelling resolves to |
 | `values/hex-float` | a number the host's parser takes and the grammar does not |
 | `values/non-finite` | a dimension KDL can write and points cannot hold |
+| `values/pagesize-iso` | what a page size name is worth, in millimetres |
+| `values/pagesize-inches` | the same, where the standard is in inches |
+| `values/pagesize-envelope` | the same, under `landscape` |
+| `values/pagesize-card` | the same, for the entry whose round unit is not its own |
+| `values/unknown-names` | a node and a property the format does not define |
 
-Ten are [registered divergences](../divergences.toml) and are *expected*
-to differ: the eight in the `expressions/` and `data/` groups, where the
+Twelve are [registered divergences](../divergences.toml) and are *expected*
+to differ: the nine in the `expressions/` and `data/` groups, where the
 reference refuses four outright -- which the harness treats as a difference
 like any other -- and `values/hex-float` and `values/non-finite`, which
 go the other way, built by the reference and refused here.
 `expressions/time-fields` and `expressions/decimal-precision` are the odd
 ones: most of their rows agree, and one row each carries the difference --
 a date before year 1, and a precision deeper than a float reaches.
-The remaining twenty must agree byte for byte once this engine builds them.
+`values/unknown-names` is the twelfth and the only one about a rule neither
+engine had written down: both refused a name the format does not define,
+doc/ now accepts it, and the reference is the side that has not caught up.
+The remaining twenty-five must agree byte for byte once this engine
+builds them.

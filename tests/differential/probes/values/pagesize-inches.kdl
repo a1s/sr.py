@@ -1,0 +1,19 @@
+// probes/values/pagesize-inches.kdl -- what a page size name is worth.
+//
+// One of the four; see `pagesize-iso` for the question all four ask.
+//
+// 7.25 x 10.5 in, which is 522 x 756 pt exactly -- the inch family
+// lands on whole points and never exercises the rounding.
+//
+// doc/template.md#enumerations is what this became.
+
+report name="values/pagesize-inches" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="Executive" \
+         leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=10 {
+      rectangle left=0 top=0 width=1 height=1
+    }
+  }
+}

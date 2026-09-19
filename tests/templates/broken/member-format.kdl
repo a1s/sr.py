@@ -1,0 +1,14 @@
+// broken/member-format.kdl -- a record member given a date layout it has no use for.
+//
+// expect: format reads a date, and this member is a int
+
+report name="probe" {
+  records {
+    member "count" type="int" format="2006-01-02"
+  }
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=10 { field text="x" }
+  }
+}

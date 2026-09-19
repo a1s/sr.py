@@ -111,6 +111,8 @@ sr build -t sakila.kdl -d payments.jsonl -o report.pdf
 | `--param NAME=VALUE` | A report parameter. Repeatable. `VALUE` is text, parsed per the parameter's [declared type](template.md#parameter-values-as-text). |
 | `--build-time` | RFC 3339. Fixes `BUILD_TIME`. |
 | `--strict-fonts` | Resolve only fonts the template names by file or data; fail with the typeface named otherwise. |
+| `--strict-names` | Refuse any [unknown node or property](template.md#unknown-names) instead of warning about it. |
+| `--accept NAME` | Accept the named node or property without a warning, as a template's own [`accept`](template.md#accept) does. Repeatable. |
 | `--allow-overflow` | Record an oversized band as a warning instead of failing. |
 | `--uncompressed` | Leave PDF streams uncompressed, which makes the file readable in a text editor. Ignored for a printout. |
 | `-v`, `--verbose` | Report host font diagnostics on stderr. |
@@ -166,7 +168,7 @@ it found. No data is read, so this is the check that belongs in a commit hook.
 |---|---|
 | `-t`, `--template` | Template file. May also be given as the sole positional argument. |
 | `--param NAME=VALUE` | A report parameter. Repeatable. |
-| `--strict-fonts` | As for `build`. |
+| `--strict-fonts`, `--strict-names`, `--accept NAME` | As for `build`. |
 | `-q`, `--quiet` | Print nothing on success. |
 | `-v`, `--verbose` | Include host font diagnostics. |
 
@@ -215,7 +217,7 @@ holds something:
 | | |
 |---|---|
 | `subreports` | The [subreport](template.md#subreport) nodes the template carries, by path. A `template=` one is loaded and checked with its host, so a fault in it is reported against its own file. |
-| `warnings` | Load diagnostics, a substituted typeface. The check still passes. |
+| `warnings` | Load diagnostics, an [unknown name](template.md#unknown-names), a substituted typeface. The check still passes. |
 | `failures` | Fonts that did not resolve. These are why the exit code is 1, so they are not filed as warnings. |
 | `diagnostics` | Under `--verbose`: what the [host font enumeration](template.md#host-enumeration) had to say. About the machine, not the template. |
 
