@@ -24,7 +24,9 @@ in the enumerator, because each is a property of one face:
   is an sfnt at all, so that a bitmap face is skipped as unsupported
   while a file claiming to be an sfnt and failing to parse is a warning.
   One unsupported format cannot be told from the first bytes and is named
-  from its tables instead: see :data:`BITMAP_SFNT`.
+  from its tables instead: see :data:`BITMAP_SFNT`.  Which of the two
+  a refusal is travels as :class:`UnsupportedFont`, since by the time
+  the enumerator has the message the first bytes are no longer in hand.
 * **A collection is several faces**, each addressed by index.
 
 The advance of a codepoint the face does not have is ``.notdef``'s,
@@ -63,6 +65,7 @@ __all__ = [
     "SFNT_FORMATS",
     "Face",
     "Origin",
+    "UnsupportedFont",
     "faces_in",
     "near",
     "open_bytes",
@@ -70,6 +73,22 @@ __all__ = [
     "read_faces",
     "sniff",
 ]
+
+
+class UnsupportedFont(FontError):
+    """A font this engine does not read, as opposed to one that is broken.
+
+    doc/template.md#host-enumeration draws that line and spells the two
+    sides differently: a format this engine does not read is classified
+    and **skipped**, while a file that presents itself as an sfnt and
+    then fails to parse is a **warning**.  A reader sorting the diagnostics
+    of a whole machine needs to know which pile a line belongs in, and for
+    every other unsupported format :func:`sniff` says so from the first
+    bytes.  :data:`BITMAP_SFNT` cannot be told that way, so it says so
+    by its class instead.
+
+    """
+
 
 # The sfnt version tags, as the first four bytes of a file.
 # `ttcf` is a collection; the rest each hold one face.
@@ -120,7 +139,9 @@ OTHER_FORMATS = (
 # and a face that resolves and prints nothing is worse than a face
 # that says why.  Refusing it is therefore deliberate, and the reason
 # a description sits here rather than a missing-table message: `bhed`
-# is not damage.
+# is not damage.  It is raised as an :class:`UnsupportedFont` for
+# the same reason -- so that the enumerator files it with the formats
+# :data:`OTHER_FORMATS` names rather than with the broken files.
 BITMAP_SFNT = "a bitmap-only sfnt font, with `bhed` in place of `head`"
 
 # What a face must have before it can be measured with.  `head` gives
@@ -376,14 +397,14 @@ def build(data: bytes, origin: Origin) -> Face:
     try:
         kind, description = sniff(data[:12])
         if kind is None:
-            raise FontError(description)
+            raise UnsupportedFont(description)
         count = faces_in(data)
         if not 0 <= origin.index < count:
             one = "face" if count == 1 else "faces"
             raise FontError(f"the file holds {count} {one}")
         font = TTFont(io.BytesIO(data), fontNumber=origin.index, lazy=True)
         if "head" not in font and "bhed" in font:
-            raise FontError(BITMAP_SFNT)
+            raise UnsupportedFont(BITMAP_SFNT)
         missing = [one for one in REQUIRED_TABLES if one not in font]
         if missing:
             raise FontError(f"no {missing[0]} table")
@@ -391,7 +412,11 @@ def build(data: bytes, origin: Origin) -> Face:
     except Exception as refused:
         # Any parse failure is one failure, and whatever the font library
         # chose to raise is not a class the rest of this engine knows.
-        raise FontError(f"{origin}: {refused}") from None
+        # The one distinction that survives naming the origin is the one
+        # the enumerator sorts on: a format this engine does not read is
+        # not a file that would not parse.
+        shape = UnsupportedFont if isinstance(refused, UnsupportedFont) else FontError
+        raise shape(f"{origin}: {refused}") from None
 
 
 class Face:

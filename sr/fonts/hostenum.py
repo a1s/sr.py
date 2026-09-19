@@ -79,7 +79,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from sr.errors import FontError
-from sr.fonts.face import Origin, build, faces_in, read_bytes, sniff
+from sr.fonts.face import (
+    Origin,
+    UnsupportedFont,
+    build,
+    faces_in,
+    near,
+    read_bytes,
+    sniff,
+)
 
 __all__ = [
     "Catalog",
@@ -604,7 +612,7 @@ def read_file(catalog: Catalog, path: Path) -> None:
         return
     kind, description = sniff(head)
     if kind is None:
-        catalog.diagnostics.append(f"{path}: {description}; skipped")
+        catalog.diagnostics.append(f"{near(path).as_posix()}: {description}; skipped")
         return
     try:
         data = read_bytes(path)
@@ -622,7 +630,11 @@ def add_face(catalog: Catalog, data: bytes, origin: Origin) -> None:
 
     A file that presents itself as sfnt and then will not parse is
     a warning rather than a silent skip, which is the distinction
-    doc/template.md#host-enumeration draws.
+    doc/template.md#host-enumeration draws.  A face refused for its
+    format rather than for its condition is on the other side of that
+    line and is spelled as :func:`read_file` spells the ones the first
+    bytes gave away, because a reader sorts on the wording and not on
+    which function produced it.
 
     Args:
         catalog: The table being built.
@@ -632,6 +644,9 @@ def add_face(catalog: Catalog, data: bytes, origin: Origin) -> None:
     """
     try:
         face = build(data, origin)
+    except UnsupportedFont as refused:
+        catalog.diagnostics.append(f"{refused}; skipped")
+        return
     except FontError as refused:
         catalog.diagnostics.append(str(refused))
         return
@@ -660,4 +675,6 @@ def peek(path: Path, count: int) -> bytes | None:
     except FileNotFoundError:
         return None
     except OSError as refused:
-        raise FontError(f"cannot read {path}: {refused.strerror or refused}") from None
+        raise FontError(
+            f"cannot read {near(path).as_posix()}: {refused.strerror or refused}"
+        ) from None

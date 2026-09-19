@@ -233,6 +233,30 @@ def test_a_file_claiming_to_be_an_sfnt_is_a_diagnostic_of_its_own(
     assert "skipped" not in said[0]
 
 
+def test_a_bitmap_only_sfnt_is_skipped_and_not_reported_as_broken(
+    font_directory: Path,
+) -> None:
+    # The one unsupported format the first bytes do not give away.
+    # It belongs on the `skipped` side of the line with the other formats
+    # this engine does not read, not with the files that would not parse,
+    # because those two say different things about the machine.
+    said = [one for one in table(font_directory).diagnostics if "Bitmapped" in one]
+    assert len(said) == 1
+    assert "bitmap-only sfnt" in said[0]
+    assert said[0].endswith("; skipped")
+
+
+def test_every_diagnostic_spells_its_path_the_one_way(font_directory: Path) -> None:
+    # The diagnostics of one directory are read together, and they used
+    # to arrive in two spellings: the ones raised while classifying a file
+    # took the path as the platform writes it, and the ones raised while
+    # reading a face took it as `Origin` does.  On Windows that put both
+    # slashes in one report, for two files side by side.
+    said = table(font_directory).diagnostics
+    assert said
+    assert not [one for one in said if "\\" in one]
+
+
 def test_nothing_that_was_skipped_reached_the_table(font_directory: Path) -> None:
     assert table(font_directory).families() == ("Go",)
 

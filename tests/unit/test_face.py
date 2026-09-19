@@ -12,6 +12,7 @@ from sr.errors import FontError
 from sr.fonts.face import (
     LATIN1,
     Origin,
+    UnsupportedFont,
     faces_in,
     open_bytes,
     open_face,
@@ -235,4 +236,48 @@ def test_a_file_that_claims_to_be_an_sfnt_and_is_not_is_a_font_error(
     path = tmp_path / "broken.ttf"
     path.write_bytes(b"\x00\x01\x00\x00" + b"\x00" * 20)
     with pytest.raises(FontError):
+        open_face(path)
+
+
+# -- a font this engine declines to read ------------------------------
+#
+# doc/template.md#font: a bitmap-only sfnt carries `bhed` where a face
+# this engine can draw carries `head`.  It is refused for its format
+# and not for its condition, which is a distinction the enumerator spells
+# out and therefore one that has to survive as far as the enumerator.
+
+
+def test_a_bitmap_only_sfnt_is_refused_as_a_format(bitmap_sfnt: Path) -> None:
+    with pytest.raises(UnsupportedFont, match="bitmap-only sfnt") as refused:
+        open_face(bitmap_sfnt)
+    assert "Bitmapped.ttf" in str(refused.value)
+
+
+def test_a_bitmap_only_sfnt_is_not_reported_as_a_missing_table(
+    bitmap_sfnt: Path,
+) -> None:
+    # `bhed` holds the same twelve fields as `head`, so the file is
+    # not damaged and a message about an absent table sends the reader
+    # looking for damage that is not there.
+    with pytest.raises(FontError) as refused:
+        open_face(bitmap_sfnt)
+    assert "table" not in str(refused.value)
+
+
+def test_a_face_that_will_not_parse_is_not_an_unsupported_format(
+    tmp_path: Path,
+) -> None:
+    # The other side of the same line: a broken file is a broken file,
+    # and classifying it as a format would file it under `skipped`.
+    path = tmp_path / "broken.ttf"
+    path.write_bytes(b"\x00\x01\x00\x00" + b"\x00" * 20)
+    with pytest.raises(FontError) as refused:
+        open_face(path)
+    assert not isinstance(refused.value, UnsupportedFont)
+
+
+def test_a_file_that_is_not_an_sfnt_is_an_unsupported_format(tmp_path: Path) -> None:
+    path = tmp_path / "notes.txt"
+    path.write_bytes(b"this is not a font")
+    with pytest.raises(UnsupportedFont):
         open_face(path)

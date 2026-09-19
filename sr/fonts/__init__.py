@@ -25,6 +25,7 @@ from __future__ import annotations
 from sr.fonts.face import (
     Face,
     Origin,
+    UnsupportedFont,
     faces_in,
     open_bytes,
     open_face,
@@ -53,6 +54,7 @@ __all__ = [
     "Resolution",
     "Resolver",
     "Source",
+    "UnsupportedFont",
     "Wrapped",
     "aliases_for",
     "enumerate_faces",
