@@ -1428,8 +1428,8 @@ A `font` node naming a `typeface` is resolved by trying, in order:
    resolution ends there and failure is an error.
 2. [Host enumeration](#host-enumeration): every font the machine has, matched by
    family and style.
-3. A built-in table of **family aliases** — `Helvetica` → `Arial`,
-   `Courier` → `Courier New` and the rest — each alias then looked for by step 2.
+3. The [**family alias** table](#the-family-alias-table), each alias then
+   looked for by step 2.
 4. A last-resort [substitute](#the-substitute-face).
 
 The alias table is consulted **after** the host has been searched, never before: an
@@ -1444,6 +1444,67 @@ the chain produced them — see [printout.md](printout.md#fonts). A font the tem
 named with `file=` is recorded relative to the printout, so it travels with it;
 one the engine found on the host is recorded as it was opened. Under strict mode
 only the first case can arise.
+
+### The family alias table
+
+Step 3 is this table. A `typeface` is looked up **whole**, with case folded
+and nothing else normalised: `helvetica` and `HELVETICA` are the same key,
+`Helvetica Neue` is a key of its own, and `Helvetica ` with a trailing space
+is not a key at all. Each entry is an **ordered list**, and every candidate
+in it is looked for by step 2 in turn; the first the host has wins, and if
+none of them is there the typeface goes on to step 4.
+
+| `typeface` | tried in this order |
+|---|---|
+| `arial` | Helvetica, Liberation Sans, Nimbus Sans |
+| `helvetica` | Arial, Liberation Sans, Nimbus Sans |
+| `helvetica neue` | Arial, Liberation Sans |
+| `times` | Times New Roman, Liberation Serif, Nimbus Roman |
+| `times new roman` | Times, Liberation Serif, Nimbus Roman |
+| `courier` | Courier New, Liberation Mono, Nimbus Mono PS |
+| `courier new` | Courier, Liberation Mono, Nimbus Mono PS |
+| `palatino` | Palatino Linotype, URW Palladio L |
+| `bookman` | Bookman Old Style, URW Bookman L |
+| `avantgarde` | Century Gothic, URW Gothic L |
+| `zapfdingbats` | Zapf Dingbats, Dingbats |
+| `symbol` | OpenSymbol |
+| `sans-serif` | Arial, Helvetica, DejaVu Sans, Liberation Sans |
+| `serif` | Times New Roman, Times, DejaVu Serif, Liberation Serif |
+| `monospace` | Courier New, Consolas, DejaVu Sans Mono, Liberation Mono |
+
+Three things follow from the shape of it, and each is the reason
+an entry is there at all.
+
+**The core three are symmetric.** `arial` names Helvetica and `helvetica`
+names Arial, and likewise for the two Times and the two Couriers.
+A template is written on one machine and built on another, and the name
+its author had is as likely to be the absent one as the present one.
+An asymmetric table would make a report written on Windows fail on macOS
+while the same report written on macOS built everywhere.
+
+**The metric-compatible free families come after the licensed one.**
+Liberation Sans and Nimbus Sans have Helvetica's widths, so a page set
+in one breaks its lines where a page set in the other does. They are last
+because they are a fallback of last resort before the substitute, not a
+preference.
+
+**The CSS generics name a concrete family.** `sans-serif`, `serif` and
+`monospace` are what a template written against a browser-shaped tool
+spells, and they resolve through a list rather than through a query
+to the platform -- which [host enumeration](#host-enumeration) forbids
+for the reason given there.
+
+What is **not** here matters as much. `Arial Narrow`, `Gill Sans`,
+`Lucida Grande`, `Monaco` and `Menlo` are real families that some machines
+have and others do not, and aliasing one to a near neighbour would set
+a report in a face nobody asked for while recording `alias` rather than
+`substitute`. A family that is simply absent reaches step 4 and is warned
+about, which is the honest answer. Nor are `cursive`, `fantasy` and
+`system-ui` here: no family answers to them.
+
+A template that needs a particular face on a particular machine names it
+by `file` rather than hoping this table spells its family the way the
+template does.
 
 ### Host enumeration
 

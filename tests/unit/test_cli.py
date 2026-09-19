@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import io
 from pathlib import Path
 
@@ -15,6 +16,7 @@ SAKILA = ROOT / "example" / "sakila" / "sakila.kdl"
 INVOICES = ROOT / "example" / "invoices" / "invoices.kdl"
 BROKEN = ROOT / "tests" / "templates" / "broken" / "no-layout.kdl"
 UNKNOWN = ROOT / "tests" / "templates" / "valid" / "unknown-names.kdl"
+FONTS = ROOT / "example" / "fonts"
 
 
 def run(*argv: str) -> tuple[int, str]:
@@ -166,11 +168,16 @@ def test_a_parameter_without_an_equals_sign_is_a_usage_error() -> None:
 # -- the report -------------------------------------------------------
 
 
-def test_validate_reports_what_doc_cli_says_it_does() -> None:
-    # The block doc/cli.md#sr-validate prints, word for word, less
-    # the `fonts` section, which needs resolution and arrives in M5.
+def test_validate_reports_what_doc_cli_says_it_does(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The block doc/cli.md#sr-validate prints, word for word.
+    # Run from the repository root and given the template relatively,
+    # because the font paths in that block are relative and they are
+    # relative to the directory the command was run from.
+    monkeypatch.chdir(ROOT)
     expected = [
-        f"template {SAKILA}",
+        "template example/sakila/sakila.kdl",
         '  report "DVD rental payments" version 2 by als',
         "  Payments by customer, from the Sakila sample database",
         "  page 595.276 x 841.89 pt, margins "
@@ -180,9 +187,14 @@ def test_validate_reports_what_doc_cli_says_it_does() -> None:
         '  period_start  date      default "2005-01-01"  prompt',
         '  period_end    date      default "2006-01-01"  prompt',
         "  as_of         datetime  defaultexpr",
+        "fonts",
+        '  body       8pt   explicit  example/fonts/Go-Regular.ttf  "Go"',
+        '  bold       8pt   explicit  example/fonts/Go-Bold.ttf  "Go"',
+        '  pagetitle  12pt  explicit  example/fonts/Go-Regular.ttf  "Go"',
+        '  title      14pt  explicit  example/fonts/Go-Bold.ttf  "Go"',
         "ok",
     ]
-    code, said = run("validate", str(SAKILA))
+    code, said = run("validate", "example/sakila/sakila.kdl")
     assert code == 0
     assert said.splitlines() == expected
 
@@ -281,3 +293,120 @@ def test_the_help_names_both_flags() -> None:
     _, said = run("help", "validate")
     assert "--strict-names" in said
     assert "--accept" in said
+
+
+# -- the fonts a template declares ------------------------------------
+#
+# doc/cli.md#sr-validate resolves them, because that is the one part
+# of the check that depends on the machine rather than on the document.
+
+
+def test_a_font_named_by_file_resolves_without_touching_the_host(
+    tmp_path: Path,
+) -> None:
+    template = tmp_path / "explicit.kdl"
+    template.write_text(
+        'report name="explicit" {\n'
+        f'  font "body" file="{(FONTS / "Go-Regular.ttf").as_posix()}" size=9\n'
+        '  layout pagesize="A4" {\n'
+        '    style font="body" color="black"\n'
+        '    detail height=20 { field text="x" left=0 top=0 width=10 height=10 }\n'
+        "  }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    code, said = run("validate", str(template), "--verbose")
+    assert code == 0
+    assert "explicit" in said
+    assert '"Go"' in said
+    assert "diagnostics" not in said
+
+
+def test_strict_fonts_refuses_a_typeface_and_says_why(tmp_path: Path) -> None:
+    template = tmp_path / "strict.kdl"
+    template.write_text(
+        'report name="strict" {\n'
+        '  font "body" typeface="Helvetica" size=9\n'
+        '  layout pagesize="A4" {\n'
+        '    style font="body" color="black"\n'
+        '    detail height=20 { field text="x" left=0 top=0 width=10 height=10 }\n'
+        "  }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    code, said = run("validate", str(template), "--strict-fonts")
+    assert code == 1
+    assert "failures" in said
+    assert 'font "body": strict mode admits only' in said
+    assert 'typeface "Helvetica"' in said
+    assert said.splitlines()[-1] != "ok"
+
+
+def test_a_font_that_did_not_resolve_is_not_in_the_font_table(
+    tmp_path: Path,
+) -> None:
+    template = tmp_path / "missing.kdl"
+    template.write_text(
+        'report name="missing" {\n'
+        '  font "gone" file="nowhere.ttf" size=9\n'
+        f'  font "body" file="{(FONTS / "Go-Regular.ttf").as_posix()}" size=9\n'
+        '  layout pagesize="A4" {\n'
+        '    style font="body" color="black"\n'
+        '    detail height=20 { field text="x" left=0 top=0 width=10 height=10 }\n'
+        "  }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    code, said = run("validate", str(template))
+    assert code == 1
+    lines = said.splitlines()
+    assert any(one.strip().startswith("body") for one in lines)
+    assert not any(one.strip().startswith("gone  ") for one in lines)
+    assert 'font "gone": cannot read' in said
+
+
+def test_a_declared_style_the_face_has_not_got_is_a_warning(tmp_path: Path) -> None:
+    template = tmp_path / "declared.kdl"
+    template.write_text(
+        'report name="declared" {\n'
+        f'  font "body" file="{(FONTS / "Go-Regular.ttf").as_posix()}" '
+        "size=9 bold=#true\n"
+        '  layout pagesize="A4" {\n'
+        '    style font="body" color="black"\n'
+        '    detail height=20 { field text="x" left=0 top=0 width=10 height=10 }\n'
+        "  }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    code, said = run("validate", str(template))
+    assert code == 0
+    assert "warnings" in said
+    assert 'font "body" declares bold' in said
+
+
+def test_a_font_taking_its_face_from_a_blob_names_the_blob(tmp_path: Path) -> None:
+    face = base64.b64encode((FONTS / "Go-Regular.ttf").read_bytes()).decode()
+    wrapped = "\n".join(face[at : at + 72] for at in range(0, len(face), 72))
+    template = tmp_path / "blob.kdl"
+    template.write_text(
+        'report name="blob" {\n'
+        '  data "face" encoding="base64" {\n'
+        f'    content """\n{wrapped}\n"""\n'
+        "  }\n"
+        '  font "body" data="face" size=9\n'
+        '  layout pagesize="A4" {\n'
+        '    style font="body" color="black"\n'
+        '    detail height=20 { field text="x" left=0 top=0 width=10 height=10 }\n'
+        "  }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    code, said = run("validate", str(template))
+    assert code == 0
+    assert "explicit  data face" in said
+
+
+def test_the_help_names_the_font_flags() -> None:
+    _, said = run("help", "validate")
+    assert "--strict-fonts" in said
+    assert "--verbose" in said

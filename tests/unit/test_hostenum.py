@@ -1,0 +1,353 @@
+"""Host enumeration: the table, its order, and what it says about a machine.
+
+Most of this is tested against a fixture directory, because that is
+the whole of the behaviour: the per-platform code contributes a list of
+sources and nothing else, and :func:`enumerate_faces` walks whatever it
+is handed.  Those tests run anywhere and do not care what is installed.
+
+They are not enough on their own.  A platform whose source list came back
+empty would pass every one of them, so the tests at the end enumerate the
+real machine -- and what they assert is therefore whatever holds of any
+machine with fonts on it rather than of one.  They are what makes running
+the suite on a second operating system worth the trouble.
+
+Two of doc/template.md's three rows are run.  **Windows** is
+the development machine.  The **Linux** row is a Debian container --
+``make test-linux``, and ``tests/linux/run.sh`` says what a real machine
+exercises that a fixture cannot.  The distribution is named on purpose:
+where a font lives and what it is called are a distribution's decisions,
+so "Linux" names the row here and nothing else.  **macOS is neither**,
+so its row is checked only for naming the four directories the specification
+names, in the order it names them, and nothing has read a `.dfont` or
+enumerated a `.ttc` holding `Helvetica`.
+
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import pytest
+
+from sr.fonts.hostenum import (
+    MACOS_DIRECTORIES,
+    SUBSTITUTES,
+    Catalog,
+    Entry,
+    Source,
+    enumerate_faces,
+    fontconfig_directories,
+    host_sources,
+    style_words,
+    substitute_candidates,
+    walk,
+)
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def table(directory: Path, recursive: bool = False) -> Catalog:
+    """Return the table one directory builds.
+
+    Args:
+        directory: What to scan.
+        recursive: Whether to descend into subdirectories.
+
+    """
+    return enumerate_faces((Source(directory=directory, recursive=recursive),))
+
+
+# -- the table --------------------------------------------------------
+
+
+def test_every_face_in_a_directory_reaches_the_table(font_directory: Path) -> None:
+    catalog = table(font_directory)
+    assert catalog.lookup("Go", bold=False, italic=False) is not None
+    assert catalog.lookup("Go", bold=True, italic=False) is not None
+    assert catalog.families() == ("Go",)
+
+
+def test_a_family_is_matched_without_regard_to_case(font_directory: Path) -> None:
+    catalog = table(font_directory)
+    for spelling in ("Go", "go", "GO", "gO"):
+        assert catalog.lookup(spelling, bold=False, italic=False) is not None
+
+
+def test_a_family_the_machine_has_not_got_is_a_miss(font_directory: Path) -> None:
+    assert table(font_directory).lookup("Nothing", bold=False, italic=False) is None
+
+
+def test_a_style_the_family_has_not_got_is_a_miss(font_directory: Path) -> None:
+    assert table(font_directory).lookup("Go", bold=False, italic=True) is None
+
+
+def test_a_collection_is_enumerated_face_by_face(
+    tmp_path: Path, collection_bytes: bytes
+) -> None:
+    directory = tmp_path / "only"
+    directory.mkdir()
+    (directory / "Go.ttc").write_bytes(collection_bytes)
+    catalog = table(directory)
+    regular = catalog.lookup("Go", bold=False, italic=False)
+    bold = catalog.lookup("Go", bold=True, italic=False)
+    assert regular is not None and regular.origin.index == 0
+    assert bold is not None and bold.origin.index == 1
+
+
+def test_a_directory_that_is_not_there_is_not_an_error(tmp_path: Path) -> None:
+    catalog = table(tmp_path / "nowhere")
+    assert catalog.entries == {}
+    assert catalog.diagnostics == []
+
+
+# -- what is not a font -----------------------------------------------
+
+
+def test_a_format_it_cannot_read_is_classified_and_skipped(
+    font_directory: Path,
+) -> None:
+    said = "\n".join(table(font_directory).diagnostics)
+    assert "bitmap.fon" in said and "bitmap font" in said
+    assert "type1.pfa" in said and "Type 1" in said
+    assert "webfont.woff" in said and "WOFF" in said
+    assert "notes.txt" in said and "not an sfnt" in said
+
+
+def test_a_file_claiming_to_be_an_sfnt_is_a_diagnostic_of_its_own(
+    font_directory: Path,
+) -> None:
+    said = [one for one in table(font_directory).diagnostics if "truncated" in one]
+    assert len(said) == 1
+    assert "skipped" not in said[0]
+
+
+def test_nothing_that_was_skipped_reached_the_table(font_directory: Path) -> None:
+    assert table(font_directory).families() == ("Go",)
+
+
+# -- two faces claiming one key ---------------------------------------
+
+
+def test_the_first_found_wins_and_the_loser_is_a_diagnostic(tmp_path: Path) -> None:
+    directory = tmp_path / "twice"
+    directory.mkdir()
+    face = (ROOT / "example" / "fonts" / "Go-Regular.ttf").read_bytes()
+    (directory / "a-first.ttf").write_bytes(face)
+    (directory / "b-second.ttf").write_bytes(face)
+    catalog = table(directory)
+    held = catalog.lookup("Go", bold=False, italic=False)
+    assert held is not None
+    assert held.origin.path is not None
+    assert held.origin.path.name == "a-first.ttf"
+    assert len(catalog.diagnostics) == 1
+    assert "b-second.ttf" in catalog.diagnostics[0]
+    assert "a-first.ttf" in catalog.diagnostics[0]
+    assert "claims go regular" in catalog.diagnostics[0]
+
+
+def test_one_file_read_twice_does_not_lose_its_key_to_itself(
+    font_directory: Path,
+) -> None:
+    # The regular face is named outright and then met again by the scan.
+    # The collection beside it does claim the same key and is expected
+    # to say so; the file reading itself is what must not.
+    both = (
+        Source(files=(font_directory / "Go-Regular.ttf",)),
+        Source(directory=font_directory),
+    )
+    catalog = enumerate_faces(both)
+    itself = str(font_directory / "Go-Regular")
+    assert not [one for one in catalog.diagnostics if one.startswith(itself)]
+
+
+@pytest.mark.parametrize(
+    ("bold", "italic", "words"),
+    [
+        (False, False, "regular"),
+        (True, False, "bold"),
+        (False, True, "italic"),
+        (True, True, "bold italic"),
+    ],
+)
+def test_a_style_is_named_the_way_a_diagnostic_names_it(
+    bold: bool, italic: bool, words: str
+) -> None:
+    assert style_words(bold, italic) == words
+
+
+# -- order ------------------------------------------------------------
+
+
+def test_files_are_walked_in_unicode_order_by_name(tmp_path: Path) -> None:
+    # Not one name that differs from another only in case: the file
+    # system this runs on would make those one file, and the ordering
+    # this checks is a property of the walk rather than of the disk.
+    for name in ("delta.ttf", "Alpha.ttf", "_under.ttf", "beta.ttf"):
+        (tmp_path / name).write_bytes(b"")
+    assert [one.name for one in walk(tmp_path, recursive=False)] == [
+        "Alpha.ttf",
+        "_under.ttf",
+        "beta.ttf",
+        "delta.ttf",
+    ]
+
+
+def test_a_subdirectory_is_descended_into_where_its_name_falls(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "a.ttf").write_bytes(b"")
+    (tmp_path / "m").mkdir()
+    (tmp_path / "m" / "inner.ttf").write_bytes(b"")
+    (tmp_path / "z.ttf").write_bytes(b"")
+    assert [one.name for one in walk(tmp_path, recursive=True)] == [
+        "a.ttf",
+        "inner.ttf",
+        "z.ttf",
+    ]
+
+
+def test_a_subdirectory_is_left_alone_when_the_source_is_flat(tmp_path: Path) -> None:
+    (tmp_path / "m").mkdir()
+    (tmp_path / "m" / "inner.ttf").write_bytes(b"")
+    assert list(walk(tmp_path, recursive=False)) == []
+
+
+# -- the platform tables ----------------------------------------------
+
+
+def test_the_literal_platform_tables_answer_wherever_this_runs() -> None:
+    # Linux and macOS name directories outright, so asking about
+    # either from the other works.  Windows does not; see below.
+    assert host_sources("linux")
+    assert host_sources("darwin")
+
+
+def test_the_windows_sources_come_from_the_environment(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The Windows row is two directories named by environment variables
+    # and a registry this may not have, so it answers only where the
+    # environment says where to look.  That is why the check above
+    # does not ask about it, and this one sets the environment first.
+    monkeypatch.setenv("WINDIR", str(tmp_path / "Windows"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "Local"))
+    named = [one.directory for one in host_sources("win32") if one.directory]
+    assert tmp_path / "Windows" / "Fonts" in named
+    assert tmp_path / "Local" / "Microsoft/Windows/Fonts" in named
+
+
+def test_the_windows_sources_are_empty_where_the_environment_is_silent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in ("WINDIR", "SystemRoot", "LOCALAPPDATA"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr("sr.fonts.hostenum.registry_files", tuple)
+    assert host_sources("win32") == ()
+
+
+def test_the_macos_sources_are_the_four_the_specification_names() -> None:
+    sources = host_sources("darwin")
+    assert len(sources) == len(MACOS_DIRECTORIES)
+    assert [one.directory for one in sources] == [
+        Path(one).expanduser() for one in MACOS_DIRECTORIES
+    ]
+    assert not any(one.recursive for one in sources)
+
+
+def test_the_linux_sources_are_walked_as_trees() -> None:
+    assert all(one.recursive for one in host_sources("linux"))
+
+
+def test_the_substitute_candidates_are_the_platform_row() -> None:
+    assert substitute_candidates("win32") == SUBSTITUTES["win32"]
+    assert substitute_candidates("darwin") == SUBSTITUTES["darwin"]
+
+
+def test_the_linux_substitutes_end_with_the_three_filenames() -> None:
+    candidates = substitute_candidates("linux")
+    assert candidates[-3:] == SUBSTITUTES["linux"]
+
+
+# -- the machine this actually runs on --------------------------------
+#
+# These enumerate the real host, so what they can assert is whatever
+# is true of every machine with fonts on it rather than of one.
+# They are what makes running the suite on another operating system
+# worth anything: the fixture tests above would pass on a platform
+# whose source list came back empty, and these would not.
+
+
+@pytest.fixture(scope="module")
+def this_machine() -> Catalog:
+    """Return the table this machine's own sources build."""
+    return enumerate_faces(host_sources())
+
+
+@pytest.mark.slow
+def test_a_machine_with_fonts_enumerates_some(this_machine: Catalog) -> None:
+    if not this_machine.entries:
+        pytest.skip("no fonts on this machine")
+    assert this_machine.families()
+
+
+@pytest.mark.slow
+def test_every_family_found_can_be_looked_up_again(this_machine: Catalog) -> None:
+    if not this_machine.entries:
+        pytest.skip("no fonts on this machine")
+    for entry in this_machine.entries.values():
+        found = this_machine.lookup(entry.family, entry.bold, entry.italic)
+        assert found is not None
+        assert found.family == entry.family
+
+
+@pytest.mark.slow
+def test_every_face_found_is_still_readable(this_machine: Catalog) -> None:
+    if not this_machine.entries:
+        pytest.skip("no fonts on this machine")
+    for entry in this_machine.entries.values():
+        assert entry.origin.path is not None
+        assert entry.origin.path.exists()
+
+
+@pytest.mark.slow
+def test_no_two_entries_share_a_key(this_machine: Catalog) -> None:
+    keys = [entry.key for entry in this_machine.entries.values()]
+    assert len(keys) == len(set(keys))
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="the Windows registry")
+def test_windows_looks_at_the_registry_and_the_two_directories() -> None:
+    sources = host_sources("win32")
+    assert any(one.files for one in sources)
+    assert any(
+        one.directory is not None and one.directory.name == "Fonts" for one in sources
+    )
+
+
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="Arial and Courier New are a Windows guarantee",
+)
+@pytest.mark.slow
+def test_this_machine_has_a_family_every_windows_has() -> None:
+    catalog = enumerate_faces(host_sources())
+    assert catalog.lookup("Courier New", bold=False, italic=False) is not None
+    assert catalog.lookup("Arial", bold=True, italic=False) is not None
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fontconfig is not on Windows")
+@pytest.mark.slow
+def test_fontconfig_names_the_directories_it_was_configured_with() -> None:
+    directories = fontconfig_directories()
+    if not directories:
+        pytest.skip("fontconfig is not configured on this machine")
+    assert any(one.exists() for one in directories)
+    named = [one.directory for one in host_sources("linux")]
+    for one in directories:
+        assert one in named
+
+
+def test_an_entry_keys_itself_by_family_and_style() -> None:
+    entry = Entry("Go Mono", bold=True, italic=False, origin=None)  # type: ignore[arg-type]
+    assert entry.key == ("go mono", True, False)

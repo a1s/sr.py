@@ -6,12 +6,16 @@ and doc/expressions.md adds the record index for an error raised while
 a band is being built.  Those four parts are what a :class:`Location` holds,
 and assembling them is all this module does.
 
-Three shapes of failure, because they behave differently:
+Four shapes of failure, because they behave differently:
 
 * A **bad value** is local.  ``units`` and ``color`` raise :class:`BadValue`
   with the message and nothing else, since a parser that knew about node
   paths would be a parser the renderer could not reuse.  Whoever had the
   node attaches the location.
+* A **font failure** is local as well, and is :class:`FontError`.
+  It is separate because it is not about the document: the template may
+  be faultless and the machine simply not have the face, which is why
+  doc/cli.md#sr-validate reports these under a heading of their own.
 * A **rejected document** is a collection.  Validation runs to the end
   and reports every diagnostic it found, so one run of the tool fixes
   several mistakes; :class:`Diagnostics` accumulates them and
@@ -41,6 +45,7 @@ __all__ = [
     "Diagnostic",
     "Diagnostics",
     "ExpressionError",
+    "FontError",
     "Location",
     "NodePath",
     "SrError",
@@ -64,6 +69,19 @@ class BadValue(SrError):
     Raised by the value parsers, which see a string and nothing around it.
     The message is the whole diagnostic except the location, so a caller
     that knows the node needs only to prepend one.
+
+    """
+
+
+class FontError(SrError):
+    """A face that could not be opened, or a `font` that did not resolve.
+
+    Its own class because a font failure is neither of the other two.
+    It is not a bad value -- ``file="fonts/body.ttf"`` is well formed and
+    the file is simply not there -- and it is not a rejected document,
+    because doc/cli.md#sr-validate reports these in a section of their
+    own and the template may be faultless.  The message is the whole
+    diagnostic except the location, as :class:`BadValue`'s is.
 
     """
 

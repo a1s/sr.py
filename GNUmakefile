@@ -42,8 +42,8 @@ endif
 # exported there.
 export PYTHONPYCACHEPREFIX := $(BUILD_DIR)/pycache
 
-.PHONY: all venv install test test-required lint fmt typecheck check \
-        build-dir reference clean
+.PHONY: all venv install test test-required test-linux test-linux-matrix \
+        lint fmt typecheck check build-dir reference clean
 
 all: check
 
@@ -75,6 +75,27 @@ test:
 # so a suite that measured nothing does not pass.
 test-required:
 	$(PYTHON) -m pytest --differential-required
+
+# Font enumeration is the one part of the engine whose answer
+# depends on the machine, and doc/template.md names three platforms.
+#  This runs the suite on the second of them, in a stock Debian container:
+# see tests/linux/run.sh for what that exercises that a fixture cannot.
+# Needs Docker, which is why it is not part of `check`.
+test-linux:
+	sh tests/linux/run.sh
+
+# The interpreters pyproject.toml's `requires-python` promises,
+# from its floor to the current release.  The engine's own tests
+# do not vary with the interpreter, so this is checking the promise
+# rather than the engine, and it is separate from `test-linux`
+# because it is four container runs rather than one.
+SUPPORTED_PYTHONS ?= 3.11 3.12 3.13 3.14
+
+test-linux-matrix:
+	@for one in $(SUPPORTED_PYTHONS); do \
+	    echo "-- python $$one"; \
+	    SR_LINUX_IMAGE=python:$$one-slim sh tests/linux/run.sh || exit 1; \
+	done
 
 lint:
 	$(PYTHON) -m ruff check .
