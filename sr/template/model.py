@@ -1037,11 +1037,15 @@ def read_float(text: str) -> float:
     a parameter is a number a template computes with, while a dimension
     becomes a coordinate, and an infinite coordinate cannot be written.
 
+    One sign is stripped to find those three names, not every leading sign
+    there is: ``--inf`` spells no number, and stripping both would hand it
+    to a reader that raises something other than :class:`~sr.errors.BadValue`.
+
     Args:
         text: The value as the caller spelled it.
 
     """
-    body = text.lstrip("+-").lower()
+    body = (text[1:] if text[:1] in "+-" else text).lower()
     if body in ("inf", "infinity", "nan"):
         return float(text)
     try:

@@ -137,6 +137,15 @@ def test_a_float_parameter_takes_an_exponent_and_the_two_specials() -> None:
     assert parse_text("float", "-nan") != parse_text("float", "-nan")
 
 
+@pytest.mark.parametrize("text", ["--inf", "+-nan", "-+1.5", "", "inf3"])
+def test_a_bad_float_parameter_is_refused_as_a_bad_value(text: str) -> None:
+    # One sign, and only the names themselves.
+    # Reaching the host reader with more than that raises a `ValueError`,
+    # which is not what a caller of `parse_text` catches.
+    with pytest.raises(BadValue):
+        parse_text("float", text)
+
+
 @pytest.mark.parametrize(
     ("text", "expected"),
     [("true", True), ("TRUE", True), ("1", True), ("false", False), ("0", False)],

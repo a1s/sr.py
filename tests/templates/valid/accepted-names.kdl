@@ -8,7 +8,7 @@
 report name="probe" {
   accept "wobble"
   accept "sprocket" "teeth"
-  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
   layout pagesize="A4" x-vendor-mode="duplex" {
     style font="body" color="black"
     detail height=10 wobble=#true {

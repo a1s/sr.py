@@ -39,7 +39,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TypeVar
+from typing import TypeVar, overload
 
 import ckdl
 
@@ -311,6 +311,20 @@ class Node:
             self.error("required", prop)
         return False, None
 
+    # Every accessor below returns its `default` on each path that is
+    # not a good value, so a caller that names one never sees `None`.
+    # The overloads say that in the type, which is what keeps the
+    # call sites free of an `or` after the call: written that way,
+    # an explicit `minrows=0` or `format=""` would be read and then
+    # thrown away for the default, because both are false.
+
+    @overload
+    def string(self, prop: str, *, default: str, required: bool = False) -> str: ...
+    @overload
+    def string(
+        self, prop: str, *, default: None = None, required: bool = False
+    ) -> str | None: ...
+
     def string(
         self, prop: str, *, default: str | None = None, required: bool = False
     ) -> str | None:
@@ -329,6 +343,13 @@ class Node:
             self.error(f"want a string, got {kind_of(value)}", prop)
             return default
         return value
+
+    @overload
+    def integer(self, prop: str, *, default: int, required: bool = False) -> int: ...
+    @overload
+    def integer(
+        self, prop: str, *, default: None = None, required: bool = False
+    ) -> int | None: ...
 
     def integer(
         self, prop: str, *, default: int | None = None, required: bool = False
@@ -349,6 +370,13 @@ class Node:
             return default
         return value
 
+    @overload
+    def boolean(self, prop: str, *, default: bool, required: bool = False) -> bool: ...
+    @overload
+    def boolean(
+        self, prop: str, *, default: None = None, required: bool = False
+    ) -> bool | None: ...
+
     def boolean(
         self, prop: str, *, default: bool | None = None, required: bool = False
     ) -> bool | None:
@@ -367,6 +395,15 @@ class Node:
             self.error(f"want #true or #false, got {kind_of(value)}", prop)
             return default
         return value
+
+    @overload
+    def dimension(
+        self, prop: str, *, default: float, required: bool = False
+    ) -> float: ...
+    @overload
+    def dimension(
+        self, prop: str, *, default: None = None, required: bool = False
+    ) -> float | None: ...
 
     def dimension(
         self, prop: str, *, default: float | None = None, required: bool = False
@@ -387,6 +424,13 @@ class Node:
             return default
         return self.parsed(parse_dimension, value, prop, default)
 
+    @overload
+    def color(self, prop: str, *, default: str, required: bool = False) -> str: ...
+    @overload
+    def color(
+        self, prop: str, *, default: None = None, required: bool = False
+    ) -> str | None: ...
+
     def color(
         self, prop: str, *, default: str | None = None, required: bool = False
     ) -> str | None:
@@ -402,6 +446,20 @@ class Node:
         if text is None:
             return default
         return self.parsed(parse_color, text, prop, default)
+
+    @overload
+    def enum(
+        self, prop: str, allowed: Iterable[str], *, default: str, required: bool = False
+    ) -> str: ...
+    @overload
+    def enum(
+        self,
+        prop: str,
+        allowed: Iterable[str],
+        *,
+        default: None = None,
+        required: bool = False,
+    ) -> str | None: ...
 
     def enum(
         self,

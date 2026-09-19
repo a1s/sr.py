@@ -205,6 +205,41 @@ def test_a_declared_zero_is_not_the_same_as_auto() -> None:
     assert band(loaded).height == 0.0
 
 
+ZERO = """
+report name="zero" {{
+  font "body" file="{font}" size=10
+  layout pagesize="A4" {{
+    style font="body" color="black"
+    group "gg" expr="1" minrows=0 mintailrows=0 {{
+      detail height=20 split=#true orphans=0 widows=0 {{
+        field text="x" format=""
+      }}
+    }}
+  }}
+}}
+"""
+
+
+def test_a_declared_zero_count_is_not_the_default() -> None:
+    # `minrows=0` is a group title that may sit alone at the foot of a
+    # frame, which is not what `minrows=1` means.  These reach pagination,
+    # so reading one and then dropping it for the default would change
+    # where the breaks fall rather than what a report prints.
+    loaded = load_text(ZERO.format(font=FONT.as_posix()), file="probe.kdl")
+    assert loaded.ok, joined(loaded)
+    assert loaded.report is not None
+    assert loaded.report.layout is not None
+    group = loaded.report.layout.group
+    assert group is not None
+    assert (group.minrows, group.mintailrows) == (0, 0)
+    detail = group.detail
+    assert detail is not None
+    assert (detail.orphans, detail.widows) == (0, 0)
+    printed = detail.elements[0]
+    assert isinstance(printed, Field)
+    assert printed.format == ""
+
+
 # -- blobs ------------------------------------------------------------
 
 
@@ -361,6 +396,48 @@ report name="host" {{
     ]
     assert len(found) == 2
     assert found[0] is found[1]
+
+
+def test_a_cycle_back_to_the_first_template_reads_it_once(tmp_path: Path) -> None:
+    # The outermost file joins the stack like any other, so the cycle is
+    # closed at the reference and the first template is not read a second
+    # time.  Read twice, it would say everything it has to say twice.
+    inner = tmp_path / "inner.kdl"
+    inner.write_text(
+        f"""
+report name="inner" {{
+  font "body" file="{FONT.as_posix()}" size=10
+  layout pagesize="A4" {{
+    style font="body" color="black"
+    detail height=10 {{
+      field text="y"
+      subreport template="host.kdl" seq=1 data="[]"
+    }}
+  }}
+}}
+""",
+        encoding="utf-8",
+    )
+    host = tmp_path / "host.kdl"
+    host.write_text(
+        f"""
+report name="host" {{
+  font "body" file="{FONT.as_posix()}" size=10
+  layout pagesize="A4" {{
+    style font="body" color="black"
+    detail height=10 {{
+      field text="x" sprocket=1
+      subreport template="inner.kdl" seq=1 data="[]"
+    }}
+  }}
+}}
+""",
+        encoding="utf-8",
+    )
+    loaded = load(host)
+    said = joined(loaded)
+    assert said.count("reaches the template it came from") == 1, said
+    assert len(loaded.warnings) == 1, "\n".join(str(one) for one in loaded.warnings)
 
 
 def test_basedir_moves_where_a_relative_path_resolves(tmp_path: Path) -> None:

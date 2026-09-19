@@ -113,10 +113,15 @@ def test_a_valid_template_loads(path: Path) -> None:
 def test_a_valid_template_warns_as_it_says(path: Path) -> None:
     loaded = load(path)
     said = reported(loaded)
-    for one in expectations(path, "warn"):
+    wanted = expectations(path, "warn")
+    for one in wanted:
         assert one in said, f"{path.name} did not warn {one!r}:\n{said}"
-    if not expectations(path, "warn"):
-        assert not loaded.warnings, said
+    # One `warn:` line per warning, so a template that grows one nobody
+    # asked for is caught as well as one that loses a warning it states.
+    assert len(loaded.warnings) == len(wanted), (
+        f"{path.name} states {len(wanted)} warnings and made "
+        f"{len(loaded.warnings)}:\n{said}"
+    )
 
 
 @pytest.mark.parametrize("path", EXAMPLES, ids=lambda path: path.stem)

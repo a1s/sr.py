@@ -2,7 +2,7 @@
 //
 
 report name="probe" {
-  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
   layout pagesize="A4" {
     style font="body" color="black"
     detail height=60 {

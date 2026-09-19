@@ -193,7 +193,8 @@ def load(path: Path | str, options: Options | None = None) -> Loaded:
 
     """
     loader = Loader(options)
-    return checked(loader, loader.document(Path(path)))
+    named = Path(path)
+    return checked(loader, loader.reading(named, named.resolve()))
 
 
 def load_text(
@@ -462,7 +463,7 @@ class Loader:
         """
         node.known_properties("type", "default", "defaultexpr", "format", "prompt")
         node.known_children()
-        kind = node.enum("type", VALUE_TYPES, default="string") or "string"
+        kind = node.enum("type", VALUE_TYPES, default="string")
         default = node.string("default")
         layout = node.string("format")
         value: Any = None
@@ -480,7 +481,7 @@ class Loader:
             value=value,
             defaultexpr=self.expression(node, "defaultexpr"),
             format=layout,
-            prompt=bool(node.boolean("prompt", default=False)),
+            prompt=node.boolean("prompt", default=False),
             path=node.path,
         )
 
@@ -512,8 +513,8 @@ class Loader:
         node.known_children()
         return Member(
             name=self.identity(node),
-            kind=node.enum("type", VALUE_TYPES, default="string") or "string",
-            nullable=bool(node.boolean("nullable", default=False)),
+            kind=node.enum("type", VALUE_TYPES, default="string"),
+            nullable=node.boolean("nullable", default=False),
             format=node.string("format"),
             path=node.path,
         )
@@ -533,10 +534,10 @@ class Loader:
             name=self.identity(node),
             expr=self.expression(node, "expr", required=True),
             init=self.expression(node, "init"),
-            calc=node.enum("calc", CALCS, default="first") or "first",
-            iterate=node.enum("iter", SCOPES, default="detail") or "detail",
+            calc=node.enum("calc", CALCS, default="first"),
+            iterate=node.enum("iter", SCOPES, default="detail"),
             itergrp=node.string("itergrp"),
-            reset=node.enum("reset", SCOPES, default="report") or "report",
+            reset=node.enum("reset", SCOPES, default="report"),
             resetgrp=node.string("resetgrp"),
             path=node.path,
         )
@@ -557,10 +558,10 @@ class Loader:
             typeface=node.string("typeface"),
             file=node.string("file"),
             data=node.string("data"),
-            size=node.integer("size", default=0, required=True) or 0,
-            bold=bool(node.boolean("bold", default=False)),
-            italic=bool(node.boolean("italic", default=False)),
-            underline=bool(node.boolean("underline", default=False)),
+            size=node.integer("size", default=0, required=True),
+            bold=node.boolean("bold", default=False),
+            italic=node.boolean("italic", default=False),
+            underline=node.boolean("underline", default=False),
             path=node.path,
         )
 
@@ -720,8 +721,8 @@ class Loader:
             if node.has("width") or node.has("height"):
                 node.error("pagesize and an explicit width or height are alternatives")
         elif node.has("width") and node.has("height"):
-            width = node.dimension("width", default=0.0) or 0.0
-            height = node.dimension("height", default=0.0) or 0.0
+            width = node.dimension("width", default=0.0)
+            height = node.dimension("height", default=0.0)
         elif not node.has("pagesize"):
             node.error("a layout needs a pagesize, or both a width and a height")
         if node.boolean("landscape", default=False):
@@ -729,10 +730,10 @@ class Loader:
         return Paper(
             width=width,
             height=height,
-            left=node.dimension("leftmargin", default=0.0) or 0.0,
-            right=node.dimension("rightmargin", default=0.0) or 0.0,
-            top=node.dimension("topmargin", default=0.0) or 0.0,
-            bottom=node.dimension("bottommargin", default=0.0) or 0.0,
+            left=node.dimension("leftmargin", default=0.0),
+            right=node.dimension("rightmargin", default=0.0),
+            top=node.dimension("topmargin", default=0.0),
+            bottom=node.dimension("bottommargin", default=0.0),
         )
 
     def declared(self, node: kdl.Node) -> tuple[str, ...]:
@@ -867,9 +868,9 @@ class Loader:
         return Group(
             name=self.identity(node),
             expr=self.expression(node, "expr", required=True),
-            keeptogether=bool(node.boolean("keeptogether", default=False)),
-            minrows=node.integer("minrows", default=1) or 1,
-            mintailrows=node.integer("mintailrows", default=1) or 1,
+            keeptogether=node.boolean("keeptogether", default=False),
+            minrows=node.integer("minrows", default=1),
+            mintailrows=node.integer("mintailrows", default=1),
             **self.nesting(node, basedir, scopes, layouts),
         )
 
@@ -892,9 +893,9 @@ class Loader:
         node.known_properties("count", "gap", "balance")
         node.known_children("style", "header", "footer")
         return Columns(
-            count=node.integer("count", default=0, required=True) or 0,
-            gap=node.dimension("gap", default=0.0) or 0.0,
-            balance=bool(node.boolean("balance", default=False)),
+            count=node.integer("count", default=0, required=True),
+            gap=node.dimension("gap", default=0.0),
+            balance=node.boolean("balance", default=False),
             styles=tuple(self.style(child) for child in node.each("style")),
             header=self.section(node, "header", basedir, scopes, layouts),
             footer=self.section(node, "footer", basedir, scopes, layouts),
@@ -955,11 +956,11 @@ class Loader:
             kind=kind,
             height=self.band_height(node),
             printwhen=self.expression(node, "printwhen"),
-            split=bool(node.boolean("split", default=False)),
-            orphans=node.integer("orphans", default=1) or 1,
-            widows=node.integer("widows", default=1) or 1,
-            swapheader=bool(node.boolean("swapheader", default=False)),
-            swapfooter=bool(node.boolean("swapfooter", default=False)),
+            split=node.boolean("split", default=False),
+            orphans=node.integer("orphans", default=1),
+            widows=node.integer("widows", default=1),
+            swapheader=node.boolean("swapheader", default=False),
+            swapfooter=node.boolean("swapfooter", default=False),
             styles=tuple(self.style(child) for child in node.each("style")),
             ejects=tuple(self.eject(child) for child in node.each("eject")),
             outlines=tuple(self.outline(child) for child in node.each("outline")),
@@ -1020,7 +1021,7 @@ class Loader:
         node.known_properties("type", "when", "require")
         node.known_children()
         return Eject(
-            kind=node.enum("type", EJECT_TYPES, default="page") or "page",
+            kind=node.enum("type", EJECT_TYPES, default="page"),
             when=self.expression(node, "when"),
             require=node.dimension("require"),
             path=node.path,
@@ -1037,10 +1038,10 @@ class Loader:
         node.known_children()
         return Outline(
             title=self.expression(node, "title", required=True),
-            level=node.integer("level", default=1) or 1,
+            level=node.integer("level", default=1),
             name=self.expression(node, "name"),
             when=self.expression(node, "when"),
-            closed=bool(node.boolean("closed", default=False)),
+            closed=node.boolean("closed", default=False),
             path=node.path,
         )
 
@@ -1090,16 +1091,12 @@ class Loader:
             "path": node.path,
             "box": self.box(node, stroke=stroke),
             "halign": (
-                (node.enum("halign", HALIGNS, default="left") or "left")
-                if aligned
-                else "left"
+                node.enum("halign", HALIGNS, default="left") if aligned else "left"
             ),
             "valign": (
-                (node.enum("valign", VALIGNS, default="top") or "top")
-                if aligned
-                else "top"
+                node.enum("valign", VALIGNS, default="top") if aligned else "top"
             ),
-            "floating": bool(node.boolean("float", default=False)),
+            "floating": node.boolean("float", default=False),
             "printwhen": self.expression(node, "printwhen"),
             "styles": tuple(self.style(child) for child in node.each("style")),
         }
@@ -1197,8 +1194,8 @@ class Loader:
             data=node.string("data"),
             evaltime=node.string("evaltime"),
             align=node.enum("align", ALIGNS),
-            format=node.string("format", default="%s") or "%s",
-            stretch=bool(node.boolean("stretch", default=False)),
+            format=node.string("format", default="%s"),
+            stretch=node.boolean("stretch", default=False),
             **self.common(node),
         )
 
@@ -1212,9 +1209,9 @@ class Loader:
         node.known_properties(*COMMON, "width", "dash", "backslant")
         node.known_children("style")
         return Line(
-            stroke=node.dimension("width", default=0.0) or 0.0,
-            dash=node.enum("dash", DASHES, default="solid") or "solid",
-            backslant=bool(node.boolean("backslant", default=False)),
+            stroke=node.dimension("width", default=0.0),
+            dash=node.enum("dash", DASHES, default="solid"),
+            backslant=node.boolean("backslant", default=False),
             **self.common(node, stroke=True, aligned=False),
         )
 
@@ -1228,11 +1225,11 @@ class Loader:
         node.known_properties(*COMMON, "width", "dash", "radius", "opaque", "stroke")
         node.known_children("style")
         return Rectangle(
-            stroke=node.dimension("width", default=0.0) or 0.0,
-            dash=node.enum("dash", DASHES, default="solid") or "solid",
-            radius=node.dimension("radius", default=0.0) or 0.0,
-            opaque=bool(node.boolean("opaque", default=True)),
-            outlined=bool(node.boolean("stroke", default=True)),
+            stroke=node.dimension("width", default=0.0),
+            dash=node.enum("dash", DASHES, default="solid"),
+            radius=node.dimension("radius", default=0.0),
+            opaque=node.boolean("opaque", default=True),
+            outlined=node.boolean("stroke", default=True),
             **self.common(node, stroke=True, aligned=False),
         )
 
@@ -1260,9 +1257,9 @@ class Loader:
             data=node.string("data"),
             content=self.content(node),
             kind=node.enum("type", IMAGE_TYPES),
-            scale=node.enum("scale", IMAGE_SCALES, default="cut") or "cut",
-            proportional=bool(node.boolean("proportional", default=True)),
-            embed=bool(node.boolean("embed", default=True)),
+            scale=node.enum("scale", IMAGE_SCALES, default="cut"),
+            proportional=node.boolean("proportional", default=True),
+            embed=node.boolean("embed", default=True),
             **self.common(node),
         )
 
@@ -1291,16 +1288,16 @@ class Loader:
         )
         node.known_children("style")
         return Barcode(
-            kind=node.enum("type", BARCODE_TYPES, default="", required=True) or "",
+            kind=node.enum("type", BARCODE_TYPES, default="", required=True),
             expr=self.expression(node, "expr"),
             text=node.string("text"),
             data=node.string("data"),
             evaltime=node.string("evaltime"),
-            format=node.string("format", default="%s") or "%s",
-            module=node.dimension("module", default=DEFAULT_MODULE) or DEFAULT_MODULE,
-            vertical=bool(node.boolean("vertical", default=False)),
-            grow=bool(node.boolean("grow", default=False)),
-            ink=node.color("ink", default="#000000") or "#000000",
+            format=node.string("format", default="%s"),
+            module=node.dimension("module", default=DEFAULT_MODULE),
+            vertical=node.boolean("vertical", default=False),
+            grow=node.boolean("grow", default=False),
+            ink=node.color("ink", default="#000000"),
             paper=node.color("paper"),
             **self.common(node),
         )
@@ -1328,9 +1325,9 @@ class Loader:
         return Xref(
             path=node.path,
             box=self.box(node),
-            halign=node.enum("halign", HALIGNS, default="left") or "left",
-            valign=node.enum("valign", VALIGNS, default="top") or "top",
-            kind=node.enum("type", XREF_TYPES, default="", required=True) or "",
+            halign=node.enum("halign", HALIGNS, default="left"),
+            valign=node.enum("valign", VALIGNS, default="top"),
+            kind=node.enum("type", XREF_TYPES, default="", required=True),
             target=self.expression(node, "target", required=True),
             caption=self.expression(node, "caption"),
             elements=tuple(
@@ -1373,11 +1370,11 @@ class Loader:
             report=None if file is None else self.referenced(node, file),
             embedded=embedded,
             scope=None if embedded is None else self.resolve(node, embedded, scopes),
-            seq=node.integer("seq", default=0, required=True) or 0,
+            seq=node.integer("seq", default=0, required=True),
             data=self.expression(node, "data", required=True),
             when=self.expression(node, "when"),
-            inline=bool(node.boolean("inline", default=False)),
-            ownpageno=bool(node.boolean("ownpageno", default=False)),
+            inline=node.boolean("inline", default=False),
+            ownpageno=node.boolean("ownpageno", default=False),
             args=tuple(self.arg(child) for child in node.each("arg")),
             order=order,
             path=node.path,
@@ -1436,9 +1433,21 @@ class Loader:
             return None
         if file in self.cache:
             return self.cache[file]
+        return self.reading(file, file)
+
+    def reading(self, path: Path, file: Path) -> Report | None:
+        """Read one template file, on the stack and into the cache.
+
+        Args:
+            path: The file to open, as the caller spelled it,
+                which is also what a diagnostic about it names.
+            file: The same file resolved, which is the key
+                the cycle check and the cache go by.
+
+        """
         self.stack.append(file)
         try:
-            report = self.document(file)
+            report = self.document(path)
         finally:
             self.stack.pop()
         self.cache[file] = report
