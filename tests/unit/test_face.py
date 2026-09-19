@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import struct
 from pathlib import Path
 
 import pytest
+from fontTools.ttLib import TTFont
 
 from sr.errors import FontError
 from sr.fonts.face import (
@@ -179,6 +181,40 @@ def test_anything_else_is_classified_rather_than_dropped(
     kind, description = sniff(head)
     assert kind is None
     assert says in description
+
+
+def test_a_face_with_no_readable_character_map_names_the_file(
+    tmp_path: Path,
+) -> None:
+    # Every refusal in here has to name the file it is about.
+    # This one comes from three calls down and used to arrive bare,
+    # which in an enumeration report reads as a complaint about
+    # no font in particular.
+    path = tmp_path / "macroman.ttf"
+    font = TTFont(str(REGULAR))
+    keep = font["cmap"].tables[0]
+    keep.platformID, keep.platEncID = 1, 0
+    font["cmap"].tables = [keep]
+    font.save(str(path))
+    with pytest.raises(FontError, match="no character map") as refused:
+        open_face(path)
+    assert "macroman.ttf" in str(refused.value)
+
+
+def test_a_collection_claiming_more_faces_than_are_admitted_is_refused(
+    tmp_path: Path,
+) -> None:
+    # The count is four bytes of a file that may be damaged,
+    # and each face it claims is one parse, so an unbounded count
+    # is not a wrong answer but an absent one.
+    path = tmp_path / "huge.ttc"
+    path.write_bytes(b"ttcf" + struct.pack(">II", 0x00010000, 0xFFFFFF00) + bytes(64))
+    with pytest.raises(FontError, match="implementation limit"):
+        open_face(path)
+
+
+def test_a_collection_within_the_limit_is_read(collection: Path) -> None:
+    assert faces_in(collection.read_bytes()) == 2
 
 
 def test_a_file_that_is_not_there_is_a_font_error(tmp_path: Path) -> None:

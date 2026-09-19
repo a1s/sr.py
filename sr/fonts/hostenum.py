@@ -89,6 +89,7 @@ __all__ = [
     "enumerate_faces",
     "fontconfig_monospace",
     "host_sources",
+    "relaxations",
     "substitute_candidates",
 ]
 
@@ -230,7 +231,10 @@ class Catalog:
     def lookup(self, family: str, bold: bool, italic: bool) -> Entry | None:
         """Return the face a family and style name, or ``None`` for a miss.
 
-        Matching is case-insensitive, and a miss is a miss: nothing here
+        Matching is case-insensitive, and the style relaxes within the
+        family per doc/template.md#host-enumeration: the declared style,
+        then the same weight upright, then the same slant at regular
+        weight, then regular.  A miss is still a miss.  Nothing here
         answers with the machine's default, which doc/template.md forbids
         precisely because a matcher that always answers cannot be asked
         whether a family exists.
@@ -241,7 +245,12 @@ class Catalog:
             italic: Whether it declared italic.
 
         """
-        return self.entries.get((family.casefold(), bold, italic))
+        name = family.casefold()
+        for weight, slant in relaxations(bold, italic):
+            entry = self.entries.get((name, weight, slant))
+            if entry is not None:
+                return entry
+        return None
 
     def families(self) -> tuple[str, ...]:
         """Return every family in the table, once each, in Unicode order."""
@@ -263,6 +272,28 @@ class Catalog:
             f"{entry.origin} claims {entry.family.casefold()} {style}, "
             f"which {held.origin} already holds; the first is used"
         )
+
+
+def relaxations(bold: bool, italic: bool) -> tuple[tuple[bool, bool], ...]:
+    """Return the styles a lookup tries, best first, each one once.
+
+    doc/template.md#host-enumeration's order.  It only ever takes a style
+    away, so a family that has nothing but a bold face never answers a
+    node that declared none, and weight outranks slant: asked for bold
+    italic, a family holding a bold face and an italic one answers with
+    the bold.
+
+    Args:
+        bold: Whether the `font` node declared bold.
+        italic: Whether it declared italic.
+
+    """
+    wanted = ((bold, italic), (bold, False), (False, italic), (False, False))
+    found: list[tuple[bool, bool]] = []
+    for one in wanted:
+        if one not in found:
+            found.append(one)
+    return tuple(found)
 
 
 def style_words(bold: bool, italic: bool) -> str:
@@ -507,6 +538,10 @@ def walk(directory: Path, recursive: bool) -> Iterator[Path]:
     doc/template.md#host-enumeration asks for outright: the tabulated
     sources include directories a given machine will not have.
 
+    A symbolic link is yielded, never descended into.  `~/.fonts` is
+    a directory the machine's owner writes, so a link back up the tree
+    is theirs to make, and a walk that followed one would not come back.
+
     Args:
         directory: Where to look.
         recursive: Whether to descend into subdirectories.
@@ -520,14 +555,19 @@ def walk(directory: Path, recursive: bool) -> Iterator[Path]:
         return
     for entry in entries:
         try:
-            directory_entry = entry.is_dir()
+            descend = entry.is_dir() and not entry.is_symlink()
         except OSError:
             continue
-        if directory_entry:
+        if descend:
             if recursive:
                 yield from walk(entry, recursive)
-        else:
-            yield entry
+            continue
+        # A symbolic link is never descended into, which is what stops
+        # a link that points at one of its own parents from walking
+        # for ever.  It is offered as a file instead: a link to a font
+        # is read as that font, and a link to a directory fails to read
+        # and is recorded as a diagnostic naming it.
+        yield entry
 
 
 def resolve_once(path: Path) -> Path:

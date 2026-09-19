@@ -160,9 +160,14 @@ class Resolution:
 class Resolver:
     """The chain, with the host table it may or may not need.
 
-    One resolver serves one build.  It holds the catalog so that
-    a report with four `font` nodes enumerates the machine once,
-    and it holds the blobs so that a `font data=` finds its bytes.
+    One resolver serves one build, and a build is a tree of documents
+    rather than a single one.  It holds the catalog so that a report
+    with four `font` nodes enumerates the machine once, and enumerating it
+    once is also what makes the substitute face one face across the tree
+    rather than one per document.  :meth:`reading` is how it moves from
+    one document to the next; `basedir` and `blobs` belong to whichever
+    it is reading now, since a subreport resolves a `file` against its
+    own directory and finds a `data` blob among its own.
 
     Attributes:
         basedir: What a ``file`` on a `font` node resolves against.
@@ -201,6 +206,21 @@ class Resolver:
         self.enumerated = catalog is not None
         self.substitute: Face | None = None
         self.substitute_warnings: tuple[BuildWarning, ...] = ()
+
+    def reading(self, basedir: Path | None, blobs: dict[str, bytes]) -> None:
+        """Point the chain at another document of the same build.
+
+        The host table, the substitute face and the warning that names it
+        are the machine's and stay; what changes is the document.
+
+        Args:
+            basedir: What a ``file`` on that document's `font` nodes resolves
+                against; the working directory by default.
+            blobs: The bytes of that document's ``data`` nodes, by name.
+
+        """
+        self.basedir = Path() if basedir is None else basedir
+        self.blobs = blobs
 
     @property
     def diagnostics(self) -> tuple[str, ...]:

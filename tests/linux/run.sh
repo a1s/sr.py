@@ -89,13 +89,17 @@ test -f /src/pyproject.toml || {
     exit 1
 }
 
+echo "update the system..."
 apt-get -qq update >/dev/null 2>&1
+echo "install fonts..."
 apt-get -qq install -y $PACKAGES >/dev/null 2>&1
+echo "install dependencies..."
 pip -q install $WHEELS >/dev/null 2>&1
 
 # Copied rather than run in place: the mount is read only, and a build
 # directory written into the working tree from a container would arrive
 # owned by root.
+echo "copy sources..."
 cp -r /src /build
 cd /build
 rm -rf .venv build/pytest build/mypy build/ruff

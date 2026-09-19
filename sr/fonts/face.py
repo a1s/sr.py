@@ -14,9 +14,11 @@ in the enumerator, because each is a property of one face:
   `Arial Narrow` calls itself `Arial` under ID 16 and is therefore not
   a family a template can ask for by name.
 * **Style comes from the style bits, in a fixed order of sources.**
-  ``OS/2.fsSelection`` first, then ``head.macStyle``, and the subfamily
-  string only when neither table is there.  The first table the face has
-  decides; a later source is not consulted to break a disagreement.
+  ``OS/2.fsSelection`` first, then ``head.macStyle``.  The first table
+  the face has decides; a later source is not consulted to break a
+  disagreement.  The third source that section names, the subfamily
+  string, is for a face with neither table and is unreachable here,
+  because ``head`` is required of every face.
 * **A file is classified before it is parsed**, from its first bytes
   rather than from its name.  :func:`sniff` is what says whether a file
   is an sfnt at all, so that a bitmap face is skipped as unsupported while
@@ -114,6 +116,16 @@ OTHER_FORMATS = (
 # three calls later.
 REQUIRED_TABLES = ("head", "hhea", "hmtx", "cmap", "name")
 
+# The most faces a collection may claim, per doc/template.md#font.
+#
+# A bound is needed because the count is four bytes of a file that may be
+# damaged, and every face it claims is one parse: without this, a `ttcf`
+# header whose count reads as 4294967040 enumerates for the rest of the
+# afternoon.  The number is the reference engine's and is a limit on what
+# is admitted, not on what exists -- the largest collections shipped with
+# an operating system hold a few dozen faces.
+COLLECTION_LIMIT = 2048
+
 # The `cmap` subtables to look a codepoint up in, best first.
 #
 # The Unicode tables come first, ordered so that a full repertoire beats
@@ -160,13 +172,6 @@ OBLIQUE_BIT = 1 << 9
 # `head.macStyle`, the same two.
 MAC_BOLD_BIT = 1 << 0
 MAC_ITALIC_BIT = 1 << 1
-
-# The words a subfamily string uses, read only by a face that has
-# neither style table.  Matched word by word against the lowercased string,
-# so `Bold Italic` is both and `Semibold` is neither: `bold` is a boolean,
-# and a weight that is not Bold is not it.
-BOLD_WORDS = frozenset({"bold"})
-ITALIC_WORDS = frozenset({"italic", "oblique"})
 
 
 @dataclass(frozen=True)
@@ -260,14 +265,21 @@ def faces_in(data: bytes) -> int:
         data: The file, or at least its first twelve bytes.
 
     Raises:
-        FontError: The collection header is truncated.
+        FontError: The collection header is truncated,
+            or claims more faces than doc/template.md#font admits.
 
     """
     if data[:4] != b"ttcf":
         return 1
     if len(data) < 12:
         raise FontError("truncated font collection header")
-    return int(struct.unpack(">I", data[8:12])[0])
+    count = int(struct.unpack(">I", data[8:12])[0])
+    if count > COLLECTION_LIMIT:
+        raise FontError(
+            f"number of fonts ({count}) in collection exceed "
+            f"implementation limit ({COLLECTION_LIMIT})"
+        )
+    return count
 
 
 def open_face(path: Path, index: int = 0) -> Face:
@@ -343,21 +355,23 @@ def build(data: bytes, origin: Origin) -> Face:
         FontError: The bytes are not an sfnt, or will not parse.
 
     """
-    kind, description = sniff(data[:12])
-    if kind is None:
-        raise FontError(f"{origin}: {description}")
-    count = faces_in(data)
-    if not 0 <= origin.index < count:
-        one = "face" if count == 1 else "faces"
-        raise FontError(f"{origin}: the file holds {count} {one}")
+    # Every failure below is named the same way, by the one handler:
+    # a diagnostic that does not say which file it is about cannot be acted
+    # on, and the things that go wrong here are found at several depths.
+    # So nothing inside names the origin, and nothing outside raises.
     try:
+        kind, description = sniff(data[:12])
+        if kind is None:
+            raise FontError(description)
+        count = faces_in(data)
+        if not 0 <= origin.index < count:
+            one = "face" if count == 1 else "faces"
+            raise FontError(f"the file holds {count} {one}")
         font = TTFont(io.BytesIO(data), fontNumber=origin.index, lazy=True)
         missing = [one for one in REQUIRED_TABLES if one not in font]
         if missing:
-            raise FontError(f"{origin}: no {missing[0]} table")
+            raise FontError(f"no {missing[0]} table")
         return Face(font, origin)
-    except FontError:
-        raise
     except Exception as refused:
         # Any parse failure is one failure, and whatever the font library
         # chose to raise is not a class the rest of this engine knows.
@@ -400,7 +414,7 @@ class Face:
         self.origin = origin
         self.family = name_record(font, FAMILY_IDS) or fallback_family(origin)
         self.subfamily = name_record(font, SUBFAMILY_IDS)
-        self.bold, self.italic = style_bits(font, self.subfamily)
+        self.bold, self.italic = style_bits(font)
         self.units_per_em = int(font["head"].unitsPerEm) or 1000
         hhea = font["hhea"]
         self.ascent = int(hhea.ascender)
@@ -521,26 +535,27 @@ def name_record(font: Any, wanted: tuple[int, ...]) -> str:
     return ""
 
 
-def style_bits(font: Any, subfamily: str) -> tuple[bool, bool]:
+def style_bits(font: Any) -> tuple[bool, bool]:
     """Return a face's weight and slant, from the first source it has.
 
     The order is doc/template.md#host-enumeration's, and it ranks sources
-    rather than answers: the subfamily string is read only when neither
-    style table is present, and not when it disagrees with one.
+    rather than answers: `head` is read only when `OS/2` is absent, and
+    not when it disagrees with it.
+
+    The third rank that section gives, the subfamily string, is not here
+    and cannot be reached: it is for a face with neither style table, and
+    `head` is required, so such a face is refused before this is called.
+    The specification says so where it gives the rank.
 
     Args:
         font: The parsed font.
-        subfamily: Its subfamily string, for the last resort.
 
     """
     if "OS/2" in font:
         bits = int(font["OS/2"].fsSelection)
         return bool(bits & BOLD_BIT), bool(bits & (ITALIC_BIT | OBLIQUE_BIT))
-    if "head" in font:
-        bits = int(font["head"].macStyle)
-        return bool(bits & MAC_BOLD_BIT), bool(bits & MAC_ITALIC_BIT)
-    words = set(subfamily.lower().replace("-", " ").split())
-    return bool(words & BOLD_WORDS), bool(words & ITALIC_WORDS)
+    bits = int(font["head"].macStyle)
+    return bool(bits & MAC_BOLD_BIT), bool(bits & MAC_ITALIC_BIT)
 
 
 def character_map(font: Any) -> tuple[dict[int, str], bool]:

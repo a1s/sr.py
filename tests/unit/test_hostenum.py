@@ -29,7 +29,9 @@ import sys
 from pathlib import Path
 
 import pytest
+from fontTools.ttLib import TTFont
 
+from sr.fonts.face import ITALIC_BIT, MAC_ITALIC_BIT
 from sr.fonts.hostenum import (
     MACOS_DIRECTORIES,
     SUBSTITUTES,
@@ -39,12 +41,20 @@ from sr.fonts.hostenum import (
     enumerate_faces,
     fontconfig_directories,
     host_sources,
+    relaxations,
     style_words,
     substitute_candidates,
     walk,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
+REGULAR = ROOT / "example" / "fonts" / "Go-Regular.ttf"
+BOLD = ROOT / "example" / "fonts" / "Go-Bold.ttf"
+
+# `OS/2.fsSelection` bit 6, which a face sets to say it is neither bold
+# nor italic.  fontTools refuses to save a face that sets it alongside
+# either of the others, so the italics made here must clear it.
+REGULAR_BIT = 1 << 6
 
 
 def table(directory: Path, recursive: bool = False) -> Catalog:
@@ -56,6 +66,45 @@ def table(directory: Path, recursive: bool = False) -> Catalog:
 
     """
     return enumerate_faces((Source(directory=directory, recursive=recursive),))
+
+
+# The four styles, as the tables of a face spell them
+# and as the tests below name them.
+STYLES = {
+    "R": (False, False),
+    "B": (True, False),
+    "I": (False, True),
+    "BI": (True, True),
+}
+
+
+def write_style(directory: Path, style: str) -> Path:
+    """Write one face of the Go family in one style, and return its path.
+
+    The example fonts are a regular and a bold, so the two italics
+    are made here by setting the bits rather than shipped.  Which is
+    the point being tested: style is what the style bits say, never
+    the filename or the subfamily string.
+
+    Args:
+        directory: Where to write it.
+        style: One of :data:`STYLES`' keys.
+
+    """
+    bold, italic = STYLES[style]
+    font = TTFont(str(BOLD if bold else REGULAR))
+    selection = int(font["OS/2"].fsSelection) & ~(ITALIC_BIT | REGULAR_BIT)
+    mac = int(font["head"].macStyle) & ~MAC_ITALIC_BIT
+    if italic:
+        selection |= ITALIC_BIT
+        mac |= MAC_ITALIC_BIT
+    elif not bold:
+        selection |= REGULAR_BIT
+    font["OS/2"].fsSelection = selection
+    font["head"].macStyle = mac
+    path = directory / f"Go-{style}.ttf"
+    font.save(str(path))
+    return path
 
 
 # -- the table --------------------------------------------------------
@@ -78,8 +127,70 @@ def test_a_family_the_machine_has_not_got_is_a_miss(font_directory: Path) -> Non
     assert table(font_directory).lookup("Nothing", bold=False, italic=False) is None
 
 
-def test_a_style_the_family_has_not_got_is_a_miss(font_directory: Path) -> None:
-    assert table(font_directory).lookup("Go", bold=False, italic=True) is None
+# How a lookup relaxes, read off the reference engine one machine
+# at a time: each row is a directory holding exactly those styles of one
+# family, the style a `font` node declared, and the face that answered.
+#
+# The shape of it is that a lookup only ever takes a style away.
+# A family holding nothing but a bold face does not answer a node that
+# declared none, however plainly a human would say the family is there;
+# and weight outranks slant, so bold italic asked of a family with
+# a bold face and an italic one gets the bold.
+RELAXATIONS = [
+    ("R", (True, False), "R"),
+    ("R", (False, True), "R"),
+    ("R", (True, True), "R"),
+    ("B", (True, False), "B"),
+    ("B", (True, True), "B"),
+    ("B", (False, True), None),
+    ("B", (False, False), None),
+    ("BI", (True, True), "BI"),
+    ("BI", (True, False), None),
+    ("BI", (False, True), None),
+    ("BI", (False, False), None),
+    ("R I", (True, True), "I"),
+    ("R I", (False, False), "R"),
+    ("B I", (True, True), "B"),
+]
+
+
+@pytest.mark.parametrize(("present", "asked", "answers"), RELAXATIONS)
+def test_a_lookup_relaxes_the_style_within_the_family(
+    tmp_path: Path, present: str, asked: tuple[bool, bool], answers: str | None
+) -> None:
+    directory = tmp_path / present.replace(" ", "-")
+    directory.mkdir()
+    for style in present.split():
+        write_style(directory, style)
+    found = table(directory).lookup("Go", bold=asked[0], italic=asked[1])
+    if answers is None:
+        assert found is None
+        return
+    assert found is not None
+    assert (found.bold, found.italic) == STYLES[answers]
+
+
+def test_the_relaxation_order_is_the_specification_s() -> None:
+    assert relaxations(True, True) == (
+        (True, True),
+        (True, False),
+        (False, True),
+        (False, False),
+    )
+
+
+@pytest.mark.parametrize(
+    ("asked", "tries"),
+    [
+        ((False, False), ((False, False),)),
+        ((True, False), ((True, False), (False, False))),
+        ((False, True), ((False, True), (False, False))),
+    ],
+)
+def test_a_relaxation_is_never_tried_twice(
+    asked: tuple[bool, bool], tries: tuple[tuple[bool, bool], ...]
+) -> None:
+    assert relaxations(*asked) == tries
 
 
 def test_a_collection_is_enumerated_face_by_face(
@@ -211,6 +322,61 @@ def test_a_subdirectory_is_left_alone_when_the_source_is_flat(tmp_path: Path) ->
     (tmp_path / "m").mkdir()
     (tmp_path / "m" / "inner.ttf").write_bytes(b"")
     assert list(walk(tmp_path, recursive=False)) == []
+
+
+def link(source: Path, target: Path) -> None:
+    """Make a symbolic link, or skip the test where that is not allowed.
+
+    Windows wants either developer mode or an administrator for one,
+    and what these tests are about is a machine whose owner has made one.
+
+    Args:
+        source: The link to create.
+        target: What it points at.
+
+    """
+    try:
+        source.symlink_to(target, target_is_directory=target.is_dir())
+    except (OSError, NotImplementedError) as refused:
+        pytest.skip(f"symbolic links are not available here: {refused}")
+
+
+def test_a_link_to_a_directory_is_not_descended_into(tmp_path: Path) -> None:
+    # The link is offered as though it were a file, which is what makes
+    # it reach the diagnostics instead of vanishing: a directory where
+    # a font was expected is something the machine's owner should hear.
+    inside = tmp_path / "elsewhere"
+    inside.mkdir()
+    (inside / "hidden.ttf").write_bytes(b"")
+    walked = tmp_path / "fonts"
+    walked.mkdir()
+    link(walked / "pointer", inside)
+    assert [one.name for one in walk(walked, recursive=True)] == ["pointer"]
+
+
+def test_a_link_to_a_file_is_walked_as_that_file(tmp_path: Path) -> None:
+    target = tmp_path / "Go-Regular.ttf"
+    target.write_bytes(REGULAR.read_bytes())
+    walked = tmp_path / "fonts"
+    walked.mkdir()
+    link(walked / "linked.ttf", target)
+    assert table(walked).lookup("Go", bold=False, italic=False) is not None
+
+
+def test_a_link_that_points_back_up_the_tree_does_not_walk_for_ever(
+    tmp_path: Path,
+) -> None:
+    # `~/.fonts` belongs to the machine's owner, so a loop in it is
+    # theirs to make and this engine's to survive.  Without the rule
+    # above this raises RecursionError rather than failing an assertion.
+    walked = tmp_path / "fonts"
+    walked.mkdir()
+    (walked / "a.ttf").write_bytes(b"")
+    link(walked / "loop", walked)
+    assert sorted(one.name for one in walk(walked, recursive=True)) == [
+        "a.ttf",
+        "loop",
+    ]
 
 
 # -- the platform tables ----------------------------------------------

@@ -52,7 +52,7 @@ from dataclasses import dataclass, field
 from sr.errors import BuildWarning
 from sr.expr.values import quote
 from sr.fonts.face import Face
-from sr.units import TOLERANCE, round_points
+from sr.units import fits, round_points
 
 __all__ = [
     "BREAK",
@@ -303,6 +303,12 @@ def walk(chunk: str, limit: float, metrics: Metrics) -> str:
     and not the grapheme cluster.  A cut may therefore fall between
     a letter and a combining mark that follows it.
 
+    :func:`sr.units.fits` is the comparison, and that it happens in
+    binary64 is normative here rather than an implementation detail:
+    a limit of 11.123 plus the tolerance is 11.123999999999999, which
+    a walked total of 11.124 is outside of.  An engine comparing exact
+    decimals at this line wraps differently.
+
     Args:
         chunk: What is being walked; never empty.
         limit: The box's rounded width, without the tolerance.
@@ -315,22 +321,6 @@ def walk(chunk: str, limit: float, metrics: Metrics) -> str:
         if at and not fits(total, limit):
             return chunk[:at]
     return chunk
-
-
-def fits(extent: float, limit: float) -> bool:
-    """Report whether a width is within a box, to the usual tolerance.
-
-    The comparison happens in binary64 and that is normative,
-    not an implementation detail: a limit of 11.123 plus 0.001 is
-    11.123999999999999, which a walked total of 11.124 is outside of.
-    An engine comparing exact decimals here wraps differently.
-
-    Args:
-        extent: The accumulated width, already rounded.
-        limit: The box's width, already rounded.
-
-    """
-    return extent <= limit + TOLERANCE
 
 
 def trim(line: str) -> str:

@@ -720,7 +720,23 @@ the file does not carry is reported: resolution reads the face's own
 naming `Go-Bold.ttf` without `bold=#true` is ordinary use, since the flag
 would only repeat what the file already says.
 
+That warning is about `file` and `data` only. Resolving by `typeface` reaches
+a face of some other style by the rules written down for it ([the style a
+lookup relaxes to](#host-enumeration), or [the substitute face](#the-substitute-face),
+which is regular whatever was asked for), and those rules carry their own
+reporting. A second warning on every one of them would say only that the rule
+above it had applied.
+
 `underline` is drawn by the renderer and does not affect metrics.
+
+**What a face must carry.** Whatever named it, a face is usable only
+with `head`, `hhea`, `hmtx`, `cmap` and `name`: the em, the advances,
+the characters and the family. One of them missing is a refusal naming
+the table, not a face with a default in place of it, because every
+such default is a silently wrong measurement. A collection may declare
+at most **2048** faces; a count past that is refused as a damaged file
+rather than enumerated, since the count is four bytes of a file that
+may be damaged and each face it claims costs a parse.
 
 ### `data`
 
@@ -1522,6 +1538,39 @@ These are sources for one table, not alternatives tried in turn, and the printou
 records `host` without naming which of them found the face. A directory that does
 not exist is not an error.
 
+**A symbolic link is read, never followed into.** A link to a font file is read
+as that font. A link to a directory is not descended into: it is offered to the
+reader as a file, fails to be one, and is recorded as an enumeration diagnostic
+naming it. The directories walked here include ones the machine's owner writes
+(`~/.fonts` is theirs), so a link pointing back up its own tree is a thing that
+exists, and a walk that followed one would not come back.
+
+**A lookup relaxes the style, never the family.** A `font` node declaring
+a style the family has not got is not a miss. The table is tried for the
+declared style, and then for a style with less in it, stopping at the first
+face found:
+
+1. the declared boldness and slant,
+2. the declared boldness, upright,
+3. regular weight, the declared slant,
+4. regular.
+
+Steps that repeat one already tried are skipped, so a node declaring neither
+style tries one key and a node declaring one tries two.
+
+The order only ever *takes a style away*. A family holding nothing but a bold
+face does not answer a node that declared no style, however plainly a reader
+would say that the family is installed: a report that asked for regular text
+and was given bold is a worse outcome than one told the family is not there,
+because the second can be fixed and the first is not visible until the page
+is printed. Weight outranks slant, so a family with a bold face and an italic
+one answers a request for bold italic with the bold.
+
+The relaxation happens within a family, before the next family is tried.
+A machine with Helvetica in regular only and Arial in bold resolves a bold
+Helvetica to Helvetica regular at step 2, not to Arial bold at step 3:
+the family the template named is the thing it is most important to keep.
+
 **Collections are enumerated face by face.** A `.ttc` holds several faces and every
 one of them is a separate entry. This is not a refinement to add later: on macOS
 two thirds of the installed faces live in collections, `Helvetica`, `Times`,
@@ -1538,6 +1587,13 @@ style bits, in this order:
 
 This ranks **sources, not answers**: the first table the face has decides, and the
 subfamily string is read only when neither table is present — not when it disagrees.
+
+The third rank cannot be reached, and is written down so that nobody adds it
+thinking it was forgotten. It is for a face with neither style table, and `head`
+is one of the tables [every face must have](#font); a face without one is refused
+before its style is asked for. It stays here because the rank is the rule and the
+refusal is a separate rule that happens to subsume it, and an implementation that
+stopped requiring `head` would need this again.
 A face whose bits are wrong is therefore classified wrongly, and the engine has no
 way to tell that case from a face whose subfamily string is merely a weight name it
 could not have classified anyway. Reading a contradicting string as an override

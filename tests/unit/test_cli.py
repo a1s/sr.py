@@ -406,6 +406,116 @@ def test_a_font_taking_its_face_from_a_blob_names_the_blob(tmp_path: Path) -> No
     assert "explicit  data face" in said
 
 
+# -- the fonts of a subreport -----------------------------------------
+#
+# doc/cli.md#sr-validate has a `template=` subreport loaded
+# and checked with its host, and a font is part of what is checked.
+# The fonts it declares are not listed, though: the table is what
+# this template declares, and the subreport's belongs to its own file.
+# Only what went wrong crosses over.
+
+FACE = (FONTS / "Go-Regular.ttf").as_posix()
+
+
+def nested(tmp_path: Path, sub: str, template: str = "sub.kdl") -> Path:
+    """Write a host template and the subreport it invokes, and return it.
+
+    Args:
+        tmp_path: Where to write the pair.
+        sub: The `font` node the subreport declares.
+        template: What the host calls the subreport,
+            which is also where it is written.
+
+    """
+    file = tmp_path / template
+    file.parent.mkdir(parents=True, exist_ok=True)
+    file.write_text(
+        f"""
+report name="sub" {{
+  {sub}
+  layout pagesize="A4" {{
+    detail height=20 {{ field text="y" left=0 top=0 width=50 height=12 }}
+  }}
+}}
+""",
+        encoding="utf-8",
+    )
+    host = tmp_path / "host.kdl"
+    host.write_text(
+        f"""
+report name="host" {{
+  font "body" file="{FACE}" size=9
+  layout pagesize="A4" {{
+    style font="body" color="black"
+    detail height=20 {{
+      field text="x" left=0 top=0 width=50 height=12
+      subreport template="{template}" seq=1 data="[]"
+    }}
+  }}
+}}
+""",
+        encoding="utf-8",
+    )
+    return host
+
+
+def test_a_font_a_subreport_cannot_resolve_fails_the_host(tmp_path: Path) -> None:
+    host = nested(tmp_path, 'font "inner" file="no-such-face.ttf" size=9')
+    code, said = run("validate", str(host))
+    assert code == 1
+    assert "failures" in said
+    assert 'font "inner"' in said
+    assert "ok" not in said.splitlines()
+
+
+def test_a_subreport_font_warning_reaches_the_host(tmp_path: Path) -> None:
+    host = nested(tmp_path, 'font "inner" typeface="NoSuchFamilyAnywhere" size=9')
+    code, said = run("validate", str(host))
+    assert code == 0
+    assert "warnings" in said
+    assert 'typeface "NoSuchFamilyAnywhere" was not found' in said
+
+
+def test_a_subreport_font_is_not_listed_among_the_host_s(tmp_path: Path) -> None:
+    bold = (FONTS / "Go-Bold.ttf").as_posix()
+    host = nested(tmp_path, f'font "inner" file="{bold}" size=9')
+    code, said = run("validate", str(host))
+    assert code == 0
+    listed = said.split("fonts", 1)[1]
+    assert "body" in listed
+    assert "inner" not in listed
+
+
+def test_a_subreport_resolves_a_file_against_its_own_directory(
+    tmp_path: Path,
+) -> None:
+    # The face sits beside the subreport, which names it without
+    # a directory.  Resolved against the host's basedir this would
+    # be looked for one directory up, and there is nothing there.
+    inner = tmp_path / "inner"
+    inner.mkdir()
+    (inner / "Face.ttf").write_bytes((FONTS / "Go-Regular.ttf").read_bytes())
+    host = nested(tmp_path, 'font "inner" file="Face.ttf" size=9', "inner/sub.kdl")
+    code, said = run("validate", str(host))
+    assert code == 0
+    assert "failures" not in said
+
+
+def test_one_template_invoked_twice_is_reported_once(tmp_path: Path) -> None:
+    host = nested(tmp_path, 'font "inner" file="no-such-face.ttf" size=9')
+    text = host.read_text(encoding="utf-8")
+    twice = text.replace(
+        'subreport template="sub.kdl" seq=1 data="[]"',
+        'subreport template="sub.kdl" seq=1 data="[]"\n'
+        '      subreport template="sub.kdl" seq=2 data="[]"',
+    )
+    host.write_text(twice, encoding="utf-8")
+    code, said = run("validate", str(host))
+    assert code == 1
+    assert said.count('font "inner"') == 1
+    assert "1 font" in said or said.count("failures") == 1
+
+
 def test_the_help_names_the_font_flags() -> None:
     _, said = run("help", "validate")
     assert "--strict-fonts" in said

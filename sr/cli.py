@@ -28,7 +28,7 @@ template and is caught after.
 from __future__ import annotations
 
 import sys
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TextIO
@@ -39,7 +39,13 @@ from sr.expr import evaluate
 from sr.expr.values import go_shortest, quote
 from sr.fonts.resolve import Resolution, Resolver
 from sr.template import load as load_template
-from sr.template.load import Loaded, Options, levels_of, sections_of
+from sr.template.load import (
+    Loaded,
+    Options,
+    levels_of,
+    sections_of,
+    subreports_of,
+)
 from sr.template.model import Blob, Font, Parameter, Report, parse_text
 
 __all__ = [
@@ -307,11 +313,18 @@ def resolve_fonts(
     strict: bool = False,
     verbose: bool = False,
 ) -> Fonts:
-    """Resolve every `font` a report declares, collecting the failures.
+    """Resolve every `font` the document tree declares, collecting failures.
 
     Resolution runs to the end rather than stopping at the first failure,
     for the reason validation does: one run of the tool should report
     every font that has to be dealt with.
+
+    Every document is resolved, not only the host.  doc/cli.md#sr-validate
+    has a ``template=`` subreport checked with its host, and a font
+    it declares is a font the build will need.  Only the host's fonts
+    are listed, though: the table is what this template declares, and a
+    subreport's faces belong to its own file.  Its failures and warnings
+    are the host's problem and do surface.
 
     Args:
         report: The template that was loaded.
@@ -320,25 +333,55 @@ def resolve_fonts(
         verbose: Whether the host diagnostics are wanted.
 
     """
-    blobs, refused = blob_bytes(report, params)
-    resolver = Resolver(basedir=report.basedir, blobs=blobs, strict=strict)
+    resolver = Resolver(strict=strict)
     resolved: list[Resolution] = []
     failures: list[tuple[str, str]] = []
     warnings: list[BuildWarning] = []
-    for font in report.fonts:
-        try:
-            one = resolver.resolve(font)
-        except FontError as beaten:
-            failures.append((font.name, blob_reason(font, refused) or str(beaten)))
-            continue
-        resolved.append(one)
-        warnings.extend(one.warnings)
+    for document in documents(report):
+        # A subreport has no command line: its parameters come from
+        # the `arg` nodes of the node that invokes it, which are values
+        # a build has and a check does not.  So `--param` is the host's.
+        host = document is report
+        blobs, refused = blob_bytes(document, params if host else {})
+        resolver.reading(document.basedir, blobs)
+        for font in document.fonts:
+            try:
+                one = resolver.resolve(font)
+            except FontError as beaten:
+                failures.append((font.name, blob_reason(font, refused) or str(beaten)))
+                continue
+            if host:
+                resolved.append(one)
+            warnings.extend(one.warnings)
     return Fonts(
         tuple(resolved),
         tuple(failures),
         tuple(warnings),
         resolver.diagnostics if verbose else (),
     )
+
+
+def documents(report: Report, seen: set[int] | None = None) -> Iterator[Report]:
+    """Yield a report and every distinct template its subreports name.
+
+    Depth first, in document order, and each document once however many
+    `subreport` nodes name it: the loader reads a template once and hands
+    the same document to every node that named it, so a template invoked
+    twice is one set of fonts and one set of failures.
+
+    Args:
+        report: The document to start from.
+        seen: The documents already yielded, by identity.
+
+    """
+    seen = set() if seen is None else seen
+    if id(report) in seen:
+        return
+    seen.add(id(report))
+    yield report
+    for subreport in subreports_of(report):
+        if subreport.report is not None:
+            yield from documents(subreport.report, seen)
 
 
 def blob_reason(font: Font, refused: dict[str, str]) -> str | None:
