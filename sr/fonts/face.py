@@ -21,8 +21,10 @@ in the enumerator, because each is a property of one face:
   because ``head`` is required of every face.
 * **A file is classified before it is parsed**, from its first bytes
   rather than from its name.  :func:`sniff` is what says whether a file
-  is an sfnt at all, so that a bitmap face is skipped as unsupported while
-  a file claiming to be an sfnt and failing to parse is a warning.
+  is an sfnt at all, so that a bitmap face is skipped as unsupported
+  while a file claiming to be an sfnt and failing to parse is a warning.
+  One unsupported format cannot be told from the first bytes and is named
+  from its tables instead: see :data:`BITMAP_SFNT`.
 * **A collection is several faces**, each addressed by index.
 
 The advance of a codepoint the face does not have is ``.notdef``'s,
@@ -108,6 +110,18 @@ OTHER_FORMATS = (
     (b"\x1f\x8b", "a gzip-compressed file"),
     (b"\x00\x00\x01\x00", "a Windows icon or a datafork font"),
 )
+
+# One more of those, which the first bytes cannot tell apart from a face
+# this engine can use.  A bitmap-only sfnt carries its header as `bhed`
+# rather than `head` -- the same twelve fields under another tag, which
+# says the strikes are the whole of the font and there are no outlines
+# to draw.  It is a valid font and the reference engine resolves one;
+# this engine does not, because the renderer has nothing to draw from it,
+# and a face that resolves and prints nothing is worse than a face
+# that says why.  Refusing it is therefore deliberate, and the reason
+# a description sits here rather than a missing-table message: `bhed`
+# is not damage.
+BITMAP_SFNT = "a bitmap-only sfnt font, with `bhed` in place of `head`"
 
 # What a face must have before it can be measured with.  `head` gives
 # the em, `hhea` and `hmtx` the advances, `cmap` the characters and `name`
@@ -368,6 +382,8 @@ def build(data: bytes, origin: Origin) -> Face:
             one = "face" if count == 1 else "faces"
             raise FontError(f"the file holds {count} {one}")
         font = TTFont(io.BytesIO(data), fontNumber=origin.index, lazy=True)
+        if "head" not in font and "bhed" in font:
+            raise FontError(BITMAP_SFNT)
         missing = [one for one in REQUIRED_TABLES if one not in font]
         if missing:
             raise FontError(f"no {missing[0]} table")

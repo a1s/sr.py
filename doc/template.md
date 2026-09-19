@@ -733,10 +733,18 @@ above it had applied.
 with `head`, `hhea`, `hmtx`, `cmap` and `name`: the em, the advances,
 the characters and the family. One of them missing is a refusal naming
 the table, not a face with a default in place of it, because every
-such default is a silently wrong measurement. A collection may declare
-at most **2048** faces; a count past that is refused as a damaged file
-rather than enumerated, since the count is four bytes of a file that
-may be damaged and each face it claims costs a parse.
+such default is a silently wrong measurement.
+
+`bhed` is **not** accepted in place of `head`. It holds the same twelve fields
+under another tag, and a face that uses it is a bitmap-only font: the strikes
+are the whole of it and there are no outlines to draw. Such a face is refused
+as [an unsupported format](#host-enumeration), named as one, rather than
+reported as missing a table — it is not damaged, it is a kind of font this
+engine does not draw.
+
+A collection may declare at most **2048** faces; a count past that
+is refused as a damaged file rather than enumerated, since the count is four
+bytes of a file that may be damaged and each face it claims costs a parse.
 
 ### `data`
 
@@ -1619,6 +1627,14 @@ in two directories, or an ornament face declaring its parent's family, will do i
   a bitmap face — is **classified and skipped**, recorded as an enumeration
   diagnostic.
 - A file that presents itself as sfnt and then fails to parse is a **warning**.
+
+One unsupported format is not visible in the first bytes: a [bitmap-only
+sfnt](#font), which is an ordinary sfnt carrying `bhed` where a face
+this engine can draw carries `head`. It is classified from its tables instead,
+and belongs to the first case above rather than the second. What it may not
+be reported as is a face missing a required table, which describes
+a broken file and sends the
+reader looking for damage that is not there.
 
 Neither is decided from the filename extension. Filtering on `.ttf`/`.ttc`/`.otf`
 would satisfy this rule by accident while hiding real faces, which is the defect
