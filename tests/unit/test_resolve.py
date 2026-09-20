@@ -19,15 +19,17 @@ carrying Liberation and DejaVu.
 from __future__ import annotations
 
 import io
+import struct
 import sys
 from pathlib import Path
 
 import pytest
-from fontTools.ttLib import TTFont
+from fontTools.ttLib import TTCollection, TTFont
 
 from sr.errors import FontError, NodePath
+from sr.fonts.face import Face, Origin, build
 from sr.fonts.hostenum import Catalog, Source, enumerate_faces
-from sr.fonts.resolve import ALIASES, STEPS, Resolver, aliases_for, tidy
+from sr.fonts.resolve import ALIASES, STEPS, Resolver, aliases_for, regular, tidy
 from sr.template.model import Font
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -132,6 +134,75 @@ def test_a_collection_with_no_matching_face_gives_its_first(collection: Path) ->
     found = resolver.resolve(font(file=collection.name, italic=True))
     assert found.origin.index == 0
     assert "declares italic" in found.warnings[0].message
+
+
+def damage(data: bytes, index: int) -> bytes:
+    """Return a collection with one of its faces made unreadable.
+
+    A collection header is the tag, the version, the face count,
+    and then one four-byte offset per face.  Pointing one of them
+    past the end of the file leaves the others exactly as they were,
+    which is what makes this a damaged face rather than a damaged file.
+
+    Args:
+        data: The collection.
+        index: Which face to damage.
+
+    """
+    broken = bytearray(data)
+    struct.pack_into(">I", broken, 12 + index * 4, len(broken) + 1)
+    return bytes(broken)
+
+
+def test_a_damaged_face_in_a_collection_does_not_fail_the_font(
+    tmp_path: Path, collection_bytes: bytes
+) -> None:
+    # Face 1 is the bold one, so a node declaring bold is a node that
+    # reads it.  doc/template.md#font makes face 0 the answer when no
+    # face matches, and one unreadable face is not a reason to refuse
+    # a file whose other faces are fine.
+    path = tmp_path / "Damaged.ttc"
+    path.write_bytes(damage(collection_bytes, 1))
+    found = Resolver(basedir=tmp_path).resolve(font(file=path.name, bold=True))
+    assert found.origin.index == 0
+    assert "declares bold" in found.warnings[0].message
+
+
+def test_the_unstyled_face_of_a_collection_passes_over_a_damaged_one(
+    tmp_path: Path,
+) -> None:
+    # The substitute face is the one whose style bits say neither bold
+    # nor slanted, and here that face is second because the first will
+    # not parse.  Bold first is not the order the shipped collection
+    # has, which is why this one is built rather than borrowed.
+    holder = TTCollection()
+    holder.fonts = [TTFont(FONTS / "Go-Bold.ttf"), TTFont(FONTS / "Go-Regular.ttf")]
+    buffer = io.BytesIO()
+    holder.save(buffer)
+    path = tmp_path / "BoldFirst.ttc"
+    path.write_bytes(damage(buffer.getvalue(), 0))
+    assert regular(path.read_bytes(), Origin(path=path)) == 1
+
+
+def test_every_face_read_here_is_named_by_its_file(
+    tmp_path: Path, collection_bytes: bytes, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The refusals raised in here are passed over rather than printed,
+    # so an origin with no file in it goes unnoticed until something
+    # does print one -- and then it reads `data None`.
+    # What the faces are read under is therefore checked directly.
+    path = tmp_path / "Pair.ttc"
+    path.write_bytes(collection_bytes)
+    seen: list[Origin] = []
+
+    def watched(data: bytes, origin: Origin) -> Face:
+        seen.append(origin)
+        return build(data, origin)
+
+    monkeypatch.setattr("sr.fonts.resolve.build", watched)
+    regular(collection_bytes, Origin(path=path))
+    assert seen
+    assert [one.path for one in seen] == [path] * len(seen)
 
 
 # -- step 2, the host -------------------------------------------------
@@ -309,6 +380,26 @@ def test_the_chain_running_out_is_an_error(
     )
     with pytest.raises(FontError, match="no substitute face"):
         Resolver(catalog=machine).resolve(font(typeface="Nothing"))
+
+
+def test_the_chain_running_out_says_why_each_candidate_was_refused(
+    machine: Catalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A candidate that is not installed and one that is installed and
+    # will not open are different things to be told, and this message
+    # is the only record of either: the substitute step leaves no
+    # enumeration diagnostic behind it.
+    junk = tmp_path / "notafont.ttf"
+    junk.write_bytes(b"this is not a font at all")
+    monkeypatch.setattr(
+        "sr.fonts.resolve.substitute_candidates",
+        lambda platform: (junk.as_posix(), "nowhere.ttf"),
+    )
+    with pytest.raises(FontError) as refused:
+        Resolver(catalog=machine).resolve(font(typeface="Nothing"))
+    assert "notafont.ttf" in str(refused.value)
+    assert "not an sfnt font" in str(refused.value)
+    assert "nowhere.ttf (not found)" in str(refused.value)
 
 
 # -- strict mode ------------------------------------------------------

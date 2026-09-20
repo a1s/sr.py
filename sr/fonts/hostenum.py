@@ -573,8 +573,9 @@ def walk(directory: Path, recursive: bool) -> Iterator[Path]:
         # A symbolic link is never descended into, which is what stops
         # a link that points at one of its own parents from walking
         # for ever.  It is offered as a file instead: a link to a font
-        # is read as that font, and a link to a directory fails to read
-        # and is recorded as a diagnostic naming it.
+        # is read as that font, and one pointing at a directory or at
+        # a file that is gone fails to read and is recorded as a
+        # diagnostic naming it.
         yield entry
 
 
@@ -616,9 +617,25 @@ def read_file(catalog: Catalog, path: Path) -> None:
         return
     try:
         data = read_bytes(path)
-        count = faces_in(data)
     except FontError as refused:
         catalog.diagnostics.append(str(refused))
+        return
+    origin = Origin(path=path)
+    try:
+        count = faces_in(data)
+    except FontError as refused:
+        # `faces_in` is handed bytes and has no file to name, unlike
+        # :func:`sr.fonts.face.read_bytes` above and :func:`build` below,
+        # which name their own.  A damaged collection header would
+        # otherwise be the one line of an enumeration report that does
+        # not say which file it is about.
+        catalog.diagnostics.append(f"{origin}: {refused}")
+        return
+    if count == 0:
+        # A `ttcf` may say it holds nothing, and then the loop below
+        # runs no times and the file leaves no trace.  Nothing is dropped
+        # silently, so it says so here instead.
+        catalog.diagnostics.append(f"{origin}: the font collection holds no faces")
         return
     catalog.files.setdefault(path.name.casefold(), path)
     for index in range(count):
@@ -656,23 +673,57 @@ def add_face(catalog: Catalog, data: bytes, origin: Origin) -> None:
     catalog.admit(Entry(face.family, face.bold, face.italic, origin))
 
 
+def dangling(path: Path) -> bool:
+    """Report whether a path is a symbolic link with nothing at the end.
+
+    Asked only of a path that would not open, and answered from what
+    `lstat` still knows: the link itself is there whatever became of
+    what it names.
+
+    Args:
+        path: The file that was not found.
+
+    """
+    try:
+        return path.is_symlink()
+    except OSError:
+        return False
+
+
 def peek(path: Path, count: int) -> bytes | None:
-    """Return the first bytes of a file, or ``None`` where it is not one.
+    """Return the first bytes of a file, or ``None`` where there is no file.
+
+    A path that turns out to be a directory is not one of those,
+    and is a diagnostic like any other unreadable path.  :func:`walk`
+    offers a symbolic link as a file precisely so that one pointing
+    at a directory is read, fails, and names itself; answering ``None``
+    here is what would drop it silently on the platforms whose error
+    says `Is a directory` rather than `Permission denied`.
+
+    Nor is a link whose target is gone.  Two different things arrive as
+    a missing file: one that went between the walk and the read, which
+    is a race and not worth a line, and a link left behind by a font
+    that was removed, which is the machine's own state and is exactly
+    what the walk yields links for.  :func:`dangling` tells them apart.
 
     Args:
         path: The file.
         count: How many bytes to read.
 
     Raises:
-        FontError: The file is there and could not be read.
+        FontError: The file is there and could not be read,
+            or is a link to a file that is not.
 
     """
     try:
         with path.open("rb") as stream:
             return stream.read(count)
-    except IsADirectoryError:
-        return None
     except FileNotFoundError:
+        if dangling(path):
+            raise FontError(
+                f"cannot read {near(path).as_posix()}: "
+                "the symbolic link's target is gone"
+            ) from None
         return None
     except OSError as refused:
         raise FontError(

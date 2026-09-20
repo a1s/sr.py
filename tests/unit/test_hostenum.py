@@ -25,14 +25,17 @@ enumerated a `.ttc` holding `Helvetica`.
 
 from __future__ import annotations
 
+import struct
 import sys
 from pathlib import Path
 
 import pytest
 from fontTools.ttLib import TTFont
 
+from sr.errors import FontError
 from sr.fonts.face import ITALIC_BIT, MAC_ITALIC_BIT
 from sr.fonts.hostenum import (
+    HEAD_BYTES,
     MACOS_DIRECTORIES,
     SUBSTITUTES,
     Catalog,
@@ -41,6 +44,7 @@ from sr.fonts.hostenum import (
     enumerate_faces,
     fontconfig_directories,
     host_sources,
+    peek,
     relaxations,
     style_words,
     substitute_candidates,
@@ -55,6 +59,11 @@ BOLD = ROOT / "example" / "fonts" / "Go-Bold.ttf"
 # nor italic.  fontTools refuses to save a face that sets it alongside
 # either of the others, so the italics made here must clear it.
 REGULAR_BIT = 1 << 6
+
+# The version a collection header carries, in the four bytes
+# after its tag.  The headers written below are damaged in the
+# face count that follows it, never in this.
+VERSION = 0x00010000
 
 
 def table(directory: Path, recursive: bool = False) -> Catalog:
@@ -246,6 +255,51 @@ def test_a_bitmap_only_sfnt_is_skipped_and_not_reported_as_broken(
     assert said[0].endswith("; skipped")
 
 
+def test_a_directory_where_a_file_was_expected_is_a_diagnostic(
+    tmp_path: Path,
+) -> None:
+    # A source that names files can hand over a directory, and the walk
+    # hands over a symbolic link pointing at one for the same reason.
+    # What the platform calls the failure differs -- `Is a directory`
+    # where the link test below can run, `Permission denied` on Windows --
+    # and what matters is that the line is there and names the path.
+    offered = tmp_path / "pointer"
+    offered.mkdir()
+    catalog = enumerate_faces((Source(files=(offered,)),))
+    assert catalog.entries == {}
+    assert [one for one in catalog.diagnostics if "pointer" in one]
+
+
+def test_a_damaged_collection_header_names_the_file_it_is_about(
+    tmp_path: Path,
+) -> None:
+    # The header is read before any face is, by a function that is handed
+    # bytes and has no file to name.  Every other line of an enumeration
+    # report says which file it is about, and this one used not to.
+    directory = tmp_path / "damaged"
+    directory.mkdir()
+    (directory / "Half.ttc").write_bytes(b"ttcf" + struct.pack(">I", VERSION))
+    said = table(directory).diagnostics
+    assert len(said) == 1
+    assert "Half.ttc" in said[0]
+    assert "truncated font collection header" in said[0]
+
+
+def test_a_collection_claiming_no_faces_is_not_dropped_silently(
+    tmp_path: Path,
+) -> None:
+    # A whole header, and the count in it is zero: there is no face
+    # to fail to parse and nothing to put in the table, so without
+    # a line of its own the file would leave no trace at all.
+    directory = tmp_path / "empty"
+    directory.mkdir()
+    (directory / "None.ttc").write_bytes(b"ttcf" + struct.pack(">II", VERSION, 0))
+    said = table(directory).diagnostics
+    assert len(said) == 1
+    assert "None.ttc" in said[0]
+    assert "no faces" in said[0]
+
+
 def test_every_diagnostic_spells_its_path_the_one_way(font_directory: Path) -> None:
     # The diagnostics of one directory are read together, and they used
     # to arrive in two spellings: the ones raised while classifying a file
@@ -376,6 +430,51 @@ def test_a_link_to_a_directory_is_not_descended_into(tmp_path: Path) -> None:
     walked.mkdir()
     link(walked / "pointer", inside)
     assert [one.name for one in walk(walked, recursive=True)] == ["pointer"]
+    # And the read of it fails and says so, which is the half of this
+    # that only a platform whose error is `Is a directory` exercises.
+    catalog = table(walked, recursive=True)
+    assert catalog.entries == {}
+    assert [one for one in catalog.diagnostics if "pointer" in one]
+
+
+def test_a_link_whose_target_is_gone_is_a_diagnostic(tmp_path: Path) -> None:
+    # A font removed with its link left behind in `~/.fonts` is the
+    # machine's own state, and the walk yields a link as a file so that
+    # it is read and named.  A file that goes between the walk and the
+    # read is the other thing that arrives as a missing file, and that
+    # one is a race and leaves no line; the test below pins it.
+    target = tmp_path / "gone.ttf"
+    target.write_bytes(REGULAR.read_bytes())
+    walked = tmp_path / "fonts"
+    walked.mkdir()
+    link(walked / "dangling.ttf", target)
+    target.unlink()
+    catalog = table(walked, recursive=True)
+    assert catalog.entries == {}
+    assert [one for one in catalog.diagnostics if "dangling.ttf" in one]
+
+
+def test_a_file_that_is_simply_not_there_leaves_no_diagnostic(tmp_path: Path) -> None:
+    # The Windows registry names files, and a walk hands over names that
+    # a moment later are not files any more.  Neither says anything
+    # about the machine that its owner can act on.
+    catalog = enumerate_faces((Source(files=(tmp_path / "gone.ttf",)),))
+    assert catalog.entries == {}
+    assert catalog.diagnostics == []
+
+
+def test_the_two_kinds_of_missing_file_are_told_apart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The pair of tests above is the real one, and it runs only where
+    # a symbolic link can be made -- not on a Windows without the
+    # privilege for it.  This is the same distinction asked of the one
+    # function that draws it, so that the branch is exercised anywhere.
+    gone = tmp_path / "gone.ttf"
+    assert peek(gone, HEAD_BYTES) is None
+    monkeypatch.setattr(Path, "is_symlink", lambda self: True)
+    with pytest.raises(FontError, match="target is gone"):
+        peek(gone, HEAD_BYTES)
 
 
 def test_a_link_to_a_file_is_walked_as_that_file(tmp_path: Path) -> None:

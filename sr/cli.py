@@ -608,12 +608,18 @@ def warning_lines(
 ) -> list[str]:
     """Return one line per warning, the load's first.
 
+    Both kinds are spelled the way their own class spells one, which for
+    a font warning means the kind it will carry into the printout header
+    and the node it happened at.  Printing the message alone loses both,
+    and the reader of a `warnings` section is left with a substituted
+    typeface that does not say which `font` node asked for it.
+
     Args:
         load: What reading the template had to say.
         fonts: What resolving its fonts had to say.
 
     """
-    return [str(one) for one in load] + [one.message for one in fonts]
+    return [str(one) for one in load] + [str(one) for one in fonts]
 
 
 def failure_lines(failures: tuple[tuple[str, str], ...]) -> list[str]:

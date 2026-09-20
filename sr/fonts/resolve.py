@@ -203,7 +203,6 @@ class Resolver:
         self.strict = strict
         self.platform = platform
         self.catalog = catalog
-        self.enumerated = catalog is not None
         self.substitute: Face | None = None
         self.substitute_warnings: tuple[BuildWarning, ...] = ()
 
@@ -302,6 +301,13 @@ class Resolver:
         matches.  Style, not position -- face 0 of a collection is not
         reliably its regular one.
 
+        A face that will not parse is passed over rather than taken
+        as the answer or raised: the fallback the specification names
+        is face 0, and reading a damaged face at index 3 is not a reason
+        to refuse a font whose own face is index 0.  Where the damaged
+        one is the face that ends up chosen, opening it fails and the
+        refusal names it.
+
         Args:
             data: The whole file.
             origin: Where it came from.
@@ -310,8 +316,15 @@ class Resolver:
         """
         if data[:4] != b"ttcf":
             return 0
-        for index in range(faces_in(data)):
-            face = build(data, Origin(path=origin.path, data=origin.data, index=index))
+        try:
+            count = faces_in(data)
+        except FontError:
+            return 0
+        for index in range(count):
+            try:
+                face = build(data, replace(origin, index=index))
+            except FontError:
+                continue
             if face.bold == font.bold and face.italic == font.italic:
                 return index
         return 0
@@ -388,8 +401,14 @@ class Resolver:
         say neither bold nor slanted -- not to face 0, which is the same
         face in `Menlo.ttc` but is not a rule collections keep.
 
+        Each candidate is named in the failure with why it was refused.
+        A candidate that is not installed and one that is there and will
+        not open are different things to be told, and a reader of that
+        message has no other record of either: what is tried here leaves
+        no diagnostic behind it.
+
         Raises:
-            FontError: Every candidate was missing.
+            FontError: Every candidate was missing or would not open.
 
         """
         if self.substitute is not None:
@@ -397,13 +416,15 @@ class Resolver:
         tried: list[str] = []
         for candidate in substitute_candidates(self.platform):
             path = self.substitute_path(candidate)
-            tried.append(candidate)
             if path is None:
+                tried.append(f"{candidate} (not found)")
                 continue
+            origin = Origin(path=path)
             try:
                 data = read_bytes(path)
-                face = build(data, Origin(path=path, index=regular(data)))
-            except FontError:
+                face = build(data, replace(origin, index=regular(data, origin)))
+            except FontError as refused:
+                tried.append(f"{candidate} ({refused})")
                 continue
             self.substitute = face
             self.substitute_warnings = monospace_warning(face)
@@ -512,18 +533,34 @@ def monospace_warning(face: Face) -> tuple[BuildWarning, ...]:
     )
 
 
-def regular(data: bytes) -> int:
+def regular(data: bytes, origin: Origin) -> int:
     """Return the index of the unstyled face in a font file's bytes.
+
+    A face that will not parse is passed over, for the reason
+    :meth:`Resolver.face_in` passes one over: face 0 is the fallback,
+    and a damaged face somewhere in a collection is not a reason to
+    refuse the file.
 
     Args:
         data: The whole file.
+        origin: Where it came from; its ``index`` is ignored.
+            Passed through so that a refusal raised in here names its
+            file.  Nothing prints those today, since the loop below
+            passes them over, and an origin built without a file
+            spells itself `data None`.
+
+    Raises:
+        FontError: The collection header is damaged.
 
     """
     count = faces_in(data)
     if count == 1:
         return 0
     for index in range(count):
-        face = build(data, Origin(index=index))
+        try:
+            face = build(data, replace(origin, index=index))
+        except FontError:
+            continue
         if not face.bold and not face.italic:
             return index
     return 0

@@ -476,6 +476,20 @@ def test_a_subreport_font_warning_reaches_the_host(tmp_path: Path) -> None:
     assert 'typeface "NoSuchFamilyAnywhere" was not found' in said
 
 
+def test_a_font_warning_is_spelled_the_way_a_load_warning_is(tmp_path: Path) -> None:
+    # A warning knows its kind and the node it happened at, and the line
+    # used to carry the message alone: a substituted typeface said what
+    # had happened without saying which `font` node it happened to,
+    # which in a subreport is the only thing that identifies it.
+    host = nested(tmp_path, 'font "inner" typeface="NoSuchFamilyAnywhere" size=9')
+    code, said = run("validate", str(host))
+    assert code == 0
+    lines = [one.strip() for one in said.splitlines() if "NoSuchFamily" in one]
+    assert len(lines) == 1
+    assert lines[0].startswith("font: ")
+    assert lines[0].endswith('(report > font "inner")')
+
+
 def test_a_subreport_font_is_not_listed_among_the_host_s(tmp_path: Path) -> None:
     bold = (FONTS / "Go-Bold.ttf").as_posix()
     host = nested(tmp_path, f'font "inner" file="{bold}" size=9')
