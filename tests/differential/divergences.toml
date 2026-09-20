@@ -239,3 +239,27 @@ of it that it does not have yet.\
 ticket = "M4: unknown names, template.md#unknown-names"
 since = "2026-09-13"
 affects = ["probe/values/unknown-names*"]
+
+[[divergence]]
+id = "glyph-warning-order"
+summary = "glyph warnings come out in the order the build raised them; the reference sorts some of them by codepoint"
+reason = """
+The reference has two orders and uses them both.  A `field` without \
+`stretch` reports the characters of one element sorted by codepoint and \
+the elements in document order; a band whose fields all `stretch` \
+reports every character of the band sorted by codepoint, document order \
+gone.  Neither is a rule anyone would write down, and the two cannot \
+both be one, so the oracle does not settle this question and something \
+has to.  doc/printout.md#header-line now states the order: a warning \
+appears where the build raised it, and a `glyph` warning is raised at \
+the first element set in that font that needed the character.  It is \
+the only order the four kinds have in common -- an `overflow` and an \
+`unknown` have no codepoint to sort by -- and it is what both engines \
+already do everywhere except that one path.  The reference is the side \
+that changes.  Only a probe with two missing characters in one band \
+sees it, which is why the two `breaking` probes are here and the rest \
+of the corpus is not.\
+"""
+ticket = "M6: warning order, printout.md#header-line; filed against the Go engine"
+since = "2026-09-20"
+affects = ["probe/breaking/codepoints", "probe/breaking/opportunities"]

@@ -40,11 +40,11 @@ a missing oracle, would go unguarded. Once `sr.py` is committed nothing raises
 that any more: an entry point that is absent or will not run is then a fault,
 and the flag fails on it.
 
-Until we produce the first printout here there is no second engine, and
-the comparisons skip on that side instead. What runs today is the harness'
-own tests, which include running the reference against itself: that
-exercises the build, the argument construction, the output paths and the
-byte comparison, and checks the reproducibility `doc/cli.md` promises.
+Both engines are here now: `sr.py build` writes a printout from M6 on,
+so every case is built twice and compared. The harness' own tests still
+run the reference against itself, which exercises the build, the argument
+construction, the output paths and the byte comparison, and checks the
+reproducibility `doc/cli.md` promises.
 
 ## Cases
 
@@ -81,16 +81,33 @@ than a place to file things.
 No entry may cover a case in `example/`. Those are the broadest comparison
 the corpus has, and excusing one excuses the whole report.
 
-## One thing byte-identity will run into
+## The pending list
+
+A second list, [pending.toml](pending.toml), holds the cases this engine
+cannot build **yet**: work a later milestone brings rather than a decision
+either engine has to catch up with. The two rules are the same two, and so
+is the reason for them.
+
+It is read only where the divergence register says nothing, and a case may
+not be in both -- one expected failure with two reasons is a reason nobody
+reads. Unlike a divergence, a pending entry may cover an example: the two
+example reports use every node in the format, so they cannot pass until
+the last of those nodes is built.
+
+Each entry names the milestone that retires it, and the suite fails
+the moment the case starts agreeing, so a milestone that lands takes
+its entries with it.
+
+## The one field byte-identity ran into
 
 A printout header carries `engine`, which
 [doc/cli.md](../../doc/cli.md#sr-version) describes as the version stamped
 into the binary, "so an artifact and the binary that made it can be matched
 up". Two implementations cannot both write that field truthfully *and* agree
-byte for byte. Either this engine writes `sr 0.1.0` as the reference does,
-and a printout no longer says which implementation made it, or the field
-differs by construction and the comparison must be told to ignore it.
+byte for byte.
 
-The harness does not decide this: it reports `fields: engine` on the header
-record, which is the answer arriving as a question. It belongs in `doc/`
-when this engine first produces a header.
+M6 settled it, in [doc/printout.md](../../doc/printout.md#the-engine-field):
+the field names the engine **this specification** describes, so both write
+`sr 0.1.0` and the comparison needs no exception. The cost is stated there
+rather than hidden here: a printout does not record which implementation
+produced it, only which version of the format and engine did.

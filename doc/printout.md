@@ -66,6 +66,37 @@ and the printout is compared byte for byte.
   geometry bounds the other end. Writing the rule down is what keeps "does not
   arise" from being a coincidence.
 
+### Strings
+
+JSON's escapes, with the choices a writer usually makes for itself made
+here instead, for the reason the numbers are:
+
+- A quotation mark is written `\"` and a backslash `\\`, and the five
+  characters JSON gives a short escape of their own keep it: `\b`, `\f`,
+  `\n`, `\r`, `\t`.
+- Every **other** character below U+0020 is `\u00xx`, in lower-case
+  hexadecimal: `\u000b`, not `\u000B` and not `\v`.
+- `<`, `>` and `&` are `\u003c`, `\u003e` and `\u0026`, although JSON does
+  not ask for it, so that a printout can be pasted into an HTML document as
+  it stands.
+- **U+2028 and U+2029** are `\u2028` and `\u2029`, for a reason of the same
+  shape: both are legal in a JSON string and neither is legal in a JavaScript
+  one, so a reader that is a JavaScript parser would refuse the file.
+- Everything else is written as itself, in UTF-8. Non-ASCII is not escaped,
+  `/` is not escaped, and U+007F is an ordinary character.
+
+### Object keys
+
+**Every object writes its keys in the order this document lists them**, and a
+key whose value is absent is left out rather than written `null`. Key order is
+nothing to a JSON reader and everything to a byte comparison: two printouts
+that parse equal and order their keys differently are two files, and fixing the
+number format buys nothing if the keys around it float.
+
+The two tables whose keys are data rather than fields — [`fonts`](#fonts) and
+[`data`](#data) — are sorted by name instead, and say so where they are
+defined.
+
 ### Paths
 
 Two fields hold filesystem paths: an [`image`](#image) mark's `file`,
@@ -159,8 +190,8 @@ Making the printout's own directory self-contained is a separate, deliberate act
 | `sr` | Format version. `1` for this specification. |
 | `kind` | Always `"header"`. |
 | `report` | Metadata from the template's `report` node. Omitted fields are absent, not null. |
-| `built` | RFC 3339, the run's `BUILD_TIME`. |
-| `engine` | Name and version of the producing engine. |
+| `built` | RFC 3339, the run's `BUILD_TIME`, in UTC and to a whole second. A `--build-time` carrying an offset names an instant, and the instant is what is recorded, so two machines in different zones write the same bytes. |
+| `engine` | Name and version of the engine, which is the name and version of *this specification's* engine rather than of an implementation of it. See [below](#the-engine-field). |
 | `strictFonts` | Whether font guessing was disabled for this run. |
 | `pages` | Number of page lines that follow. |
 | `groupRuns` | Per group name, how many times it opened. Group names are per-report namespaces, and this table is the document's, so a host and a [subreport](layout.md#subreports) that both call a group `region` are counted together here. |
@@ -174,6 +205,29 @@ Making the printout's own directory self-contained is a separate, deliberate act
 warning raised at load: an `unknown` is found while the template is read
 and before any data is. A warning about a property carries a `prop` key
 naming it, and one about a node does not.
+
+**Warnings appear in the order the build raised them**, which for a load
+diagnostic is document order and for anything raised while pages are being
+made is the order they were made in. A `glyph` warning is raised once per font
+and character, at the first element set in that font that needed the character,
+and that first use is what fixes its place in the array. The array mixes kinds,
+so build order is the only order all four have in common; sorting the `glyph`
+ones among themselves would tell a reader nothing the `node` field does not
+already say, and would put them out of step with the rest.
+
+### The `engine` field
+
+Two implementations of this specification write the **same** string, because
+the field names the engine the specification describes rather than the program
+that ran. That is what lets the goal be stated as it is: the same template
+over the same data with `--build-time` fixed and `--strict-fonts` set gives
+byte-identical printouts, from any implementation and on any machine.
+
+The cost is real and is worth stating: a printout does not record which
+implementation produced it. What it records is which *version of the format
+and engine* produced it, which is what a renderer and an archive need.
+A build that has to be traced back to a program is traced through the run
+that made it, not through the document.
 
 ### `fonts`
 
@@ -549,16 +603,27 @@ produced in the test suite.
 
 A one-page printout with one font, a rule, and two detail rows.
 The template pinned its font with `file=`, so `resolvedFile`
-is [relative to the printout](#paths):
+is [relative to the printout](#paths).
+
+It is [example/minimal/minimal.kdl](../example/minimal/minimal.kdl)
+over [films.jsonl](../example/minimal/films.jsonl), and these are
+the bytes that template produces, not an illustration of them:
+
+```bash
+sr build -t example/minimal/minimal.kdl -d example/minimal/films.jsonl     -o example/minimal/minimal.srp.jsonl     --build-time 2026-08-04T09:12:44Z --strict-fonts
+```
 
 ```json
 {"sr":1,"kind":"header","report":{"name":"Minimal"},"built":"2026-08-04T09:12:44Z","engine":"sr 0.1.0","strictFonts":true,"pages":1,"page":{"width":595.276,"height":841.89,"leftMargin":42.52,"rightMargin":42.52,"topMargin":28.35,"bottomMargin":28.35},"fonts":[{"name":"body","size":9,"bold":false,"italic":false,"underline":false,"resolvedFile":"../fonts/Go-Regular.ttf","resolvedFace":"Go","resolvedBy":"explicit"}],"data":{}}
 {"kind":"page","number":1,"marks":[
   {"kind":"text","box":{"x":42.52,"y":28.35,"width":200,"height":10.8},"font":"body","color":"#000000","align":"left","leading":10.8,"lines":["Film title"]},
-  {"kind":"line","box":{"x":42.52,"y":39.15,"width":510.24,"height":0},"width":0.5,"color":"#000000","dash":"solid","backslant":false},
+  {"kind":"line","box":{"x":42.52,"y":39.15,"width":510.236,"height":0},"width":0.5,"dash":"solid","color":"#000000","backslant":false},
   {"kind":"text","box":{"x":42.52,"y":39.15,"width":200,"height":10.8},"font":"body","color":"#000000","align":"left","leading":10.8,"lines":["ACADEMY DINOSAUR"]},
   {"kind":"text","box":{"x":42.52,"y":49.95,"width":200,"height":10.8},"font":"body","color":"#000000","align":"left","leading":10.8,"lines":["ACE GOLDFINGER"]}
 ]}
 ```
 
-The page line is shown wrapped for readability. In a real file it is one line.
+The page line is shown wrapped for readability: a record starts at the left
+margin, and a line that does not is a continuation of the one above it. In a
+file it is one line. Everything else, including the width of the rule and the
+order of every key, is the file.

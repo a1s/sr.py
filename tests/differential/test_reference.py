@@ -1,11 +1,11 @@
 """Tests for the oracle and the plumbing around it.
 
-Until M6 there is no second engine to compare against, so these run
+These do not need a second engine to compare against, so they run
 the reference against itself.  That is not a tautology: it exercises
 the build, the argument construction, the output paths and the byte
-comparison -- every part of the harness except the engine that does not
-exist yet -- and it checks the reproducibility doc/cli.md promises,
-which is what byte-identity is measured against in the first place.
+comparison -- every part of the harness except the second engine --
+and it checks the reproducibility doc/cli.md promises, which is what
+byte-identity is measured against in the first place.
 
 """
 

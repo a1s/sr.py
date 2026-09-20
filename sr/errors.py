@@ -6,7 +6,7 @@ and doc/expressions.md adds the record index for an error raised while
 a band is being built.  Those four parts are what a :class:`Location` holds,
 and assembling them is all this module does.
 
-Four shapes of failure, because they behave differently:
+Five shapes of failure, because they behave differently:
 
 * A **bad value** is local.  ``units`` and ``color`` raise :class:`BadValue`
   with the message and nothing else, since a parser that knew about node
@@ -26,6 +26,13 @@ Four shapes of failure, because they behave differently:
   which is a coordinate in a string rather than in the file, so
   :class:`ExpressionError` holds it and the rest of the location
   is attached by whoever had the node.
+* A **failed build** is one diagnostic with its location already on it.
+  :class:`BuildError` is raised where the document is being made, which
+  is the one place that knows the node, the property and the record all
+  at once, and it stops the run: every band after it would be laid out
+  against a page that is already wrong.  :class:`Unsupported` is the
+  same thing for work a later milestone brings, kept apart because
+  it is not about the template.
 
 The section a band belongs to is not a separate field.  A node path
 ends up naming it (``report > layout > detail > field`` says `detail`),
@@ -41,6 +48,7 @@ from dataclasses import dataclass, field
 __all__ = [
     "WARNING_KINDS",
     "BadValue",
+    "BuildError",
     "BuildWarning",
     "Diagnostic",
     "Diagnostics",
@@ -51,6 +59,7 @@ __all__ = [
     "SrError",
     "Step",
     "TemplateError",
+    "Unsupported",
 ]
 
 # The `kind` of a warning the printout header carries, per
@@ -276,6 +285,56 @@ class TemplateError(SrError):
         """
         self.diagnostics = diagnostics
         super().__init__("\n".join(str(one) for one in diagnostics))
+
+
+class BuildError(SrError):
+    """A run that failed while the document was being built.
+
+    The conditions are doc/layout.md#errors: a band too tall
+    for an empty frame, a record whose member will not coerce,
+    an expression that would not evaluate.  Each names as much
+    of a :class:`Location` as the caller had, and the command
+    line prints that and exits 1.
+
+    Unlike :class:`TemplateError` this carries one diagnostic rather
+    than a list.  Validation runs to the end and reports everything;
+    a build stops, because every band after the failure would be laid
+    out against a page whose contents are already wrong.
+
+    """
+
+    def __init__(self, message: str, location: Location | None = None) -> None:
+        """Carry what failed and where.
+
+        Args:
+            message: What is wrong, without its location.
+            location: Where, in as much detail as the caller had.
+
+        """
+        self.diagnostic = Diagnostic(message, location or Location())
+        super().__init__(str(self.diagnostic))
+
+    def at(self, **where: object) -> BuildError:
+        """Return this error with more of its location filled in.
+
+        Args:
+            **where: The parts to fill in, as :meth:`Diagnostic.at`
+                takes them.
+
+        """
+        filled = self.diagnostic.at(**where)  # type: ignore[arg-type]
+        return BuildError(filled.message, filled.location)
+
+
+class Unsupported(BuildError):
+    """Something the specification has and this engine has not yet.
+
+    Separate from :class:`BuildError` because it is not about
+    the document: the template is good, and it asks for work
+    a later milestone brings.  The message names that milestone,
+    so a refusal reads as a plan rather than as a fault in the template.
+
+    """
 
 
 @dataclass

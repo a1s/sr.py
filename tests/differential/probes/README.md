@@ -21,7 +21,7 @@ For a probe named `NAME`:
 `NAME.answer.jsonl` is what keeps a probe answered rather than merely
 building. The suite rebuilds every probe with the reference and holds it
 to that file, so an oracle that changed its mind about line breaking fails
-here instead of passing unnoticed until M6. It is the printout as written --
+here rather than moving both engines at once. It is the printout as written --
 the `lines`, the boxes, the `data` keys, and the exact spelling of every
 number -- with only a font's `resolvedFile` replaced, since that records
 where the build happened rather than what it decided.
@@ -101,6 +101,8 @@ the reference gave, and names the section of `doc/` that answer became.
 | `rounding/tolerance-refuses` | how the 0.001 pt tolerance is added |
 | `rounding/tolerance-admits` | the same, where the addition lands exactly |
 | `printout/numbers` | how a number reaches the file |
+| `printout/strings` | how a string reaches the file |
+| `layout/band-height` | the two maxima a band's height is |
 | `data/blob-names` | the name an embedded image gets |
 | `data/blob-collision` | a generated name that is already taken |
 | `data/key-order` | the order of the header's `data` object |
@@ -135,5 +137,13 @@ a date before year 1, and a precision deeper than a float reaches.
 `values/unknown-names` is the twelfth and the only one about a rule neither
 engine had written down: both refused a name the format does not define,
 doc/ now accepts it, and the reference is the side that has not caught up.
-The remaining twenty-five must agree byte for byte once this engine
-builds them.
+
+A thirteenth was added in M6 and covers the two `breaking` probes that
+report more than one missing glyph: the reference has two orders for
+the `warnings` array and uses them both, so it cannot settle the question
+and doc/printout.md does.
+
+Of the rest, every one agrees byte for byte except four: the three
+`data/` probes, which need an image, and `rounding/tolerance-refuses`,
+which needs a page eject. Those are in [pending.toml](../pending.toml)
+with the milestone that brings them.

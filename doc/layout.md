@@ -451,6 +451,33 @@ Given a band template and a context, measurement proceeds:
 
 The emitted mark's box is the content box from step 7, not the declared box.
 
+### The band's height is settled twice
+
+Step 6 reads as one maximum and is two, and the difference shows in every band
+that holds a rule. The first is over the **declared** boxes and is what the
+container-dependent elements are resolved against; the second is over the
+**marks**, and is the band's height.
+
+1. Take the greater of the declared `height` and the lowest bottom edge among
+   the elements whose vertical extent is their own.
+2. Resolve the container-dependent elements against that. A `line` written
+   `top=10` and nothing else ends up exactly there, and one written with no
+   geometry at all spans it.
+3. The band is then as tall as the greatest bottom edge of the marks
+   [step 7](#building-a-band) produced, or that first height, whichever is
+   greater.
+
+Only step 3 sees content that overflowed the box it was given: a `field`
+without `stretch` in a box shorter than one line still draws that line, and a
+container-dependent field whose box came out empty draws its line below the
+top edge. So a band whose only content is such a field grows to the text,
+while a rule inside it keeps the height the declared boxes gave.
+
+The second maximum cannot feed back into step 2, and that is not a
+simplification for its own sake: resolving the rule against the final height
+would make the two define each other, which is the reason step 6 excludes
+container-dependent elements from the first maximum at all.
+
 ## Floating elements
 
 An element with `float=#true` has no fixed vertical position: it sits below
