@@ -518,9 +518,7 @@ def describe(loaded: Loaded, file: str, fonts: Fonts, out: TextIO) -> None:
             f"top {number(paper.top)} bottom {number(paper.bottom)}",
             file=out,
         )
-    counts = tally(report)
-    if counts:
-        print(f"  {counts}", file=out)
+    print(f"  {tally(report)}", file=out)
     if report.parameters:
         print("parameters", file=out)
         for line in parameter_lines(report.parameters):
