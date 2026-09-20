@@ -26,7 +26,7 @@ Three orders are settled here and each was read off the reference.
 
 * **The marks of a page come out header, title, details, summary,
   footer.**  The footer is last in the array because it is built last:
-  doc/layout.md#what-a-header-or-a-footer-sees builds it against the
+  doc/layout.md#what-a-header-or-footer-sees builds it against the
   outgoing context, which is what lets a page footer report the page
   it sits on.
 * **The counters count what has been printed**, so the first detail band
