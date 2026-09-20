@@ -1,0 +1,40 @@
+// probes/layout/guarded-footer.kdl -- a footer that reserves nothing.
+//
+// doc/layout.md#what-a-header-or-a-footer-sees gives this guard
+// as the way a footer reads a record field safely:
+//
+//   field expr="region" printwhen="THIS != None"
+//
+// which means the band is suppressed at reservation, because the frame
+// is built before any record is read, and printed at the end of the page,
+// because by then `THIS` is the last record.  So the page reserves nothing
+// for it and it is drawn anyway.
+//
+// The page is 200pt tall and the band is 14, and the mark lands at 186:
+// a footer's bottom edge is the page frame's bottom rather than the
+// reservation's, which is the same place whenever the two agree
+// and keeps the band on the page when they do not.
+//
+// The header is guarded the same way and is not printed at all: it is
+// built once, at the top of the page, where there is still no record.
+//
+// doc/layout.md#headerfooter-reservation is what this became.
+
+report name="layout/guarded-footer" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  records {
+    member "n" type="int"
+  }
+  layout width=400 height=200 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    header height=14 printwhen="THIS != None" {
+      field expr="'header %d' % n" left=0 top=0 width=390 height=12
+    }
+    footer height=14 printwhen="THIS != None" {
+      field expr="'footer %d' % n" left=0 top=0 width=390 height=12
+    }
+    detail height=26 {
+      field expr="'row %d' % n" left=0 top=0 width=390 height=12
+    }
+  }
+}

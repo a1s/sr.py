@@ -56,6 +56,9 @@ class Options:
         strict_names: Refuse an unknown node or property.
         accepted: Names to take without a warning.
         allow_overflow: Record an oversized band as a warning.
+        verbose: Collect the host font diagnostics, which are
+            about the machine rather than the document and are
+            asked for rather than produced.
 
     """
 
@@ -65,6 +68,7 @@ class Options:
     strict_names: bool = False
     accepted: frozenset[str] = frozenset()
     allow_overflow: bool = False
+    verbose: bool = False
 
 
 @dataclass(frozen=True)
@@ -77,15 +81,18 @@ class Result:
             which is what the header carries.
         notes: What it had to say about the template,
             which the header does not carry: a diagnostic with
-            no [kind](doc/printout.md#header-line) is about the
-            document that was written rather than about the one
-            that was read, and belongs on standard error.
+            no [kind](doc/printout.md#header-line) is about
+            the document that was written rather than about
+            the one that was read, and belongs on standard error.
+        diagnostics: What enumerating the host's fonts had to say,
+            under ``verbose`` and only where enumeration happened at all.
 
     """
 
     printout: Printout
     warnings: tuple[BuildWarning, ...] = ()
     notes: tuple[Diagnostic, ...] = ()
+    diagnostics: tuple[str, ...] = ()
 
 
 def build(
@@ -116,7 +123,9 @@ def build(
     built = build_time_of(asked.build_time)
     parameters = parameter_values(report, asked.params, built)
     blobs = blob_bytes(report, parameters)
-    fonts = resolve_fonts(report, blobs, strict=asked.strict_fonts)
+    fonts, diagnostics = resolve_fonts(
+        report, blobs, strict=asked.strict_fonts, verbose=asked.verbose
+    )
     records = read_records(data, report.records) if data is not None else ()
     warnings = tuple(carried(one) for one in loaded.warnings if one.kind is not None)
     for resolution in fonts:
@@ -130,12 +139,13 @@ def build(
             blobs=blobs,
             built=built,
             strict_fonts=asked.strict_fonts,
+            allow_overflow=asked.allow_overflow,
             warnings=warnings,
         )
     )
     printout = builder.run()
     notes = tuple(one for one in loaded.warnings if one.kind is None)
-    return Result(printout, printout.warnings, notes)
+    return Result(printout, printout.warnings, notes, diagnostics)
 
 
 def build_time_of(given: str | None) -> Time:
@@ -299,14 +309,19 @@ def as_bytes(blob: Blob, names: dict[str, Any], file: str) -> bytes:
 
 
 def resolve_fonts(
-    report: Report, blobs: dict[str, bytes], *, strict: bool = False
-) -> tuple[Resolution, ...]:
+    report: Report,
+    blobs: dict[str, bytes],
+    *,
+    strict: bool = False,
+    verbose: bool = False,
+) -> tuple[tuple[Resolution, ...], tuple[str, ...]]:
     """Resolve every `font` node the template declares.
 
     Args:
         report: The template.
         blobs: Its `data` nodes' contents, for a `font data=`.
         strict: Whether ``--strict-fonts`` is set.
+        verbose: Whether to keep what enumerating the host had to say.
 
     Raises:
         BuildError: A font did not resolve.
@@ -322,4 +337,4 @@ def resolve_fonts(
                 f"font {font.name!r}: {beaten}",
                 Location(file=report.file, path=font.path),
             ) from None
-    return tuple(resolved)
+    return tuple(resolved), resolver.diagnostics if verbose else ()

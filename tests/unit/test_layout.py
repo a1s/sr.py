@@ -498,3 +498,141 @@ def test_a_suppressed_detail_does_not_fold_but_advances_the_item(
     ).printout
     said = [one.lines[0] for one in printout.pages[0].marks if isinstance(one, Text)]
     assert said == ["1 of 1", "3 of 5"]
+
+
+# -- reserved bands ---------------------------------------------------
+
+
+def test_a_header_may_read_a_variable(tmp_path: Path) -> None:
+    """Reserving space measures the band, so the names must be there.
+
+    doc/expressions.md#the-report-boundary fires `iter="report"`
+    before the title is built; a variable a header reads has to
+    exist by then, seeded or not.
+
+    """
+    template = tmp_path / "early.kdl"
+    template.write_text(
+        'report name="Early" {\n'
+        '  font "body" file="' + REGULAR + '" size=10\n'
+        '  records { member "n" type="int" }\n'
+        '  variable "total" expr="n" calc="sum"\n'
+        "  layout width=300 height=800 {\n"
+        '    style font="body" color="black"\n'
+        "    header height=12 {\n"
+        "      field expr=\"'seen %s' % total\" left=0 top=0 width=200\n"
+        "    }\n"
+        "    footer height=12 {\n"
+        "      field expr=\"'total %s' % total\" left=0 top=0 width=200\n"
+        "    }\n"
+        '    detail height=12 { field expr="n" left=0 top=0 width=200 }\n'
+        "  }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    data = tmp_path / "rows.jsonl"
+    data.write_text('{"n":2}\n{"n":3}\n', encoding="utf-8")
+    printout = build(
+        template, data, Options(build_time="2026-08-04T09:12:44Z", strict_fonts=True)
+    ).printout
+    said = [one.lines[0] for one in printout.pages[0].marks if isinstance(one, Text)]
+    assert said == ["seen None", "2", "3", "total 5"]
+
+
+def test_a_footer_guarded_on_a_record_still_lands_on_the_page(
+    tmp_path: Path,
+) -> None:
+    """The spec's own guard reserves nothing and prints anyway.
+
+    `printwhen="THIS != None"` is false when the frame reserves space,
+    because no record has been read, and true when the footer is built
+    at the end of the page.  Its bottom edge is the page frame's,
+    so it is on the page either way.
+
+    """
+    printout = built(
+        tmp_path,
+        '    footer height=14 printwhen="THIS != None" {\n'
+        '      field text="foot" left=0 top=0 width=90\n'
+        "    }\n"
+        '    detail height=12 { field text="row" left=0 top=0 width=90 }',
+    )
+    foot = marks(printout)[-1]
+    assert isinstance(foot, Text)
+    assert foot.lines == ("foot",)
+    # The band is 14 tall and ends at the page frame's bottom, so it
+    # starts at 786; its one line of 12 is drawn at the band's top.
+    assert foot.box.y == 786
+
+
+def test_a_footer_reads_the_position_the_content_reached(tmp_path: Path) -> None:
+    printout = built(
+        tmp_path,
+        "    footer height=20 {\n"
+        "      field expr=\"'vp %s vs %s' % (VERTICAL_POSITION, VERTICAL_SPACE)\""
+        " left=0 top=0 width=200\n"
+        "    }\n"
+        '    detail height=26 { field text="row" left=0 top=0 width=90 }',
+    )
+    foot = marks(printout)[-1]
+    assert isinstance(foot, Text)
+    assert foot.lines == ("vp 26.0 vs 20.0",)
+
+
+# -- variable scopes --------------------------------------------------
+
+
+def test_a_detail_scoped_reset_clears_the_accumulator(tmp_path: Path) -> None:
+    template = tmp_path / "perrow.kdl"
+    template.write_text(
+        'report name="PerRow" {\n'
+        '  font "body" file="' + REGULAR + '" size=10\n'
+        '  records { member "n" type="int" }\n'
+        '  variable "row" expr="n" calc="sum" reset="detail"\n'
+        '  variable "whole" expr="n" calc="sum"\n'
+        "  layout width=300 height=800 {\n"
+        '    style font="body" color="black"\n'
+        "    detail height=12 {\n"
+        "      field expr=\"'%s of %s' % (row, whole)\" left=0 top=0 width=200\n"
+        "    }\n"
+        "  }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    data = tmp_path / "rows.jsonl"
+    data.write_text('{"n":2}\n{"n":3}\n{"n":4}\n', encoding="utf-8")
+    printout = build(
+        template, data, Options(build_time="2026-08-04T09:12:44Z", strict_fonts=True)
+    ).printout
+    said = [one.lines[0] for one in printout.pages[0].marks if isinstance(one, Text)]
+    assert said == ["2 of 2", "3 of 5", "4 of 9"]
+
+
+# -- overflow ---------------------------------------------------------
+
+
+def test_a_band_taller_than_the_page_is_an_error(tmp_path: Path) -> None:
+    with pytest.raises(BuildError) as refused:
+        built(tmp_path, '    detail height=900 { field text="A" left=0 top=0 width=5 }')
+    assert "900" in str(refused.value)
+
+
+def test_allow_overflow_makes_that_a_warning_and_places_the_band(
+    tmp_path: Path,
+) -> None:
+    """doc/layout.md#errors: the marks go down and the header says so.
+
+    The warning travels in the printout, which is what makes
+    an overflowing document identifiable from the artifact
+    rather than from whoever watched the build.
+
+    """
+    printout = built(
+        tmp_path,
+        '    detail height=900 { field text="A" left=0 top=0 width=5 }',
+        allow_overflow=True,
+    )
+    assert len(marks(printout)) == 1
+    kinds = [one.kind for one in printout.warnings]
+    assert kinds == ["overflow"]
+    assert printout.warnings[0].record == 0

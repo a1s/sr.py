@@ -25,9 +25,10 @@ break.
 Three orders are settled here and each was read off the reference.
 
 * **The marks of a page come out header, title, details, summary,
-  footer.**  The footer is built last although it is drawn at the top
-  of its reserved band, because doc/layout.md#what-a-header-or-a-footer-sees
-  builds it against the outgoing context.
+  footer.**  The footer is last in the array because it is built last:
+  doc/layout.md#what-a-header-or-a-footer-sees builds it against the
+  outgoing context, which is what lets a page footer report the page
+  it sits on.
 * **The counters count what has been printed**, so the first detail band
   is built with ``REPORT_COUNT`` at 0 and the second at 1.
   ``ITEM_NUMBER`` is the other way about: it is 1 while the first record
@@ -86,6 +87,8 @@ class Build:
         blobs: The contents of its `data` nodes, by name.
         built: When the run started.
         strict_fonts: Whether font guessing was disabled.
+        allow_overflow: Whether an oversized band is a warning
+            rather than an error.
         warnings: What loading and resolving had to say.
 
     """
@@ -97,6 +100,7 @@ class Build:
     blobs: dict[str, bytes]
     built: Time
     strict_fonts: bool = False
+    allow_overflow: bool = False
     warnings: tuple[BuildWarning, ...] = ()
 
 
@@ -143,6 +147,7 @@ class Builder:
         self.accumulators: dict[str, Accumulator] = {}
         self.pages: list[Page] = []
         self.marks: list[Mark] = []
+        self.warnings: list[BuildWarning] = []
 
     # -- what this milestone does not do ------------------------------
 
@@ -187,15 +192,21 @@ class Builder:
             BuildError: A band would not fit, or an expression failed.
 
         """
-        paper = self.paper()
-        whole, frame = self.frames(paper)
+        # Before the frames, not after: reserving space for a
+        # header measures it, and a header may read a `variable`.
+        # A name with no accumulator behind it is not a name at all,
+        # so every variable is seeded here -- which is also where
+        # doc/expressions.md#the-report-boundary fires the report scope,
+        # "once, before the title band is built".
         self.iterate("report")
-        self.band_at(self.layout.header, whole, frame.top, whole.top)
+        paper = self.paper()
+        whole, frame, reserved = self.frames(paper)
+        self.header_band(whole, frame)
         self.place(self.layout.title, frame)
         for index, record in enumerate(self.build.records):
             self.row(index, record, frame)
         self.place(self.layout.summary, frame)
-        self.band_at(self.layout.footer, whole, whole.bottom, frame.bottom)
+        self.footer_band(whole, frame, reserved)
         self.pages.append(Page(self.context.page_number, tuple(self.marks)))
         return self.printout(paper)
 
@@ -210,6 +221,7 @@ class Builder:
         """
         self.context.record = record
         self.context.item_number = index + 1
+        self.clear("item")
         self.iterate("item")
         detail = self.layout.detail
         if detail is None:
@@ -221,6 +233,7 @@ class Builder:
         # be asked the same question twice and give two answers.
         printing = self.measurer.prints(detail, frame, self.context)
         if printing:
+            self.clear("detail")
             self.iterate("detail")
         if self.place(detail, frame, printing=printing):
             self.context.report_count += 1
@@ -248,7 +261,7 @@ class Builder:
         if measured is None:
             return False
         if not frame.accepts(measured.height):
-            raise self.overflow(section, measured, frame)
+            self.overflowing(section, measured, frame)
         self.commit(measured, frame.x, frame.fill)
         frame.advance(measured.height)
         return True
@@ -279,29 +292,62 @@ class Builder:
         """
         self.marks.extend(mark.moved(across, down) for mark in measured.marks)
 
-    def band_at(
-        self, section: Section | None, whole: Frame, edge: float, start: float
-    ) -> None:
-        """Build a reserved band and place it in the space held for it.
+    def header_band(self, whole: Frame, frame: Frame) -> None:
+        """Build the page header and place it at the top of the page.
 
-        The header and the footer are the two: neither competes for the
-        frame's fill position, because the frame was inset by the height
-        each of them measured.  A footer is placed flush against the
-        frame's reserved bottom, which is where the content stopped.
+        It is measured against the page frame with the **footer's**
+        reservation taken out and its own left in, which is what
+        ``VERTICAL_SPACE`` reports to it: the space the page has
+        for a header and everything under it.
 
         Args:
-            section: The band, where the template has one.
-            whole: The page frame before either was reserved.
-            edge: The far edge of the band's own strip.
-            start: The Y the band is drawn from.
+            whole: The page frame before either band was reserved.
+            frame: The content frame, whose bottom the footer set.
 
         """
+        section = self.layout.header
         if section is None:
             return
-        strip = Frame(whole.x, whole.width, start, max(start, edge))
-        measured = self.measure(section, strip)
+        above = Frame(whole.x, whole.width, whole.top, frame.bottom)
+        measured = self.measure(section, above)
         if measured is not None:
-            self.commit(measured, whole.x, start)
+            self.commit(measured, whole.x, whole.top)
+
+    def footer_band(self, whole: Frame, frame: Frame, reserved: float) -> None:
+        """Build the page footer and place it flush with the page's bottom.
+
+        A footer's space is settled first and its content last.
+        The frame was inset by what the footer measured before any band
+        was placed, and the band itself is built here, at the end,
+        against the **outgoing** context: that is what lets a page footer
+        report the page it sits on.
+
+        The two can disagree, which is why the bottom edge is the page
+        frame's rather than the reservation's.  It is the same place
+        whenever they agree, and it keeps the band on the page when
+        they do not -- a footer guarded by ``printwhen="THIS != None"``
+        reserves nothing, because at reservation there is no record yet,
+        and prints all the same.
+
+        ``VERTICAL_POSITION`` is how far the content frame was filled,
+        and ``VERTICAL_SPACE`` the strip reserved for the footer itself.
+
+        Args:
+            whole: The page frame before either band was reserved.
+            frame: The content frame, as the content left it.
+            reserved: What measuring the footer reserved.
+
+        """
+        section = self.layout.footer
+        if section is None:
+            return
+        below = Frame(
+            whole.x, whole.width, frame.top, round_points(frame.fill + reserved)
+        )
+        below.fill = frame.fill
+        measured = self.measure(section, below)
+        if measured is not None:
+            self.commit(measured, whole.x, round_points(whole.bottom - measured.height))
 
     # -- geometry -----------------------------------------------------
 
@@ -312,12 +358,14 @@ class Builder:
             page.width, page.height, page.left, page.right, page.top, page.bottom
         )
 
-    def frames(self, paper: Paper) -> tuple[Frame, Frame]:
-        """Return the page frame, with header and footer reserved.
+    def frames(self, paper: Paper) -> tuple[Frame, Frame, float]:
+        """Return the page frame, the content frame, and the footer's strip.
 
-        doc/layout.md#headerfooter-reservation measures both against
-        the context as it stands when the frame begins, which is
-        before any record has been read.
+        doc/layout.md#headerfooter-reservation measures both bands
+        against the context as it stands when the frame begins,
+        which is before any record has been read.  What each
+        measured then is what the frame is inset by, and the
+        footer's is returned because placing it needs it again.
 
         Args:
             paper: The page geometry.
@@ -341,12 +389,13 @@ class Builder:
                 "the header and footer reservations together exceed the frame",
                 Location(file=self.file, path=self.layout.path),
             )
-        return whole, Frame(
+        content = Frame(
             whole.x,
             whole.width,
             round_points(top + header),
             round_points(bottom - footer),
         )
+        return whole, content, footer
 
     def reserve(self, section: Section | None, frame: Frame) -> float:
         """Return the height a band reserves at the edge of a frame.
@@ -374,20 +423,27 @@ class Builder:
         """
         return (section.styles, self.layout.styles)
 
-    def overflow(
+    def overflowing(
         self, section: Section, measured: Measurement, frame: Frame
-    ) -> BuildError:
-        """Return the error a band that does not fit raises.
+    ) -> None:
+        """Deal with a band that does not fit what is left of the frame.
 
-        With one frame and no ejects, a band that does not fit
-        has nowhere to go.  Which of the two it is -- taller than the
-        space left, or taller than an empty frame -- is the difference
-        between a page break and an overflow, so the message says which.
+        Which of the two it is settles what happens.  A band taller than
+        an **empty** frame is the `overflow` of doc/layout.md#errors,
+        which ``--allow-overflow`` downgrades to a warning and places
+        anyway; the warning travels in the printout header, so an
+        overflowing document is identifiable from the artifact.
+        A band that would fit an empty frame needs a page eject instead,
+        and that is not something a flag can excuse.
 
         Args:
             section: The band.
             measured: What measuring it produced.
             frame: The frame it was tried against.
+
+        Raises:
+            BuildError: The band overflows and nothing allowed it.
+            Unsupported: It needs the pagination M8 brings.
 
         """
         where = Location(
@@ -396,19 +452,50 @@ class Builder:
             record=self.context.record_index,
         )
         if measured.height > frame.height:
-            return BuildError(
+            said = (
                 f"the band is {measured.height:g} pt tall"
-                f" and an empty frame is {frame.height:g} pt",
-                where,
+                f" and an empty frame is {frame.height:g} pt"
             )
-        return Unsupported(
-            f"the band is {measured.height:g} pt tall and "
-            f"{frame.available:g} pt is left, so it needs a page eject, "
-            "which arrives in M8",
+            if not self.build.allow_overflow:
+                raise BuildError(said, where)
+            self.warnings.append(
+                BuildWarning(
+                    "overflow",
+                    said,
+                    node=str(section.path),
+                    record=self.context.record_index,
+                )
+            )
+            return
+        raise Unsupported(
+            f"the band is {measured.height:g} pt tall"
+            f" and {frame.available:g} pt is left, so"
+            " it needs a page eject, which arrives in M8",
             where,
         )
 
     # -- variables ----------------------------------------------------
+
+    def clear(self, scope: str) -> None:
+        """Reset every variable whose `reset` names this scope.
+
+        A reset seeds the accumulator again from ``init``, which
+        doc/expressions.md#iter-and-reset folds in as the first value
+        of the new scope.  The report scope is not cleared here:
+        it ends with the report, after the summary band has read it,
+        and clearing it then would be nominal.
+
+        Args:
+            scope: The scope whose boundary has just been crossed.
+
+        """
+        names = self.context.environment(0.0, 0.0)
+        for variable in self.build.report.variables:
+            if variable.reset != scope or variable.name not in self.accumulators:
+                continue
+            self.accumulators[variable.name] = self.seeded(variable, names)
+            self.publish()
+            names = self.context.environment(0.0, 0.0)
 
     def iterate(self, scope: str) -> None:
         """Fold every variable whose `iter` names this scope.
@@ -518,7 +605,11 @@ class Builder:
             fonts=tuple(font_entry(one) for one in self.build.fonts),
             data={},
             pages=tuple(self.pages),
-            warnings=tuple(self.build.warnings) + tuple(self.measurer.warnings),
+            warnings=(
+                tuple(self.build.warnings)
+                + tuple(self.measurer.warnings)
+                + tuple(self.warnings)
+            ),
         )
 
 

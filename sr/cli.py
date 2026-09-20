@@ -68,6 +68,7 @@ __all__ = [
     "PLANNED",
     "Fonts",
     "Usage",
+    "as_written",
     "build",
     "inspect_printout",
     "main",
@@ -325,9 +326,15 @@ def build(arguments: Sequence[str], out: TextIO) -> int:
         strict_names=bool(given.flags.get("strict-names")),
         accepted=frozenset(given.accepted),
         allow_overflow=bool(given.flags.get("allow-overflow")),
+        verbose=bool(given.flags.get("verbose")),
     )
     try:
         result = api.build(Path(str(template)), data_source(given), options)
+        # Inside the same handler as the build: a directory that is
+        # not there and a template that will not load are both the
+        # run failing, and both are reported as `sr:` and exit 1
+        # rather than as a traceback.
+        write_printout(result, target, out)
     except TemplateError as refused:
         for diagnostic in refused.diagnostics:
             print(diagnostic, file=sys.stderr)
@@ -338,7 +345,8 @@ def build(arguments: Sequence[str], out: TextIO) -> int:
     except OSError as refused:
         print(f"sr: {refused}", file=sys.stderr)
         return FAILED
-    write_printout(result, target, out)
+    for line in result.diagnostics:
+        print(line, file=sys.stderr)
     for note in result.notes:
         print(f"warning: {note}", file=sys.stderr)
     for warning in result.warnings:
@@ -429,7 +437,7 @@ def write_printout(result: api.Result, target: str, out: TextIO) -> None:
 
     """
     if target == "-":
-        write_jsonl(result.printout, out, None)
+        write_jsonl(result.printout, as_written(out), None)
         return
     path = Path(target)
     base = path.parent
@@ -438,6 +446,27 @@ def write_printout(result: api.Result, target: str, out: TextIO) -> None:
     # and make the same document two different files.
     with path.open("w", encoding="utf-8", newline="") as handle:
         write_jsonl(result.printout, handle, base)
+
+
+def as_written(out: TextIO) -> TextIO:
+    """Return a stream that writes a printout as the format spells it.
+
+    Standard output is a text stream the platform set up,
+    and on Windows that means it translates U+000A into two bytes
+    and encodes in the console's codepage.  A printout is
+    [LF-terminated UTF-8](doc/printout.md#encoding) wherever it
+    is written, so the stream is reconfigured where it can be.
+    A stream that cannot be -- a test's buffer, which
+    translates nothing -- is returned as it is.
+
+    Args:
+        out: Where a document written to standard output goes.
+
+    """
+    reconfigure = getattr(out, "reconfigure", None)
+    if reconfigure is not None:
+        reconfigure(encoding="utf-8", newline="")
+    return out
 
 
 def counted(result: api.Result) -> str:

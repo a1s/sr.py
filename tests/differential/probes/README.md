@@ -103,6 +103,9 @@ the reference gave, and names the section of `doc/` that answer became.
 | `printout/numbers` | how a number reaches the file |
 | `printout/strings` | how a string reaches the file |
 | `layout/band-height` | the two maxima a band's height is |
+| `layout/alignment` | where a field's content sits in its box |
+| `layout/reserved-bands` | what a header and a footer are measured against |
+| `layout/guarded-footer` | a footer whose `printwhen` reserves nothing |
 | `data/blob-names` | the name an embedded image gets |
 | `data/blob-collision` | a generated name that is already taken |
 | `data/key-order` | the order of the header's `data` object |

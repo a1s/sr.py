@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from sr import meta
-from sr.cli import COMMANDS, PARTIAL, PLANNED, main
+from sr.cli import COMMANDS, PARTIAL, PLANNED, as_written, main
 
 ROOT = Path(__file__).resolve().parents[2]
 SAKILA = ROOT / "example" / "sakila" / "sakila.kdl"
@@ -793,3 +793,48 @@ def test_a_file_that_is_not_a_printout_fails(tmp_path: Path) -> None:
     path.write_text("this is not JSON\n", encoding="utf-8")
     code, _ = run("inspect", str(path))
     assert code == 1
+
+
+def test_a_stream_is_reconfigured_for_the_formats_own_line_ending() -> None:
+    """doc/printout.md#encoding is LF and UTF-8 wherever it is written.
+
+    Standard output is a text stream the platform set up, and
+    on Windows it arrives translating every LF and encoding in
+    the console's codepage.  The stream below stands in for that one.
+    Its newline is what a Windows console does; its encoding only has
+    to be something other than UTF-8, so it is the narrowest one
+    there is, and the character outside it is what makes that half
+    of the test fail loudly rather than quietly.
+
+    """
+    raw = io.BytesIO()
+    stream = io.TextIOWrapper(raw, encoding="ascii", newline="\r\n")
+    as_written(stream).write("one\ntwo\n\u4e2d\n")
+    stream.flush()
+    assert raw.getvalue() == "one\ntwo\n\u4e2d\n".encode()
+
+
+def test_a_stream_that_cannot_be_reconfigured_is_left_alone() -> None:
+    held = io.StringIO()
+    assert as_written(held) is held
+
+
+def test_an_output_directory_that_is_not_there_is_a_diagnostic(
+    tmp_path: Path,
+) -> None:
+    code, _ = run(
+        "build",
+        "-t",
+        str(MINIMAL),
+        "-d",
+        str(FILMS),
+        "-o",
+        str(tmp_path / "nosuch" / "out.srp.jsonl"),
+        *REPRODUCIBLE,
+    )
+    assert code == 1
+
+
+def test_verbose_is_accepted_by_build(tmp_path: Path) -> None:
+    code, _ = build_minimal(tmp_path, "-v")
+    assert code == 0
