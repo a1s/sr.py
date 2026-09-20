@@ -518,9 +518,7 @@ def describe(loaded: Loaded, file: str, fonts: Fonts, out: TextIO) -> None:
             f"top {number(paper.top)} bottom {number(paper.bottom)}",
             file=out,
         )
-    counts = tally(report)
-    if counts:
-        print(f"  {counts}", file=out)
+    print(f"  {tally(report)}", file=out)
     if report.parameters:
         print("parameters", file=out)
         for line in parameter_lines(report.parameters):
@@ -654,12 +652,24 @@ def headline(report: Report) -> str:
 def tally(report: Report) -> str:
     """Return the line that counts what a template holds.
 
+    doc/cli.md#sr-validate fixes the terms and their order.
+    A term whose count is zero is left out, which is why
+    a template with no groups says nothing about groups;
+    the column count is the one that is never zero, because
+    a layout with no `columns` node has one column rather than none.
+
+    The last term counts `subreport` nodes rather than `embedded`
+    layouts: what a reader wants to know is how many subreports
+    the document runs, and an embedded layout invoked three times
+    is three of them.  The layouts themselves are not counted,
+    because the section below names every node that uses one.
+
     Args:
         report: The template that was loaded.
 
     """
     layout = report.layout
-    columns = layout.columns.count if layout is not None and layout.columns else 0
+    columns = layout.columns.count if layout is not None and layout.columns else 1
     groups = 0 if layout is None else len(levels_of(layout)) - 1
     members = len(report.records.members) if report.records is not None else 0
     counted = (
@@ -669,7 +679,7 @@ def tally(report: Report) -> str:
         (len(report.variables), "variable", "variables"),
         (len(report.fonts), "font", "fonts"),
         (len(report.data), "data blob", "data blobs"),
-        (len(report.layouts), "embedded layout", "embedded layouts"),
+        (len(subreports_of(report)), "subreport", "subreports"),
     )
     return ", ".join(
         f"{count} {one if count == 1 else many}"
@@ -703,17 +713,19 @@ def parameter_lines(parameters: tuple[Parameter, ...]) -> list[str]:
 def subreport_lines(report: Report) -> list[str]:
     """Return one line per ``subreport`` node, by path.
 
+    The path alone, as doc/cli.md#sr-validate asks: it already ends
+    in the band and the node, and what the node names is the template's
+    business rather than the reader's here.
+
     Args:
         report: The template that was loaded.
 
     """
-    lines = []
-    for band in sections_of(report):
-        for subreport in band.subreports:
-            names = subreport.template or f"embedded {subreport.embedded!r}"
-            how = " inline" if subreport.inline else ""
-            lines.append(f"{subreport.path}  {names}{how}")
-    return lines
+    return [
+        str(subreport.path)
+        for band in sections_of(report)
+        for subreport in band.subreports
+    ]
 
 
 def number(value: float) -> str:
