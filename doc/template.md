@@ -966,6 +966,11 @@ Children: `style*`, `header?`, `footer?`.
 
 Column width is `(frame width - (count - 1) × gap) / count`.
 
+A `layout`, `group` or `embedded` with no `columns` child has one column
+and no gap. One column is what the absence means, not the absence of columns:
+the [frame](layout.md#frames) is built the same way either way, and anything
+that counts columns counts one.
+
 `balance=#true` spreads the run of bands the frame holds on each page over its
 columns, so that they end at similar heights instead of the last one running
 short. It needs more than one column to spread between. Some content cannot

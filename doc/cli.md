@@ -203,6 +203,17 @@ fonts
 ok
 ```
 
+The fifth line counts what the template holds, in this order: columns,
+groups, members, variables, fonts, data blobs, subreports. A term whose
+count is zero is left out, which is why the block above says nothing about
+subreports. Columns is the one that is never zero: a layout with no `columns`
+node has [one column](template.md#columns).
+
+The last term counts `subreport` nodes, not the layouts they name, so an
+`embedded` layout invoked three times counts three. The layouts themselves
+are not counted: the `subreports` section below already names every node that
+uses one.
+
 A name, and then something short and uniform after it, are padded to line up;
 the rest of a line runs on, because what follows differs from row to row and
 lining up fields that are not the same kind of thing reads as though they were.

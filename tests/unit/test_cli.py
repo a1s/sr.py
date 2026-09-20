@@ -215,11 +215,85 @@ def test_quiet_prints_nothing_at_all() -> None:
     assert (code, said) == (0, "")
 
 
-def test_a_template_with_subreports_lists_them() -> None:
+def test_a_template_with_subreports_lists_them_by_path() -> None:
+    # doc/cli.md#sr-validate asks for the path and nothing after it.
+    # The path already ends in the band and the node, and what the node
+    # names -- a file, an embedded layout -- is not part of the section.
     _, said = run("validate", str(INVOICES))
-    assert "subreports" in said
-    assert "region_sheet.kdl" in said
-    assert "embedded 'lines' inline" in said
+    listed = section_of(said, "subreports")
+    assert listed == [
+        'report > layout > group "region" > summary > subreport',
+        'report > layout > group "region" > detail > subreport',
+    ]
+
+
+def test_the_counts_line_counts_subreport_nodes_not_layouts() -> None:
+    # invoices.kdl declares one `embedded` layout and writes
+    # two `subreport` nodes, one of which names that layout.
+    # The count is of the nodes: what runs, not what is available to run.
+    _, said = run("validate", str(INVOICES))
+    assert "2 subreports" in counts_of(said)
+
+
+def test_a_layout_with_no_columns_node_still_counts_one_column(
+    tmp_path: Path,
+) -> None:
+    # doc/template.md#columns: one column is what the absence means.
+    # Zero-suppression drops the other terms, and dropping this one
+    # would say the template has no columns rather than one.
+    probe = tmp_path / "probe.kdl"
+    probe.write_text(
+        f"""
+report name="probe" {{
+  font "body" file="{FACE}" size=10
+  layout pagesize="A4" {{
+    style font="body" color="black"
+    detail height=20 {{ field text="x" left=0 top=0 width=50 height=12 }}
+  }}
+}}
+""",
+        encoding="utf-8",
+    )
+    code, said = run("validate", str(probe))
+    assert code == 0
+    assert counts_of(said) == "1 column, 1 font"
+
+
+def counts_of(said: str) -> str:
+    """Return the line of a validate report that counts what is in it.
+
+    It is the one header line that opens with a number,
+    the rest being the name, the description and the page geometry.
+
+    Args:
+        said: What the command printed.
+
+    """
+    found = [
+        one.strip()
+        for one in said.splitlines()
+        if one.startswith("  ") and one.strip()[:1].isdigit()
+    ]
+    assert len(found) == 1
+    return found[0]
+
+
+def section_of(said: str, name: str) -> list[str]:
+    """Return the lines under one heading of a validate report, unindented.
+
+    Args:
+        said: What the command printed.
+        name: The heading.
+
+    """
+    lines = said.splitlines()
+    start = lines.index(name) + 1
+    found = []
+    for line in lines[start:]:
+        if not line.startswith("  "):
+            break
+        found.append(line.strip())
+    return found
 
 
 # -- names the format does not define ---------------------------------
