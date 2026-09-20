@@ -7,14 +7,16 @@ worse than one that says it is not there.  :data:`COMMANDS` holds what
 works, which is also what the differential harness asks before deciding
 whether this engine can be compared against the reference yet.
 
-``validate`` is itself partial in one way that matters: it does
-not resolve fonts.  doc/cli.md#sr-validate puts a `fonts` section
-in the report and a `failures` section under it, and both wait
-for M5, which is where font resolution is written.
-Everything the document alone settles is checked and reported now.
+``validate`` resolves the fonts a template declares, which is the one
+part of the check that depends on the machine rather than on the
+document.  doc/cli.md#sr-validate puts that where a reader will look
+at it: a `fonts` section saying which step of the chain produced each
+face, a `failures` section for the ones that did not resolve, and,
+under ``--verbose``, what enumerating the host had to say.  Enumeration
+is lazy, so a template whose fonts all name a file never touches it.
 
-Flag parsing follows doc/cli.md#flags: one dash or two, the value
-attached or separate, and flags after positionals.
+Flag parsing follows doc/cli.md#flags: one dash or two,
+the value attached or separate, and flags after positionals.
 ``--param`` is the one repeatable flag, and the two mistakes in it
 are refused rather than absorbed: a name given twice, and a name
 the template does not declare.  The first is a command-line mistake
@@ -26,19 +28,36 @@ template and is caught after.
 from __future__ import annotations
 
 import sys
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TextIO
+from typing import Any, TextIO
 
 from sr import meta
-from sr.errors import BadValue
-from sr.expr.values import go_shortest
+from sr.errors import BadValue, BuildWarning, Diagnostic, ExpressionError, FontError
+from sr.expr import evaluate
+from sr.expr.values import go_shortest, quote
+from sr.fonts.resolve import Resolution, Resolver
 from sr.template import load as load_template
-from sr.template.load import Loaded, Options, levels_of, sections_of
-from sr.template.model import Parameter, Report, parse_text
+from sr.template.load import (
+    Loaded,
+    Options,
+    levels_of,
+    sections_of,
+    subreports_of,
+)
+from sr.template.model import Blob, Font, Parameter, Report, parse_text
 
-__all__ = ["COMMANDS", "PLANNED", "Usage", "main", "validate", "version"]
+__all__ = [
+    "COMMANDS",
+    "PLANNED",
+    "Fonts",
+    "Usage",
+    "main",
+    "resolve_fonts",
+    "validate",
+    "version",
+]
 
 # What each command is for, in the order `sr.py help` lists them.
 SUMMARY = {
@@ -217,13 +236,24 @@ def validate(arguments: Sequence[str], out: TextIO) -> int:
         for diagnostic in loaded.errors:
             print(diagnostic, file=sys.stderr)
         return FAILED
-    failures = parameters_given(loaded.report, given.params)
-    if failures:
-        for message in failures:
+    refused = parameters_given(loaded.report, given.params)
+    if refused:
+        for message in refused:
             print(message, file=sys.stderr)
         return FAILED
+    fonts = resolve_fonts(
+        loaded.report,
+        given.params,
+        strict=bool(given.flags.get("strict-fonts")),
+        verbose=bool(given.flags.get("verbose")),
+    )
     if not quiet:
-        describe(loaded, str(template), out)
+        describe(loaded, str(template), fonts, out)
+    if fonts.failures:
+        count = len(fonts.failures)
+        one = "font" if count == 1 else "fonts"
+        print(f"sr: {count} {one} did not resolve", file=sys.stderr)
+        return FAILED
     return OK
 
 
@@ -253,17 +283,223 @@ def parameters_given(report: Report, params: dict[str, str]) -> list[str]:
     return failures
 
 
-def describe(loaded: Loaded, file: str, out: TextIO) -> None:
+# -- resolving the fonts ----------------------------------------------
+
+
+@dataclass(frozen=True)
+class Fonts:
+    """What resolving one report's `font` nodes produced.
+
+    Attributes:
+        resolved: One per `font` that found a face, in document order.
+        failures: The name of each `font` that did not, with why.
+        warnings: What the printout header would carry: a substituted
+            typeface, and a declared style the face does not have.
+        diagnostics: What enumerating the host had to say,
+            under ``--verbose`` and only when enumeration happened at all.
+
+    """
+
+    resolved: tuple[Resolution, ...] = ()
+    failures: tuple[tuple[str, str], ...] = ()
+    warnings: tuple[BuildWarning, ...] = ()
+    diagnostics: tuple[str, ...] = ()
+
+
+def resolve_fonts(
+    report: Report,
+    params: dict[str, str],
+    *,
+    strict: bool = False,
+    verbose: bool = False,
+) -> Fonts:
+    """Resolve every `font` the document tree declares, collecting failures.
+
+    Resolution runs to the end rather than stopping at the first failure,
+    for the reason validation does: one run of the tool should report
+    every font that has to be dealt with.
+
+    Every document is resolved, not only the host.  doc/cli.md#sr-validate
+    has a ``template=`` subreport checked with its host, and a font
+    it declares is a font the build will need.  Only the host's fonts
+    are listed, though: the table is what this template declares, and a
+    subreport's faces belong to its own file.  Its failures and warnings
+    are the host's problem and do surface.
+
+    Args:
+        report: The template that was loaded.
+        params: The ``--param`` values, by name.
+        strict: Whether ``--strict-fonts`` is set.
+        verbose: Whether the host diagnostics are wanted.
+
+    """
+    resolver = Resolver(strict=strict)
+    resolved: list[Resolution] = []
+    failures: list[tuple[str, str]] = []
+    warnings: list[BuildWarning] = []
+    for document in documents(report):
+        # A subreport has no command line: its parameters come from
+        # the `arg` nodes of the node that invokes it, which are values
+        # a build has and a check does not.  So `--param` is the host's.
+        host = document is report
+        blobs, refused = blob_bytes(document, params if host else {})
+        resolver.reading(document.basedir, blobs)
+        for font in document.fonts:
+            try:
+                one = resolver.resolve(font)
+            except FontError as beaten:
+                failures.append((font.name, blob_reason(font, refused) or str(beaten)))
+                continue
+            if host:
+                resolved.append(one)
+            warnings.extend(one.warnings)
+    return Fonts(
+        tuple(resolved),
+        tuple(failures),
+        tuple(warnings),
+        resolver.diagnostics if verbose else (),
+    )
+
+
+def documents(report: Report, seen: set[int] | None = None) -> Iterator[Report]:
+    """Yield a report and every distinct template its subreports name.
+
+    Depth first, in document order, and each document once however many
+    `subreport` nodes name it: the loader reads a template once and hands
+    the same document to every node that named it, so a template invoked
+    twice is one set of fonts and one set of failures.
+
+    Args:
+        report: The document to start from.
+        seen: The documents already yielded, by identity.
+
+    """
+    seen = set() if seen is None else seen
+    if id(report) in seen:
+        return
+    seen.add(id(report))
+    yield report
+    for subreport in subreports_of(report):
+        if subreport.report is not None:
+            yield from documents(subreport.report, seen)
+
+
+def blob_reason(font: Font, refused: dict[str, str]) -> str | None:
+    """Return why the blob a `font` names has no bytes, where that is why.
+
+    doc/cli.md#sr-validate asks for exactly this: a `data` blob whose
+    ``expr`` reads a parameter with no value is reported against the font
+    that needed the blob, rather than as a missing parameter, because
+    a template whose values arrive at build time is not thereby invalid.
+
+    Args:
+        font: The node that did not resolve.
+        refused: Why each ``expr`` blob produced nothing, by name.
+
+    """
+    if font.data is None:
+        return None
+    reason = refused.get(font.data)
+    if reason is None:
+        return None
+    return f"the data node {quote(font.data)} is computed at build time: {reason}"
+
+
+def blob_bytes(
+    report: Report, params: dict[str, str]
+) -> tuple[dict[str, bytes], dict[str, str]]:
+    """Return the bytes of every ``data`` node, and why any produced none.
+
+    A blob written as ``content`` is decoded at load, so it is here
+    as it stands.  One written as ``expr`` is produced at build time,
+    and whether it can be produced now depends on the parameters a caller
+    supplied: with them it resolves and the font it feeds is checked,
+    and without them the font is reported rather than the parameter.
+
+    Args:
+        report: The template that was loaded.
+        params: The ``--param`` values, by name.
+
+    """
+    found: dict[str, bytes] = {}
+    refused: dict[str, str] = {}
+    names = parameter_values(report, params)
+    for blob in report.data:
+        if blob.content is not None:
+            found[blob.name] = blob.content
+            continue
+        if blob.expr is None:
+            continue
+        try:
+            found[blob.name] = as_bytes(blob, names)
+        except (ExpressionError, BadValue, ValueError, TypeError) as beaten:
+            refused[blob.name] = str(beaten)
+    return found, refused
+
+
+def as_bytes(blob: Blob, names: dict[str, Any]) -> bytes:
+    """Return the bytes an ``expr`` blob evaluates to.
+
+    Args:
+        blob: The node.
+        names: The values its expression may read.
+
+    Raises:
+        ExpressionError: The expression would not evaluate.
+
+    """
+    assert blob.expr is not None
+    value = evaluate(blob.expr.source, names)
+    if isinstance(value, bytes):
+        return value
+    return str(value).encode()
+
+
+def parameter_values(report: Report, params: dict[str, str]) -> dict[str, Any]:
+    """Return every parameter that has a value, for a blob's expression.
+
+    A ``--param`` wins over a ``default``, a ``default`` over a
+    ``defaultexpr``, and a parameter with none of the three is
+    simply absent -- which is what makes an expression that reads it
+    fail with the name it could not resolve.
+
+    Args:
+        report: The template that was loaded.
+        params: The ``--param`` values, by name.
+
+    """
+    found: dict[str, Any] = {}
+    for one in report.parameters:
+        if one.name in params:
+            try:
+                found[one.name] = parse_text(one.kind, params[one.name], one.format)
+            except BadValue:
+                continue
+        elif one.value is not None:
+            found[one.name] = one.value
+        elif one.defaultexpr is not None:
+            try:
+                found[one.name] = evaluate(one.defaultexpr.source, dict(found))
+            except (ExpressionError, ValueError, TypeError):
+                continue
+    return found
+
+
+def describe(loaded: Loaded, file: str, fonts: Fonts, out: TextIO) -> None:
     """Print the report doc/cli.md#sr-validate describes.
 
-    The `fonts` and `failures` sections are not here: both are about
-    resolution, which is M5.  Everything else the document alone settles
-    is, and `ok` is still the last line, so a ``tail -1`` reads the
-    verdict as it is meant to.
+    A name, and then something short and uniform after it, are padded
+    to line up; the rest of a line runs on, because what follows differs
+    from row to row and lining up fields that are not the same kind
+    of thing reads as though they were.
+
+    `ok` is the last line, so a ``tail -1`` reads the verdict,
+    and a check that failed does not print it.
 
     Args:
         loaded: What the load produced.
         file: The template, as the caller named it.
+        fonts: What resolving the template's fonts produced.
         out: Where to print.
 
     """
@@ -289,16 +525,114 @@ def describe(loaded: Loaded, file: str, out: TextIO) -> None:
         print("parameters", file=out)
         for line in parameter_lines(report.parameters):
             print(f"  {line}", file=out)
-    listed = subreport_lines(report)
-    if listed:
-        print("subreports", file=out)
-        for line in listed:
-            print(f"  {line}", file=out)
-    if loaded.warnings:
-        print("warnings", file=out)
-        for warning in loaded.warnings:
-            print(f"  {warning}", file=out)
-    print("ok", file=out)
+    section("subreports", subreport_lines(report), out)
+    section("fonts", font_lines(fonts.resolved), out)
+    section("warnings", warning_lines(loaded.warnings, fonts.warnings), out)
+    section("failures", failure_lines(fonts.failures), out)
+    section("diagnostics", list(fonts.diagnostics), out)
+    if not fonts.failures:
+        print("ok", file=out)
+
+
+def section(name: str, lines: list[str], out: TextIO) -> None:
+    """Print one heading and its lines, or nothing where it has none.
+
+    Args:
+        name: The heading.
+        lines: What goes under it, already padded.
+        out: Where to print.
+
+    """
+    if not lines:
+        return
+    print(name, file=out)
+    for line in lines:
+        print(f"  {line}", file=out)
+
+
+def font_lines(resolved: tuple[Resolution, ...]) -> list[str]:
+    """Return one padded line per font that resolved.
+
+    Each is the name the template gave it, its size and style,
+    the step of the chain that produced it, the file, and the face
+    inside that file.  The typeface is named only where it is not the
+    face's own family, since repeating a name that matched says nothing.
+
+    Sorted by name, as doc/printout.md#fonts sorts the header's font
+    table and for the same reason: a reader looks a font up by the name
+    the template gave it, and document order puts that name wherever the
+    declarations happened to fall.
+
+    Args:
+        resolved: The resolutions, in document order.
+
+    """
+    if not resolved:
+        return []
+    names = max(len(one.font.name) for one in resolved)
+    sizes = max(len(f"{one.font.size}pt") for one in resolved)
+    lines = []
+    for one in sorted(resolved, key=lambda found: found.font.name):
+        parts = [f"{one.font.name:<{names}}", f"{one.font.size}pt".ljust(sizes)]
+        parts.extend(style_words(one.font))
+        wanted = one.requested
+        if wanted is not None and wanted != one.face.family:
+            parts.append(f'"{wanted}" wanted')
+        parts.append(one.step)
+        parts.append(one.face.origin.shown())
+        parts.append(f'"{one.face.family}"')
+        lines.append("  ".join(parts))
+    return lines
+
+
+def style_words(font: Font) -> list[str]:
+    """Return the style a `font` node declares, as words.
+
+    Args:
+        font: The node.
+
+    """
+    return [
+        word
+        for word, on in (
+            ("bold", font.bold),
+            ("italic", font.italic),
+            ("underline", font.underline),
+        )
+        if on
+    ]
+
+
+def warning_lines(
+    load: tuple[Diagnostic, ...], fonts: tuple[BuildWarning, ...]
+) -> list[str]:
+    """Return one line per warning, the load's first.
+
+    Both kinds are spelled the way their own class spells one, which for
+    a font warning means the kind it will carry into the printout header
+    and the node it happened at.  Printing the message alone loses both,
+    and the reader of a `warnings` section is left with a substituted
+    typeface that does not say which `font` node asked for it.
+
+    Args:
+        load: What reading the template had to say.
+        fonts: What resolving its fonts had to say.
+
+    """
+    return [str(one) for one in load] + [str(one) for one in fonts]
+
+
+def failure_lines(failures: tuple[tuple[str, str], ...]) -> list[str]:
+    """Return one line per font that did not resolve.
+
+    These are why the exit code is 1, so doc/cli.md#sr-validate
+    keeps them out of `warnings` and under a heading of their own.
+
+    Args:
+        failures: Each font's name and why it failed.
+
+    """
+    return [f"font {quote(name)}: {why}" for name, why in failures]
 
 
 def headline(report: Report) -> str:

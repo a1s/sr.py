@@ -216,7 +216,7 @@ holds something:
 
 | | |
 |---|---|
-| `subreports` | The [subreport](template.md#subreport) nodes the template carries, by path. A `template=` one is loaded and checked with its host, so a fault in it is reported against its own file. |
+| `subreports` | The [subreport](template.md#subreport) nodes the template carries, by path. A `template=` one is loaded and checked with its host, so a fault in it is reported against its own file. Its fonts are resolved too, each against its own `basedir` and its own `data` blobs, and one document is checked once however many nodes name it. Its failures and warnings appear in the sections below, but its fonts are not listed in `fonts`: that table is what *this* template declares. A subreport has no command line, so `--param` reaches the host document only. |
 | `warnings` | Load diagnostics, an [unknown name](template.md#unknown-names), a substituted typeface. The check still passes. |
 | `failures` | Fonts that did not resolve. These are why the exit code is 1, so they are not filed as warnings. |
 | `diagnostics` | Under `--verbose`: what the [host font enumeration](template.md#host-enumeration) had to say. About the machine, not the template. |

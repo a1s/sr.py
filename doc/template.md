@@ -720,7 +720,31 @@ the file does not carry is reported: resolution reads the face's own
 naming `Go-Bold.ttf` without `bold=#true` is ordinary use, since the flag
 would only repeat what the file already says.
 
+That warning is about `file` and `data` only. Resolving by `typeface` reaches
+a face of some other style by the rules written down for it ([the style a
+lookup relaxes to](#host-enumeration), or [the substitute face](#the-substitute-face),
+which is regular whatever was asked for), and those rules carry their own
+reporting. A second warning on every one of them would say only that the rule
+above it had applied.
+
 `underline` is drawn by the renderer and does not affect metrics.
+
+**What a face must carry.** Whatever named it, a face is usable only
+with `head`, `hhea`, `hmtx`, `cmap` and `name`: the em, the advances,
+the characters and the family. One of them missing is a refusal naming
+the table, not a face with a default in place of it, because every
+such default is a silently wrong measurement.
+
+`bhed` is **not** accepted in place of `head`. It holds the same twelve fields
+under another tag, and a face that uses it is a bitmap-only font: the strikes
+are the whole of it and there are no outlines to draw. Such a face is refused
+as [an unsupported format](#host-enumeration), named as one, rather than
+reported as missing a table — it is not damaged, it is a kind of font this
+engine does not draw.
+
+A collection may declare at most **2048** faces; a count past that
+is refused as a damaged file rather than enumerated, since the count is four
+bytes of a file that may be damaged and each face it claims costs a parse.
 
 ### `data`
 
@@ -1428,8 +1452,8 @@ A `font` node naming a `typeface` is resolved by trying, in order:
    resolution ends there and failure is an error.
 2. [Host enumeration](#host-enumeration): every font the machine has, matched by
    family and style.
-3. A built-in table of **family aliases** — `Helvetica` → `Arial`,
-   `Courier` → `Courier New` and the rest — each alias then looked for by step 2.
+3. The [**family alias** table](#the-family-alias-table), each alias then
+   looked for by step 2.
 4. A last-resort [substitute](#the-substitute-face).
 
 The alias table is consulted **after** the host has been searched, never before: an
@@ -1444,6 +1468,67 @@ the chain produced them — see [printout.md](printout.md#fonts). A font the tem
 named with `file=` is recorded relative to the printout, so it travels with it;
 one the engine found on the host is recorded as it was opened. Under strict mode
 only the first case can arise.
+
+### The family alias table
+
+Step 3 is this table. A `typeface` is looked up **whole**, with case folded
+and nothing else normalised: `helvetica` and `HELVETICA` are the same key,
+`Helvetica Neue` is a key of its own, and `Helvetica ` with a trailing space
+is not a key at all. Each entry is an **ordered list**, and every candidate
+in it is looked for by step 2 in turn; the first the host has wins, and if
+none of them is there the typeface goes on to step 4.
+
+| `typeface` | tried in this order |
+|---|---|
+| `arial` | Helvetica, Liberation Sans, Nimbus Sans |
+| `helvetica` | Arial, Liberation Sans, Nimbus Sans |
+| `helvetica neue` | Arial, Liberation Sans |
+| `times` | Times New Roman, Liberation Serif, Nimbus Roman |
+| `times new roman` | Times, Liberation Serif, Nimbus Roman |
+| `courier` | Courier New, Liberation Mono, Nimbus Mono PS |
+| `courier new` | Courier, Liberation Mono, Nimbus Mono PS |
+| `palatino` | Palatino Linotype, URW Palladio L |
+| `bookman` | Bookman Old Style, URW Bookman L |
+| `avantgarde` | Century Gothic, URW Gothic L |
+| `zapfdingbats` | Zapf Dingbats, Dingbats |
+| `symbol` | OpenSymbol |
+| `sans-serif` | Arial, Helvetica, DejaVu Sans, Liberation Sans |
+| `serif` | Times New Roman, Times, DejaVu Serif, Liberation Serif |
+| `monospace` | Courier New, Consolas, DejaVu Sans Mono, Liberation Mono |
+
+Three things follow from the shape of it, and each is the reason
+an entry is there at all.
+
+**The core three are symmetric.** `arial` names Helvetica and `helvetica`
+names Arial, and likewise for the two Times and the two Couriers.
+A template is written on one machine and built on another, and the name
+its author had is as likely to be the absent one as the present one.
+An asymmetric table would make a report written on Windows fail on macOS
+while the same report written on macOS built everywhere.
+
+**The metric-compatible free families come after the licensed one.**
+Liberation Sans and Nimbus Sans have Helvetica's widths, so a page set
+in one breaks its lines where a page set in the other does. They are last
+because they are a fallback of last resort before the substitute, not a
+preference.
+
+**The CSS generics name a concrete family.** `sans-serif`, `serif` and
+`monospace` are what a template written against a browser-shaped tool
+spells, and they resolve through a list rather than through a query
+to the platform -- which [host enumeration](#host-enumeration) forbids
+for the reason given there.
+
+What is **not** here matters as much. `Arial Narrow`, `Gill Sans`,
+`Lucida Grande`, `Monaco` and `Menlo` are real families that some machines
+have and others do not, and aliasing one to a near neighbour would set
+a report in a face nobody asked for while recording `alias` rather than
+`substitute`. A family that is simply absent reaches step 4 and is warned
+about, which is the honest answer. Nor are `cursive`, `fantasy` and
+`system-ui` here: no family answers to them.
+
+A template that needs a particular face on a particular machine names it
+by `file` rather than hoping this table spells its family the way the
+template does.
 
 ### Host enumeration
 
@@ -1461,6 +1546,39 @@ These are sources for one table, not alternatives tried in turn, and the printou
 records `host` without naming which of them found the face. A directory that does
 not exist is not an error.
 
+**A symbolic link is read, never followed into.** A link to a font file is read
+as that font. A link to a directory is not descended into: it is offered to the
+reader as a file, fails to be one, and is recorded as an enumeration diagnostic
+naming it. The directories walked here include ones the machine's owner writes
+(`~/.fonts` is theirs), so a link pointing back up its own tree is a thing that
+exists, and a walk that followed one would not come back.
+
+**A lookup relaxes the style, never the family.** A `font` node declaring
+a style the family has not got is not a miss. The table is tried for the
+declared style, and then for a style with less in it, stopping at the first
+face found:
+
+1. the declared boldness and slant,
+2. the declared boldness, upright,
+3. regular weight, the declared slant,
+4. regular.
+
+Steps that repeat one already tried are skipped, so a node declaring neither
+style tries one key and a node declaring one tries two.
+
+The order only ever *takes a style away*. A family holding nothing but a bold
+face does not answer a node that declared no style, however plainly a reader
+would say that the family is installed: a report that asked for regular text
+and was given bold is a worse outcome than one told the family is not there,
+because the second can be fixed and the first is not visible until the page
+is printed. Weight outranks slant, so a family with a bold face and an italic
+one answers a request for bold italic with the bold.
+
+The relaxation happens within a family, before the next family is tried.
+A machine with Helvetica in regular only and Arial in bold resolves a bold
+Helvetica to Helvetica regular at step 2, not to Arial bold at step 3:
+the family the template named is the thing it is most important to keep.
+
 **Collections are enumerated face by face.** A `.ttc` holds several faces and every
 one of them is a separate entry. This is not a refinement to add later: on macOS
 two thirds of the installed faces live in collections, `Helvetica`, `Times`,
@@ -1477,6 +1595,13 @@ style bits, in this order:
 
 This ranks **sources, not answers**: the first table the face has decides, and the
 subfamily string is read only when neither table is present — not when it disagrees.
+
+The third rank cannot be reached, and is written down so that nobody adds it
+thinking it was forgotten. It is for a face with neither style table, and `head`
+is one of the tables [every face must have](#font); a face without one is refused
+before its style is asked for. It stays here because the rank is the rule and the
+refusal is a separate rule that happens to subsume it, and an implementation that
+stopped requiring `head` would need this again.
 A face whose bits are wrong is therefore classified wrongly, and the engine has no
 way to tell that case from a face whose subfamily string is merely a weight name it
 could not have classified anyway. Reading a contradicting string as an override
@@ -1502,6 +1627,14 @@ in two directories, or an ornament face declaring its parent's family, will do i
   a bitmap face — is **classified and skipped**, recorded as an enumeration
   diagnostic.
 - A file that presents itself as sfnt and then fails to parse is a **warning**.
+
+One unsupported format is not visible in the first bytes: a [bitmap-only
+sfnt](#font), which is an ordinary sfnt carrying `bhed` where a face
+this engine can draw carries `head`. It is classified from its tables instead,
+and belongs to the first case above rather than the second. What it may not
+be reported as is a face missing a required table, which describes
+a broken file and sends the
+reader looking for damage that is not there.
 
 Neither is decided from the filename extension. Filtering on `.ttf`/`.ttc`/`.otf`
 would satisfy this rule by accident while hiding real faces, which is the defect
