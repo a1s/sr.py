@@ -1,0 +1,32 @@
+// probes/layout/alignment.kdl -- where a field's content sits in its box.
+//
+// doc/template.md#alignment says `halign` and `valign` align the content
+// inside the box once its natural size is known, and that a `field`'s mark
+// carries the resolved box rather than one shrunk to the text.
+// Both of those are read off the marks below.
+//
+// The rows that matter are the last two.  A box shorter than one line
+// is the case the rule does not stop at: the content is placed by the
+// same arithmetic, so `valign="center"` and `valign="bottom"` put it
+// above the box's top edge, and the band does not grow to hold it.
+// In Go-Regular at size 10 a line is 12pt, so a box of 6pt
+// with `valign="bottom"` starts at -6 relative to its band.
+//
+// doc/template.md#alignment is what this became.
+
+report name="layout/alignment" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=300 height=800 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=200 {
+      field text="A" left=0 top=0 width=50 height=30                      // valign defaults to top
+      field text="B" left=0 top=40 width=50 height=30 valign="center"     // -> 9pt down
+      field text="C" left=0 top=80 width=50 height=30 valign="bottom"     // -> 18pt down
+      field text="D" left=60 top=120 width=50 height=6 valign="center"    // taller than its box: -3
+      field text="E" left=60 top=160 width=50 height=6 valign="bottom"    // and -6
+      field text="F" left=120 top=0 width=50 halign="center"              // supplies align
+      field text="G" left=120 top=40 width=50 halign="center" align="left" // align wins
+      field text="H" left=120 top=80 width=50 align="right"               // the box, not the text
+    }
+  }
+}

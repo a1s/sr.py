@@ -39,6 +39,22 @@ def expected(entry: Divergence, detail: str) -> None:
     pytest.xfail(f"{entry.describe()}\n{detail}")
 
 
+def unbuilt(entry: Divergence, detail: str) -> None:
+    """Mark the running test as a case this engine does not build yet.
+
+    Worded apart from :func:`expected` because the two mean opposite
+    things: a divergence is a decision one of the engines has not
+    caught up with, and this is work that has not been done.
+
+    """
+    pytest.xfail(
+        f"not built yet: {entry.ident}: {entry.summary}\n"
+        f"  reason: {entry.reason}\n"
+        f"  arrives with: {entry.ticket} (listed {entry.since})\n"
+        f"{detail}"
+    )
+
+
 @pytest.mark.differential
 @pytest.mark.parametrize("case", corpus(), ids=lambda case: case.ident)
 def test_printouts_agree(
@@ -47,6 +63,7 @@ def test_printouts_agree(
     local: Engine,
     build_directory: Path,
     register: Register,
+    pending: Register,
 ) -> None:
     missing = case.missing_inputs()
     assert not missing, f"{case.ident}: missing input files: " + ", ".join(
@@ -54,6 +71,7 @@ def test_printouts_agree(
     )
 
     entry = register.entry_for(case.ident)
+    waiting = None if entry is not None else pending.entry_for(case.ident)
     outcomes = {
         engine.name: attempt(engine, case, build_directory)
         for engine in (oracle, local)
@@ -67,6 +85,8 @@ def test_printouts_agree(
         detail = "\n".join(str(failure) for failure in refused.values())
         if entry is not None:
             expected(entry, detail)
+        if waiting is not None:
+            unbuilt(waiting, detail)
         pytest.fail(detail, pytrace=False)
 
     reference_build = outcomes[oracle.name]
@@ -81,16 +101,22 @@ def test_printouts_agree(
         right_name=local.name,
         title=case.ident,
     )
-    if entry is None:
+    if entry is None and waiting is None:
         assert comparison.identical, comparison.report
         return
+    listed = entry if entry is not None else waiting
+    assert listed is not None
     if comparison.identical:
+        file = "divergences.toml" if entry is not None else "pending.toml"
+        word = "divergence" if entry is not None else "pending entry"
         pytest.fail(
-            f"{case.ident} no longer differs, so divergence {entry.ident!r} "
-            "has been retired: remove it from divergences.toml",
+            f"{case.ident} now agrees, so the {word} {listed.ident!r} "
+            f"has done its work: remove it from {file}",
             pytrace=False,
         )
-    expected(entry, comparison.report)
+    if entry is not None:
+        expected(entry, comparison.report)
+    unbuilt(listed, comparison.report)
 
 
 @pytest.mark.differential
@@ -105,9 +131,9 @@ def test_the_reference_builds_every_probe(
 
     A probe is a template whose answer is read out of the reference's
     printout, so one the reference will not build has stopped measuring
-    anything -- and while this engine produces no printout of its own,
-    the comparison above skips and would not notice.  This holds the
-    corpus up on the oracle alone until M6, and keeps holding it after.
+    anything -- and the comparison above would not notice, since it
+    skips wherever the oracle is missing.  This holds the corpus up
+    on the oracle alone.
 
     A refusal the register covers is the answer rather than a fault:
     two of the dialect amendments are expressions the reference has

@@ -85,8 +85,18 @@ class Register:
         return None
 
 
-def load_register(path: Path = REGISTER_PATH) -> Register:
-    """Read and validate the register.
+def load_register(path: Path = REGISTER_PATH, table: str = "divergence") -> Register:
+    """Read and validate a register.
+
+    Two files have this shape: the divergence register,
+    and the [pending](pending.py) list of cases this engine
+    does not build yet.  They hold different things and are read
+    the same way, because the two rules that keep either honest
+    are the same two.
+
+    Args:
+        path: The file to read.
+        table: The name of the array of tables in it.
 
     Raises:
         ValueError: on a malformed entry.
@@ -99,14 +109,14 @@ def load_register(path: Path = REGISTER_PATH) -> Register:
     with path.open("rb") as handle:
         document = tomllib.load(handle)
 
-    raw = document.get("divergence", [])
+    raw = document.get(table, [])
     if not isinstance(raw, list):
-        raise ValueError(f"{path}: `divergence` must be an array of tables")
+        raise ValueError(f"{path}: `{table}` must be an array of tables")
 
     entries: list[Divergence] = []
     seen: set[str] = set()
     for position, item in enumerate(raw):
-        where = f"{path}: divergence {position + 1}"
+        where = f"{path}: {table} {position + 1}"
         for key in REQUIRED_TEXT:
             value = item.get(key)
             if not isinstance(value, str) or not value.strip():

@@ -1,11 +1,14 @@
 """The command line of doc/cli.md.
 
-Partial, deliberately.  ``validate``, ``version`` and ``help`` are here;
-``build``, ``render`` and ``inspect`` name the milestone that brings them
-and exit 1, because a command that printed nothing and exited 0 would be
+Partial, deliberately.  ``build``, ``validate``, ``inspect``, ``version``
+and ``help`` are here; ``render`` names the milestone that brings it and
+exits 1, because a command that printed nothing and exited 0 would be
 worse than one that says it is not there.  :data:`COMMANDS` holds what
 works, which is also what the differential harness asks before deciding
 whether this engine can be compared against the reference yet.
+:data:`PARTIAL` holds the two that work but not to the end of their
+specification, so ``help`` says which part is missing rather than
+leaving a reader to find out from the output.
 
 ``validate`` resolves the fonts a template declares, which is the one
 part of the check that depends on the machine rather than on the
@@ -33,11 +36,21 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TextIO
 
-from sr import meta
-from sr.errors import BadValue, BuildWarning, Diagnostic, ExpressionError, FontError
+from sr import api, meta
+from sr.errors import (
+    BadValue,
+    BuildWarning,
+    Diagnostic,
+    ExpressionError,
+    FontError,
+    SrError,
+    TemplateError,
+)
 from sr.expr import evaluate
 from sr.expr.values import go_shortest, quote
 from sr.fonts.resolve import Resolution, Resolver
+from sr.printout.inspect import dump, pages_wanted, read_jsonl
+from sr.printout.write import write_jsonl
 from sr.template import load as load_template
 from sr.template.load import (
     Loaded,
@@ -50,9 +63,14 @@ from sr.template.model import Blob, Font, Parameter, Report, parse_text
 
 __all__ = [
     "COMMANDS",
+    "FORMATS",
+    "PARTIAL",
     "PLANNED",
     "Fonts",
     "Usage",
+    "as_written",
+    "build",
+    "inspect_printout",
     "main",
     "resolve_fonts",
     "validate",
@@ -73,10 +91,36 @@ SUMMARY = {
 # arrives in.  A command here parses its arguments like any other and
 # then says so, rather than failing as though the file were at fault.
 PLANNED = {
-    "build": "M6",
     "render": "M14",
-    "inspect": "M13",
 }
+
+# The commands that work, and the parts of doc/cli.md each of them does
+# not reach yet, with the milestone that brings each.  Kept apart from
+# PLANNED because the difference matters to a reader: one of these
+# produces the right answer over a narrower input, and a planned command
+# produces nothing at all.
+PARTIAL = {
+    "build": (
+        (
+            "M13",
+            "the overflow check on a mark that lands outside the "
+            "printable area, which --allow-overflow would downgrade",
+        ),
+        ("M14", "PDF output; a printout is written as NDJSON"),
+    ),
+    "inspect": (("M13", "the invariant check; the dump itself is complete"),),
+}
+
+# What each output extension names, per doc/cli.md#sr-build.
+FORMATS = {
+    ".pdf": "pdf",
+    ".jsonl": "jsonl",
+    ".ndjson": "jsonl",
+    ".cbor": "cbor",
+}
+
+# The milestone that brings each output format this one cannot write.
+FORMAT_MILESTONE = {"pdf": "M14", "cbor": "M13"}
 
 # The exit codes of doc/cli.md#exit-codes.
 OK = 0
@@ -99,8 +143,8 @@ class Arguments:
     Attributes:
         flags: Every flag given, by its long name, last one winning.
         params: The ``--param`` values, in the order they were given.
-        accepted: The ``--accept`` names, which are a set because a name
-            given twice asks for exactly what one name asks for.
+        accepted: The ``--accept`` names, which are a set because
+            a name given twice asks for exactly what one name asks for.
         positional: What was given without a flag in front of it.
 
     """
@@ -121,6 +165,26 @@ VALIDATE_FLAGS = (
     ("strict-names", None, False),
     ("quiet", "q", False),
     ("verbose", "v", False),
+)
+
+# The flags `build` takes, per doc/cli.md#sr-build.
+BUILD_FLAGS = (
+    ("template", "t", True),
+    ("data", "d", True),
+    ("out", "o", True),
+    ("format", None, True),
+    ("build-time", None, True),
+    ("strict-fonts", None, False),
+    ("strict-names", None, False),
+    ("allow-overflow", None, False),
+    ("uncompressed", None, False),
+    ("verbose", "v", False),
+)
+
+# The flags `inspect` takes, per doc/cli.md#sr-inspect.
+INSPECT_FLAGS = (
+    ("pages", None, True),
+    ("summary", None, False),
 )
 
 
@@ -149,6 +213,10 @@ def main(argv: Sequence[str] | None = None, out: TextIO | None = None) -> int:
             return version(rest, stream)
         if command == "validate":
             return validate(rest, stream)
+        if command == "build":
+            return build(rest, stream)
+        if command == "inspect":
+            return inspect_printout(rest, stream)
         if command in PLANNED:
             print(
                 f"{command} is not implemented yet; it arrives in {PLANNED[command]}",
@@ -189,6 +257,25 @@ def help_for(arguments: Sequence[str], out: TextIO) -> int:
         print(f"sr.py {name}  {SUMMARY[name]}", file=out)
         if name in PLANNED:
             print(f"  not implemented yet; it arrives in {PLANNED[name]}", file=out)
+        for milestone, missing in PARTIAL.get(name, ()):
+            print(f"  not yet: {missing} ({milestone})", file=out)
+        if name == "build":
+            print("  -t, --template FILE   the template to apply", file=out)
+            print("  -d, --data FILE       the records, - for stdin", file=out)
+            print("  -o, --out FILE        where to write, - for stdout", file=out)
+            print("  --format NAME         pdf, jsonl or cbor", file=out)
+            print("  --build-time TIME     RFC 3339, fixes BUILD_TIME", file=out)
+            print("  --param NAME=VALUE    a report parameter, repeatable", file=out)
+            print("  --strict-fonts        resolve only fonts named by path", file=out)
+            print("  --strict-names        refuse an unknown name", file=out)
+            print(
+                "  --accept NAME         take one name in silence, repeatable", file=out
+            )
+            print("  --allow-overflow      an oversized band is a warning", file=out)
+            print("  -v, --verbose         report host font diagnostics", file=out)
+        if name == "inspect":
+            print("  --pages RANGES        which pages to dump, as 1,4-6", file=out)
+            print("  --summary             the header only, no pages", file=out)
         if name == "validate":
             print("  -t, --template FILE   the template to check", file=out)
             print("  --param NAME=VALUE    a report parameter, repeatable", file=out)
@@ -205,6 +292,255 @@ def help_for(arguments: Sequence[str], out: TextIO) -> int:
         planned = f"  (not implemented yet: {PLANNED[name]})" if name in PLANNED else ""
         print(f"  {name:<9}{what}{planned}", file=out)
     return OK
+
+
+# -- build ------------------------------------------------------------
+
+
+def build(arguments: Sequence[str], out: TextIO) -> int:
+    """Apply a template to data and write a printout.
+
+    What the command produces goes to the file ``--out`` names,
+    and everything about the run to standard error: the warnings,
+    one per line, and then the summary line.
+
+    Args:
+        arguments: What followed the command.
+        out: Where a document written to standard output goes.
+
+    """
+    given = parse(arguments, BUILD_FLAGS)
+    if given.positional:
+        raise Usage(f"build takes no arguments, and got {given.positional[0]!r}")
+    template = given.flags.get("template")
+    if template is None:
+        raise Usage("build needs a template, as -t")
+    destination = given.flags.get("out")
+    if destination is None:
+        raise Usage("build needs an output, as -o")
+    target = str(destination)
+    encoding = format_of(target, given.flags.get("format"))
+    if encoding in FORMAT_MILESTONE:
+        print(
+            f"sr: {encoding} output arrives in {FORMAT_MILESTONE[encoding]}",
+            file=sys.stderr,
+        )
+        return FAILED
+    options = api.Options(
+        params=dict(given.params),
+        build_time=text_of(given.flags.get("build-time")),
+        strict_fonts=bool(given.flags.get("strict-fonts")),
+        strict_names=bool(given.flags.get("strict-names")),
+        accepted=frozenset(given.accepted),
+        allow_overflow=bool(given.flags.get("allow-overflow")),
+        verbose=bool(given.flags.get("verbose")),
+    )
+    try:
+        result = api.build(Path(str(template)), data_source(given), options)
+        # Inside the same handler as the build: a directory that is
+        # not there and a template that will not load are both the
+        # run failing, and both are reported as `sr:` and exit 1
+        # rather than as a traceback.
+        write_printout(result, target, out)
+    except TemplateError as refused:
+        for diagnostic in refused.diagnostics:
+            print(diagnostic, file=sys.stderr)
+        return FAILED
+    except SrError as refused:
+        print(f"sr: {refused}", file=sys.stderr)
+        return FAILED
+    except OSError as refused:
+        print(f"sr: {refused}", file=sys.stderr)
+        return FAILED
+    for line in result.diagnostics:
+        print(line, file=sys.stderr)
+    for note in result.notes:
+        print(f"warning: {note}", file=sys.stderr)
+    for warning in result.warnings:
+        print(f"warning: {warning}", file=sys.stderr)
+    print(f"{target}: {counted(result)}", file=sys.stderr)
+    return OK
+
+
+def data_source(given: Arguments) -> Path | TextIO | None:
+    """Return where the records come from.
+
+    Args:
+        given: The arguments, for ``--data``.
+
+    """
+    data = given.flags.get("data")
+    if data is None:
+        return None
+    return sys.stdin if data == "-" else Path(str(data))
+
+
+def format_of(target: str, asked: str | bool | None) -> str:
+    """Return the encoding to write, and complain where the two disagree.
+
+    doc/cli.md#sr-build: the format comes from ``--format``, or from
+    what ``--out`` ends in.  ``--format`` over a recognized extension
+    warns and proceeds, because the file it writes will be read back
+    by its extension; over an unrecognized one, or none, it is silent,
+    since overriding is what the flag is for.
+
+    Args:
+        target: What ``--out`` named.
+        asked: What ``--format`` asked for, where it was given.
+
+    Raises:
+        Usage: Neither says what to write,
+            or ``--format`` names nothing this format has.
+
+    """
+    suffix = suffix_of(target)
+    named = FORMATS.get(suffix)
+    if asked is None:
+        if named is None:
+            if target == "-":
+                raise Usage("--out - needs --format, since there is no extension")
+            raise Usage(
+                f"the extension {suffix!r} names no format; "
+                "expected .pdf, .jsonl or .cbor, or give --format"
+            )
+        return named
+    wanted = str(asked)
+    if wanted not in set(FORMATS.values()):
+        raise Usage(f"--format {wanted}: expected pdf, jsonl or cbor")
+    if named is not None and named != wanted:
+        print(
+            f"warning: --format {wanted} over an output named {suffix}, "
+            f"which render and inspect will read as {named}",
+            file=sys.stderr,
+        )
+    return wanted
+
+
+def suffix_of(target: str) -> str:
+    """Return the extension an output path ends in.
+
+    ``.srp.jsonl`` is two extensions and the last is what names
+    the format, so this is the last one and not the pair.
+
+    Args:
+        target: What ``--out`` named.
+
+    """
+    return Path(target).suffix.lower()
+
+
+def write_printout(result: api.Result, target: str, out: TextIO) -> None:
+    """Write the printout where ``--out`` said.
+
+    The directory it lands in is what its paths are written relative
+    to, which is why the destination reaches the writer rather than
+    only the stream.  A document going to standard output has no
+    directory, and the working directory stands in.
+
+    Args:
+        result: What the build produced.
+        target: What ``--out`` named.
+        out: Where a document written to standard output goes.
+
+    """
+    if target == "-":
+        write_jsonl(result.printout, as_written(out), None)
+        return
+    path = Path(target)
+    base = path.parent
+    # newline="": doc/printout.md#encoding ends every line with U+000A,
+    # and a platform whose text mode translates that would write CRLF
+    # and make the same document two different files.
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        write_jsonl(result.printout, handle, base)
+
+
+def as_written(out: TextIO) -> TextIO:
+    """Return a stream that writes a printout as the format spells it.
+
+    Standard output is a text stream the platform set up,
+    and on Windows that means it translates U+000A into two bytes
+    and encodes in the console's codepage.  A printout is
+    [LF-terminated UTF-8](doc/printout.md#encoding) wherever it
+    is written, so the stream is reconfigured where it can be.
+    A stream that cannot be -- a test's buffer, which
+    translates nothing -- is returned as it is.
+
+    Args:
+        out: Where a document written to standard output goes.
+
+    """
+    reconfigure = getattr(out, "reconfigure", None)
+    if reconfigure is not None:
+        reconfigure(encoding="utf-8", newline="")
+    return out
+
+
+def counted(result: api.Result) -> str:
+    """Return the summary line doc/cli.md#sr-build ends a build with.
+
+    What it names is the document rather than the run: pages, fonts,
+    blobs, warnings.  The file it went to is the caller's to print,
+    because the caller is the one that knows what the user wrote.
+
+    Args:
+        result: What the build produced.
+
+    """
+    printout = result.printout
+    counts = (
+        (len(printout.pages), "page", "pages"),
+        (len(printout.fonts), "font", "fonts"),
+        (len(printout.data), "data blob", "data blobs"),
+        (len(result.warnings), "warning", "warnings"),
+    )
+    return ", ".join(
+        f"{value} {one if value == 1 else many}"
+        for value, one, many in counts
+        if value or one == "page"
+    )
+
+
+# -- inspect ----------------------------------------------------------
+
+
+def inspect_printout(arguments: Sequence[str], out: TextIO) -> int:
+    """Dump a printout as readable text.
+
+    Args:
+        arguments: What followed the command.
+        out: Where the dump goes.
+
+    """
+    given = parse(arguments, INSPECT_FLAGS)
+    if len(given.positional) != 1:
+        raise Usage("inspect takes one printout")
+    path = Path(given.positional[0])
+    if path.suffix.lower() == ".cbor":
+        print("sr: reading CBOR arrives in M13", file=sys.stderr)
+        return FAILED
+    try:
+        records = read_jsonl(path)
+        wanted = pages_wanted(text_of(given.flags.get("pages")), len(records) - 1)
+    except SrError as refused:
+        print(f"sr: {refused}", file=sys.stderr)
+        return FAILED
+    except OSError as refused:
+        print(f"sr: {refused}", file=sys.stderr)
+        return FAILED
+    for line in dump(path, records, wanted, bool(given.flags.get("summary"))):
+        print(line, file=out)
+    return OK
+
+
+def text_of(value: str | bool | None) -> str | None:
+    """Return a flag's value as text, where it carries one.
+
+    Args:
+        value: What the parser recorded for the flag.
+
+    """
+    return None if value is None or isinstance(value, bool) else value
 
 
 # -- validate ---------------------------------------------------------
@@ -839,6 +1175,8 @@ def parameter(found: Arguments, value: str | None, pending: list[str]) -> None:
 
 
 COMMANDS = {
+    "build": build,
+    "inspect": inspect_printout,
     "validate": validate,
     "version": version,
 }

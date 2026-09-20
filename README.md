@@ -18,6 +18,7 @@ A Python library with a CLI over it, counterpart to the parallel
 | [doc/printout.md](doc/printout.md) | The intermediate document a renderer consumes |
 | [doc/render.md](doc/render.md) | PDF rendering: what a renderer decides, and what it must not |
 | [doc/cli.md](doc/cli.md) | The command line: subcommands, flags, streams, exit codes |
+| [example/minimal/](example/minimal/) | The smallest complete report, and the printout doc/printout.md shows |
 | [example/sakila/](example/sakila/) | Reference template and dataset |
 | [example/invoices/](example/invoices/) | Second example: both kinds of subreport, region grouping, the remaining variable modes |
 | [example/fonts/](example/fonts/) | Fonts committed so examples resolve identically everywhere |
@@ -78,9 +79,39 @@ header where archiving keeps them. Full reference: [doc/cli.md](doc/cli.md).
 
 ## Library
 
-<!-- TODO: API usage example -->
+```python
+from pathlib import Path
+
+from sr.api import Options, build
+from sr.printout.write import write_jsonl
+
+result = build(
+    Path("sakila.kdl"),
+    Path("payments.jsonl"),
+    Options(params={"period_start": "2005-06-01"}, strict_fonts=True),
+)
+out = Path("sakila.srp.jsonl")
+with out.open("w", encoding="utf-8", newline="") as handle:
+    write_jsonl(result.printout, handle, out.parent)
+```
+
+`build` returns the printout as an object, which is the primary artifact:
+serializing it is a separate step, and the directory it is written to is what
+its font and image paths are made relative to. Every flag on the command line
+is a field of `Options`, because the command line
+[decides nothing](doc/cli.md).
 
 ## Running the examples
+
+```bash
+python sr.py build -t example/minimal/minimal.kdl -d example/minimal/films.jsonl -o minimal.srp.jsonl
+```
+
+[minimal.kdl](example/minimal/minimal.kdl) is the smallest report there is:
+one font, a header with a rule, and one field per record. Its printout is
+the example at the end of [doc/printout.md](doc/printout.md#example), which
+the test suite builds and compares byte for byte, so that example is a
+document rather than an illustration of one.
 
 ```bash
 python sr.py build -t example/sakila/sakila.kdl -d example/sakila/payments.jsonl -o sakila.pdf
@@ -155,9 +186,24 @@ setuptools' metadata, and compiled bytecode. The first three come from
 `GNUmakefile` exports — a `pytest` typed straight into a shell still writes
 `__pycache__` beside the sources unless that variable is exported there too.
 
-Tests are `pytest`. `tests/unit/` covers a module at a time, and
-`tests/differential/` compares this engine against the Go one,
-byte for byte, over the examples and over a corpus of probes.
+Tests are `pytest`. `tests/unit/` covers a module at a time,
+`tests/golden/` holds this engine to documents that are printed in the
+specification, and `tests/differential/` compares this engine against the
+Go one, byte for byte, over the examples and over a corpus of probes.
+
+The engine is being built a milestone at a time, and what it does not do
+yet it refuses by name: a band it cannot lay out, an element it cannot
+draw and an output format it cannot write each say which milestone brings
+them rather than producing something approximate. `sr.py help <command>`
+lists what a command that works does not reach yet -- today a mark that
+lands outside the printable area is not judged an
+[overflow](doc/layout.md#errors), which is the one row of that table
+neither engine checks. Today it builds a single
+page of `field`, `line` and `rectangle` elements and writes it as NDJSON;
+groups, columns, pagination, barcodes, images, subreports and PDF are the
+milestones after this one. The cases the differential corpus cannot yet
+compare are listed, with the milestone each waits for, in
+[tests/differential/pending.toml](tests/differential/pending.toml).
 
 The Go implementation is the **oracle**: a reference binary whose *outputs*
 settle questions the specification leaves open. Its source is not read --

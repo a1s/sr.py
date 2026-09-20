@@ -1,0 +1,41 @@
+// probes/printout/strings.kdl -- how a string reaches the file.
+//
+// The number rules have a probe of their own in `printout/numbers`;
+// these are the other half of the same question, and they live in the bytes
+// in the same way: a printout that parses equal can still differ here.
+//
+// One interesting character per field, deliberately.  A field holding two
+// characters the face has no glyph for would also be asking about the order
+// of the `warnings` array, which is a separate question with an answer of
+// its own, and a probe that asks two questions answers neither.
+//
+// U+000A is not here and cannot be: it ends a line before anything
+// is measured, so no `lines` entry can hold one, and its escape is
+// the one short escape a printout never writes.
+//
+// doc/printout.md#strings is what this became.
+
+report name="printout/strings <&>" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=400 {
+      field text="q\"q\\q/q<q>q&q" left=0 top=0 width=500 height=12 // the punctuation JSON and HTML each ask about
+      field text="a\u{8}b" left=0 top=14 width=500 height=12        // a backspace keeps its short escape
+      field text="a\u{9}b" left=0 top=28 width=500 height=12        // and a tab
+      field text="a\u{b}b" left=0 top=42 width=500 height=12        // u000b in lower case, and not a short escape
+      field text="a\u{c}b" left=0 top=56 width=500 height=12        // a form feed keeps its short escape
+      field text="a\u{d}b" left=0 top=70 width=500 height=12        // and a carriage return
+      field text="a\u{1f}b" left=0 top=84 width=500 height=12       // u001f
+      field text="a\u{7f}b" left=0 top=98 width=500 height=12       // DEL is an ordinary character
+      field text="a\u{85}b" left=0 top=112 width=500 height=12      // and so is NEL
+      field text="a\u{a0}b" left=0 top=126 width=500 height=12      // and a no-break space
+      field text="a\u{2028}b" left=0 top=140 width=500 height=12    // escaped, although JSON does not ask
+      field text="a\u{2029}b" left=0 top=154 width=500 height=12    // likewise
+      field text="a\u{feff}b" left=0 top=168 width=500 height=12    // a byte order mark inside a string is a character
+      field text="éü" left=0 top=182 width=500 height=12            // two-byte letters are written as themselves
+      field text="中" left=0 top=196 width=500 height=12            // and so is a three-byte one
+      field text="🖖" left=0 top=210 width=500 height=12            // and a four-byte one
+    }
+  }
+}

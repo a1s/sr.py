@@ -26,6 +26,7 @@ from tests.differential.engines import (
     local_engine,
     reference_engine,
 )
+from tests.differential.pending import load_pending
 from tests.differential.reference import ReferenceBinary, build_reference
 from tests.differential.register import Register, load_register
 
@@ -105,6 +106,12 @@ def local(pytestconfig: pytest.Config) -> Engine:
 def register() -> Register:
     """Return the known-divergence register."""
     return load_register()
+
+
+@pytest.fixture(scope="session")
+def pending() -> Register:
+    """Return the list of cases this engine does not build yet."""
+    return load_pending()
 
 
 @pytest.fixture

@@ -1,0 +1,33 @@
+// probes/layout/reserved-bands.kdl -- what a header and a footer see.
+//
+// A frame reserves space for its header and its footer by measuring them,
+// and the two bands are then built again when the page is made.
+//  What `VERTICAL_POSITION` and `VERTICAL_SPACE` report in that
+// second measurement is what this reads off the marks:
+//
+//   header  vp 0     vs 280   the page frame less the footer's reservation
+//   footer  vp 78    vs 20    how far the content filled, and its own strip
+//
+// The page is 300pt tall with no margins, the header reserves 14 and the
+// footer 20, and three 26pt rows fill the content frame from 14 to 92.
+// So the header is measured against a frame that has the footer taken out
+// and not itself, and the footer against one whose position is where the
+// content stopped and whose space is the band held for it.
+//
+// doc/layout.md#headerfooter-reservation is what this became.
+
+report name="layout/reserved-bands" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=400 height=300 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    header height=14 {
+      field expr="'header vp %s vs %s' % (VERTICAL_POSITION, VERTICAL_SPACE)" left=0 top=0 width=390 height=12
+    }
+    footer height=20 {
+      field expr="'footer vp %s vs %s' % (VERTICAL_POSITION, VERTICAL_SPACE)" left=0 top=0 width=390 height=12
+    }
+    detail height=26 {
+      field expr="'row %d' % ITEM_NUMBER" left=0 top=0 width=390 height=12
+    }
+  }
+}

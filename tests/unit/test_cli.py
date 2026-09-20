@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from sr import meta
-from sr.cli import COMMANDS, PLANNED, main
+from sr.cli import COMMANDS, PARTIAL, PLANNED, as_written, main
 
 ROOT = Path(__file__).resolve().parents[2]
 SAKILA = ROOT / "example" / "sakila" / "sakila.kdl"
@@ -75,7 +75,16 @@ def test_a_command_that_is_not_written_yet_says_so(name: str) -> None:
 
 
 def test_the_commands_that_work_are_the_ones_listed() -> None:
-    assert set(COMMANDS) == {"validate", "version"}
+    assert set(COMMANDS) == {"build", "inspect", "validate", "version"}
+
+
+def test_a_command_that_works_but_not_to_the_end_says_which_part() -> None:
+    for name, parts in PARTIAL.items():
+        code, said = run("help", name)
+        assert code == 0
+        for milestone, missing in parts:
+            assert milestone in said
+            assert missing.split(";")[0].split(",")[0] in said
 
 
 # -- the flag parser --------------------------------------------------
@@ -608,3 +617,225 @@ def test_the_help_names_the_font_flags() -> None:
     _, said = run("help", "validate")
     assert "--strict-fonts" in said
     assert "--verbose" in said
+
+
+# -- build ------------------------------------------------------------
+
+MINIMAL = ROOT / "example" / "minimal" / "minimal.kdl"
+FILMS = ROOT / "example" / "minimal" / "films.jsonl"
+REPRODUCIBLE = ("--build-time", "2026-08-04T09:12:44Z", "--strict-fonts")
+
+
+def build_minimal(tmp_path: Path, *extra: str) -> tuple[int, Path]:
+    """Build the minimal example into ``tmp_path`` and return the code."""
+    out = tmp_path / "out.srp.jsonl"
+    code, _ = run(
+        "build",
+        "-t",
+        str(MINIMAL),
+        "-d",
+        str(FILMS),
+        "-o",
+        str(out),
+        *REPRODUCIBLE,
+        *extra,
+    )
+    return code, out
+
+
+def test_build_writes_a_printout(tmp_path: Path) -> None:
+    code, out = build_minimal(tmp_path)
+    assert code == 0
+    lines = out.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 2
+    assert '"kind":"header"' in lines[0]
+    assert '"kind":"page"' in lines[1]
+
+
+def test_build_writes_to_standard_output_when_asked(tmp_path: Path) -> None:
+    code, said = run(
+        "build",
+        "-t",
+        str(MINIMAL),
+        "-d",
+        str(FILMS),
+        "-o",
+        "-",
+        "--format",
+        "jsonl",
+        *REPRODUCIBLE,
+    )
+    assert code == 0
+    assert said.splitlines()[0].startswith('{"sr":1')
+
+
+def test_build_to_a_stream_without_a_format_is_a_usage_error() -> None:
+    code, _ = run("build", "-t", str(MINIMAL), "-d", str(FILMS), "-o", "-")
+    assert code == 2
+
+
+def test_an_extension_that_names_no_format_is_a_usage_error(tmp_path: Path) -> None:
+    code, _ = run(
+        "build",
+        "-t",
+        str(MINIMAL),
+        "-d",
+        str(FILMS),
+        "-o",
+        str(tmp_path / "out.txt"),
+        *REPRODUCIBLE,
+    )
+    assert code == 2
+
+
+def test_a_format_this_engine_cannot_write_yet_says_so(tmp_path: Path) -> None:
+    for name in ("out.pdf", "out.cbor"):
+        code, _ = run(
+            "build",
+            "-t",
+            str(MINIMAL),
+            "-d",
+            str(FILMS),
+            "-o",
+            str(tmp_path / name),
+            *REPRODUCIBLE,
+        )
+        assert code == 1
+
+
+def test_build_needs_a_template_and_an_output(tmp_path: Path) -> None:
+    assert run("build", "-o", str(tmp_path / "out.srp.jsonl"))[0] == 2
+    assert run("build", "-t", str(MINIMAL))[0] == 2
+
+
+def test_build_takes_no_positional_arguments(tmp_path: Path) -> None:
+    code, _ = run(
+        "build", str(MINIMAL), "-o", str(tmp_path / "out.srp.jsonl"), *REPRODUCIBLE
+    )
+    assert code == 2
+
+
+def test_a_parameter_the_template_does_not_declare_fails_the_build(
+    tmp_path: Path,
+) -> None:
+    code, _ = build_minimal(tmp_path, "--param", "nosuch=1")
+    assert code == 1
+
+
+def test_a_template_that_will_not_load_fails_the_build(tmp_path: Path) -> None:
+    code, _ = run(
+        "build",
+        "-t",
+        str(BROKEN),
+        "-o",
+        str(tmp_path / "out.srp.jsonl"),
+        *REPRODUCIBLE,
+    )
+    assert code == 1
+
+
+def test_a_build_time_that_is_not_a_time_fails_the_build(tmp_path: Path) -> None:
+    out = tmp_path / "out.srp.jsonl"
+    code, _ = run(
+        "build",
+        "-t",
+        str(MINIMAL),
+        "-d",
+        str(FILMS),
+        "-o",
+        str(out),
+        "--build-time",
+        "yesterday",
+        "--strict-fonts",
+    )
+    assert code == 1
+
+
+# -- inspect ----------------------------------------------------------
+
+
+def test_inspect_dumps_the_header_and_the_marks(tmp_path: Path) -> None:
+    _, out = build_minimal(tmp_path)
+    code, said = run("inspect", str(out))
+    assert code == 0
+    lines = said.splitlines()
+    assert lines[0].startswith("printout ")
+    assert 'engine "sr 0.1.0"' in lines[1]
+    assert any(one.strip().startswith("text  box ") for one in lines)
+    assert any(one.strip() == '"ACADEMY DINOSAUR"' for one in lines)
+
+
+def test_inspect_summary_leaves_the_pages_out(tmp_path: Path) -> None:
+    _, out = build_minimal(tmp_path)
+    code, said = run("inspect", str(out), "--summary")
+    assert code == 0
+    assert "page 1" not in said
+
+
+def test_inspect_takes_a_range_of_pages(tmp_path: Path) -> None:
+    _, out = build_minimal(tmp_path)
+    code, said = run("inspect", str(out), "--pages", "2-")
+    assert code == 0
+    assert "page 1  " not in said
+
+
+def test_a_range_that_is_not_one_fails(tmp_path: Path) -> None:
+    _, out = build_minimal(tmp_path)
+    code, _ = run("inspect", str(out), "--pages", "first")
+    assert code == 1
+
+
+def test_inspect_needs_one_printout() -> None:
+    assert run("inspect")[0] == 2
+
+
+def test_a_file_that_is_not_a_printout_fails(tmp_path: Path) -> None:
+    path = tmp_path / "notes.srp.jsonl"
+    path.write_text("this is not JSON\n", encoding="utf-8")
+    code, _ = run("inspect", str(path))
+    assert code == 1
+
+
+def test_a_stream_is_reconfigured_for_the_formats_own_line_ending() -> None:
+    """doc/printout.md#encoding is LF and UTF-8 wherever it is written.
+
+    Standard output is a text stream the platform set up, and
+    on Windows it arrives translating every LF and encoding in
+    the console's codepage.  The stream below stands in for that one.
+    Its newline is what a Windows console does; its encoding only has
+    to be something other than UTF-8, so it is the narrowest one
+    there is, and the character outside it is what makes that half
+    of the test fail loudly rather than quietly.
+
+    """
+    raw = io.BytesIO()
+    stream = io.TextIOWrapper(raw, encoding="ascii", newline="\r\n")
+    as_written(stream).write("one\ntwo\n\u4e2d\n")
+    stream.flush()
+    assert raw.getvalue() == "one\ntwo\n\u4e2d\n".encode()
+
+
+def test_a_stream_that_cannot_be_reconfigured_is_left_alone() -> None:
+    held = io.StringIO()
+    assert as_written(held) is held
+
+
+def test_an_output_directory_that_is_not_there_is_a_diagnostic(
+    tmp_path: Path,
+) -> None:
+    code, _ = run(
+        "build",
+        "-t",
+        str(MINIMAL),
+        "-d",
+        str(FILMS),
+        "-o",
+        str(tmp_path / "nosuch" / "out.srp.jsonl"),
+        *REPRODUCIBLE,
+    )
+    assert code == 1
+
+
+def test_verbose_is_accepted_by_build(tmp_path: Path) -> None:
+    code, _ = build_minimal(tmp_path, "-v")
+    assert code == 0

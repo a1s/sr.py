@@ -330,12 +330,51 @@ they sit outside the page header and footer.
 A frame reserves space for its header and footer by measuring them.
 Both are measured against the context as it stands when the frame begins.
 
+So each of the two is measured **twice**: once to find out how much space to
+reserve, before any record has been read, and once when the band is built onto
+the page. The two measurements can disagree — the second sees a record, and a
+`printwhen` or a stretch field may answer differently for it — and where they
+do, the reservation is what the frame was inset by and the second measurement
+is what is drawn.
+
 A footer is placed flush against the frame's reserved bottom band — including
 a column footer. For content that should follow immediately below the last band,
 use a group `summary`.
 
+**Flush means the frame's bottom edge, not the reservation's.** The two are
+the same place whenever the two measurements agree, and where they do not,
+this is what keeps the band on the page: a footer guarded by
+`printwhen="THIS != None"` -- the guard [below](#what-a-header-or-footer-sees)
+recommends -- prints nothing at reservation, because there is no record yet,
+and reserves nothing; at the end of the page it prints, and its bottom edge
+is the frame's. A footer that measured taller than its reservation therefore
+grows upward, into the content, rather than off the paper.
+
 Deferred values inside a header or footer are sized from their placeholder
 content; see [deferred evaluation](#deferred-evaluation).
+
+#### What the two counters report
+
+`VERTICAL_POSITION` and `VERTICAL_SPACE` describe the frame a band is being
+tried against, and for these two bands that frame is not the one the content
+fills:
+
+| | `VERTICAL_POSITION` | `VERTICAL_SPACE` |
+|---|---|---|
+| header | 0 | the frame less the **footer's** reservation |
+| footer | how far the content frame was filled | the strip reserved for the footer |
+
+A header is at the top of the page by construction, so its position is zero,
+and the space below it is everything the page has left once the footer is out --
+its own reservation is not subtracted, because the header is what is being
+measured. A footer is the other way about: it is drawn at a fixed place,
+so what is worth reporting is where the content stopped, and the space
+it has to grow into is the band held for it rather than the page.
+
+That the header's figure has one reservation taken out and not the other
+is worth stating because it is the only asymmetric thing here, and it
+follows from what each number is for: a band is told what it may grow
+into, and a band never has to make room for itself.
 
 ### What a header or footer sees
 
@@ -450,6 +489,33 @@ Given a band template and a context, measurement proceeds:
    box per `halign` / `valign`; for a `field`, align each line per `align`.
 
 The emitted mark's box is the content box from step 7, not the declared box.
+
+### The band's height is settled twice
+
+Step 6 reads as one maximum and is two, and the difference shows in every band
+that holds a rule. The first is over the **declared** boxes and is what the
+container-dependent elements are resolved against; the second is over the
+**marks**, and is the band's height.
+
+1. Take the greater of the declared `height` and the lowest bottom edge among
+   the elements whose vertical extent is their own.
+2. Resolve the container-dependent elements against that. A `line` written
+   `top=10` and nothing else ends up exactly there, and one written with no
+   geometry at all spans it.
+3. The band is then as tall as the greatest bottom edge of the marks
+   [step 7](#building-a-band) produced, or that first height, whichever is
+   greater.
+
+Only step 3 sees content that overflowed the box it was given: a `field`
+without `stretch` in a box shorter than one line still draws that line, and a
+container-dependent field whose box came out empty draws its line below the
+top edge. So a band whose only content is such a field grows to the text,
+while a rule inside it keeps the height the declared boxes gave.
+
+The second maximum cannot feed back into step 2, and that is not a
+simplification for its own sake: resolving the rule against the final height
+would make the two define each other, which is the reason step 6 excludes
+container-dependent elements from the first maximum at all.
 
 ## Floating elements
 

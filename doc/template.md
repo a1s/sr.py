@@ -448,6 +448,22 @@ field halign="center" align="left" text="…"        // left: align wins
 `valign` is unaffected: it positions the wrapped text's height,
 which is content-sized, within the box's height.
 
+**Content taller than its box is placed by the same arithmetic**,
+and the arithmetic goes negative: a line 12 pt tall in a box of 6 pt
+sits 3 pt above the box under `valign="center"` and 6 pt above it
+under `"bottom"`.  It is drawn there, outside the box and possibly
+outside the band, and the band does not grow to hold it -- a band's
+height comes from the boxes and the marks as
+[layout.md](layout.md#the-bands-height-is-settled-twice) settles them,
+and a mark that starts above its box only moves the top edge it draws from.
+A mark that ends up outside the page's printable area is an
+[overflow](layout.md#errors) like any other; one that merely leaves
+its own box is not, because a box is a placement, not a clip.
+
+This is worth knowing rather than worth relying on. A box too short
+for the text it is given is usually a template to fix, and
+`stretch=#true` is how a field says its height is the text's.
+
 ### Floating elements
 
 `float=#true` on a body element means its vertical position is not fixed: it is

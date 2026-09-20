@@ -1,0 +1,32 @@
+// The smallest complete report: one font, a header with a rule, and one
+// field per record.  doc/printout.md#example is this template's printout,
+// which is what makes that example a document a reader can reproduce
+// rather than one written by hand:
+//
+//   python sr.py build -t example/minimal/minimal.kdl
+//       -d example/minimal/films.jsonl -o example/minimal/minimal.srp.jsonl
+//       --build-time 2026-08-04T09:12:44Z --strict-fonts
+//
+// The font is named by path, so the build does not depend on what is
+// installed and `--strict-fonts` has something to resolve.
+
+report name="Minimal" {
+  font "body" file="../fonts/Go-Regular.ttf" size=9
+
+  records {
+    member "title" type="string"
+  }
+
+  layout pagesize="A4" leftmargin=42.52 rightmargin=42.52 topmargin=28.35 bottommargin=28.35 {
+    style font="body" color="black"
+
+    header {
+      field text="Film title" width=200 height=10.8
+      line top=10.8 width=0.5
+    }
+
+    detail {
+      field expr="title" width=200 height=10.8
+    }
+  }
+}

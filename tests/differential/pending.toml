@@ -1,0 +1,78 @@
+# Cases this engine cannot build yet.
+#
+# Not a divergence: nothing here is a decision or a defect, only work
+# that has not arrived.  An entry says which milestone brings it, and
+# the suite fails the moment the case starts agreeing, so a milestone
+# that lands takes its entries with it.
+#
+# `affects` matches case identifiers with shell globs, and
+# the first matching entry wins, exactly as in divergences.toml.
+#
+# An entry here may cover a case in `example/`, which a divergence may
+# not: the examples use every node in the format, so they cannot pass
+# until the last of those nodes is built.  What an entry may not do is
+# cover a case divergences.toml already covers.
+#
+# The milestone numbers:
+#   M7: Band building        M11: Images
+#   M8: Pagination           M12: Subreports
+#   M9: Deferred evaluation  M13: Printout completeness
+#   M10: Barcodes            M14: PDF renderer
+
+[[pending]]
+id = "page-ejects"
+summary = "a band that does not fit needs a page eject"
+reason = """
+M6 lays out one frame that never ejects, so a band taller than what is \
+left of it has nowhere to go and the build fails naming the milestone. \
+This probe is one thousandth over a remaining 1.001pt and is meant to \
+eject; the reference paginates it onto a second page.\
+"""
+ticket = "M8: pagination, layout.md#placing-a-band"
+since = "2026-09-20"
+affects = ["probe/rounding/tolerance-refuses"]
+
+[[pending]]
+id = "images"
+summary = "an image element, and the data table that carries its bytes"
+reason = """
+An `image` is refused here, so the three probes that ask what an \
+embedded blob is named build on the reference alone.  They answer a \
+question about the header's `data` table, which arrives with the rest \
+of the printout; the element that fills it arrives before that.\
+"""
+ticket = "M11: images, and M13 for the data table"
+since = "2026-09-20"
+affects = [
+    "probe/data/blob-names",
+    "probe/data/blob-collision",
+    "probe/data/key-order",
+]
+
+[[pending]]
+id = "example-sakila"
+summary = "the sakila report uses most of the format"
+reason = """
+Two columns, a group with its own title and summary, a column header \
+and footer, six barcode types, two images, both kinds of \
+cross-reference, conditional outline entries and a deferred page count. \
+It is the broadest single comparison the corpus has and it starts \
+passing when the last of those is built, not before.\
+"""
+ticket = "M8 pagination, M9 deferred, M10 barcodes, M11 images, M13 the rest"
+since = "2026-09-20"
+affects = ["example/sakila", "example/sakila-june"]
+
+[[pending]]
+id = "example-invoices"
+summary = "the invoices report is built out of subreports"
+reason = """
+An inline `embedded` subreport with an `arg` and its own `records`, a \
+`template=` subreport that paginates itself onto landscape pages, a \
+group using `keeptogether` with `minrows` and `mintailrows`, and a \
+`summary` with `swapfooter`.  Subreports are the last of those to \
+arrive.\
+"""
+ticket = "M12: subreports, layout.md#subreports"
+since = "2026-09-20"
+affects = ["example/invoices"]

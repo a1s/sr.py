@@ -1,10 +1,10 @@
 """The answer a probe records, and how it is kept.
 
-A probe exists to hold one question answered.  Comparing the two engines does
-that from M6 on, but until then nothing pins what the reference said: a probe
-that still *builds* passes, even if the oracle changed its mind about line
-breaking overnight.  So each probe's printout is committed beside it, and
-the reference is held to it on every run.
+A probe exists to hold one question answered.  Comparing the two engines
+does that, but only while both agree: a probe both engines build the same
+wrong way is a probe that says nothing, and so is one the comparison skips
+because the oracle is not on this machine.  So each probe's printout is
+committed beside it, and the reference is held to it on every run.
 
 The golden is the printout as written, minus the one part of it that is not
 a property of the build: a font's ``resolvedFile`` is relative to wherever
