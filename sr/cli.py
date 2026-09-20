@@ -94,13 +94,21 @@ PLANNED = {
     "render": "M14",
 }
 
-# The commands that work, and the part of doc/cli.md each of them does
-# not reach yet.  Kept apart from PLANNED because the difference matters
-# to a reader: one of these produces the right answer over a narrower
-# input, and a planned command produces nothing at all.
+# The commands that work, and the parts of doc/cli.md each of them does
+# not reach yet, with the milestone that brings each.  Kept apart from
+# PLANNED because the difference matters to a reader: one of these
+# produces the right answer over a narrower input, and a planned command
+# produces nothing at all.
 PARTIAL = {
-    "build": ("M14", "PDF output; a printout is written as NDJSON"),
-    "inspect": ("M13", "the invariant check; the dump itself is complete"),
+    "build": (
+        (
+            "M13",
+            "the overflow check on a mark that lands outside the "
+            "printable area, which --allow-overflow would downgrade",
+        ),
+        ("M14", "PDF output; a printout is written as NDJSON"),
+    ),
+    "inspect": (("M13", "the invariant check; the dump itself is complete"),),
 }
 
 # What each output extension names, per doc/cli.md#sr-build.
@@ -249,8 +257,7 @@ def help_for(arguments: Sequence[str], out: TextIO) -> int:
         print(f"sr.py {name}  {SUMMARY[name]}", file=out)
         if name in PLANNED:
             print(f"  not implemented yet; it arrives in {PLANNED[name]}", file=out)
-        if name in PARTIAL:
-            milestone, missing = PARTIAL[name]
+        for milestone, missing in PARTIAL.get(name, ()):
             print(f"  not yet: {missing} ({milestone})", file=out)
         if name == "build":
             print("  -t, --template FILE   the template to apply", file=out)

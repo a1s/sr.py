@@ -330,12 +330,51 @@ they sit outside the page header and footer.
 A frame reserves space for its header and footer by measuring them.
 Both are measured against the context as it stands when the frame begins.
 
+So each of the two is measured **twice**: once to find out how much space to
+reserve, before any record has been read, and once when the band is built onto
+the page. The two measurements can disagree — the second sees a record, and a
+`printwhen` or a stretch field may answer differently for it — and where they
+do, the reservation is what the frame was inset by and the second measurement
+is what is drawn.
+
 A footer is placed flush against the frame's reserved bottom band — including
 a column footer. For content that should follow immediately below the last band,
 use a group `summary`.
 
+**Flush means the frame's bottom edge, not the reservation's.** The two are
+the same place whenever the two measurements agree, and where they do not,
+this is what keeps the band on the page: a footer guarded by
+`printwhen="THIS != None"` -- the guard [below](#what-a-header-or-footer-sees)
+recommends -- prints nothing at reservation, because there is no record yet,
+and reserves nothing; at the end of the page it prints, and its bottom edge
+is the frame's. A footer that measured taller than its reservation therefore
+grows upward, into the content, rather than off the paper.
+
 Deferred values inside a header or footer are sized from their placeholder
 content; see [deferred evaluation](#deferred-evaluation).
+
+#### What the two counters report
+
+`VERTICAL_POSITION` and `VERTICAL_SPACE` describe the frame a band is being
+tried against, and for these two bands that frame is not the one the content
+fills:
+
+| | `VERTICAL_POSITION` | `VERTICAL_SPACE` |
+|---|---|---|
+| header | 0 | the frame less the **footer's** reservation |
+| footer | how far the content frame was filled | the strip reserved for the footer |
+
+A header is at the top of the page by construction, so its position is zero,
+and the space below it is everything the page has left once the footer is out --
+its own reservation is not subtracted, because the header is what is being
+measured. A footer is the other way about: it is drawn at a fixed place,
+so what is worth reporting is where the content stopped, and the space
+it has to grow into is the band held for it rather than the page.
+
+That the header's figure has one reservation taken out and not the other
+is worth stating because it is the only asymmetric thing here, and it
+follows from what each number is for: a band is told what it may grow
+into, and a band never has to make room for itself.
 
 ### What a header or footer sees
 

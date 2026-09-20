@@ -194,7 +194,11 @@ Go one, byte for byte, over the examples and over a corpus of probes.
 The engine is being built a milestone at a time, and what it does not do
 yet it refuses by name: a band it cannot lay out, an element it cannot
 draw and an output format it cannot write each say which milestone brings
-them rather than producing something approximate. Today it builds a single
+them rather than producing something approximate. `sr.py help <command>`
+lists what a command that works does not reach yet -- today a mark that
+lands outside the printable area is not judged an
+[overflow](doc/layout.md#errors), which is the one row of that table
+neither engine checks. Today it builds a single
 page of `field`, `line` and `rectangle` elements and writes it as NDJSON;
 groups, columns, pagination, barcodes, images, subreports and PDF are the
 milestones after this one. The cases the differential corpus cannot yet

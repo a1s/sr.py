@@ -1,6 +1,6 @@
 // probes/layout/guarded-footer.kdl -- a footer that reserves nothing.
 //
-// doc/layout.md#what-a-header-or-a-footer-sees gives this guard
+// doc/layout.md#what-a-header-or-footer-sees gives this guard
 // as the way a footer reads a record field safely:
 //
 //   field expr="region" printwhen="THIS != None"

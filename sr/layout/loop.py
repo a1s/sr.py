@@ -284,6 +284,13 @@ class Builder:
     def commit(self, measured: Measurement, across: float, down: float) -> None:
         """Translate a measured band's marks onto the page.
 
+        A mark that lands outside the page's printable area is the
+        other [overflow](doc/layout.md#errors), and it is not checked
+        here yet: it is the same judgement the printout's seventh
+        invariant makes, so it arrives with the invariant run rather
+        than being written twice.  A negative `right` or `bottom`
+        is what usually produces one, and it is legal in the template.
+
         Args:
             measured: What measuring the band produced.
             across: The X of the frame's current column.

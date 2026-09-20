@@ -79,11 +79,12 @@ def test_the_commands_that_work_are_the_ones_listed() -> None:
 
 
 def test_a_command_that_works_but_not_to_the_end_says_which_part() -> None:
-    for name, (milestone, missing) in PARTIAL.items():
+    for name, parts in PARTIAL.items():
         code, said = run("help", name)
         assert code == 0
-        assert milestone in said
-        assert missing.split(";")[0] in said
+        for milestone, missing in parts:
+            assert milestone in said
+            assert missing.split(";")[0].split(",")[0] in said
 
 
 # -- the flag parser --------------------------------------------------
