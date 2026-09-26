@@ -231,7 +231,18 @@ that made it, not through the document.
 
 ### `fonts`
 
-One entry per distinct font used, sorted by `name`.
+One entry per distinct font used, sorted by `name`, and an empty array
+when none is.
+
+A font is **used** when the [style walk](layout.md#building-a-band) of an
+element the engine measured resolved to it. The element need not set text:
+a rectangle whose own `style` names a font uses it. A band measured only
+to [reserve its space](layout.md#headerfooter-reservation) counts, since
+it was measured, while a font no walk reached -- one on a `style` whose
+`when` was false, one on an element its `printwhen` suppressed, one a
+nearer `style` shadowed -- is left out. Every declared font is still
+resolved when the template loads, so a font that cannot be found is refused
+whether or not it would have been listed.
 
 ```json
 {

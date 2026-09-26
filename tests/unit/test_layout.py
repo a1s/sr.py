@@ -20,6 +20,7 @@ import pytest
 from sr.api import Options, build
 from sr.errors import BuildError, Unsupported
 from sr.printout.model import Line, Mark, Printout, Rectangle, Text
+from sr.printout.model import Xref as XrefMark
 
 ROOT = Path(__file__).resolve().parents[2]
 REGULAR = (ROOT / "example" / "fonts" / "Go-Regular.ttf").as_posix()
@@ -120,6 +121,38 @@ def test_maxwidth_clamps_a_resolved_extent(tmp_path: Path) -> None:
     assert marks(printout)[0].box.width == 50
 
 
+@pytest.mark.parametrize(
+    ("written", "expected"),
+    [
+        ("left=10 right=10", 10.0),
+        ("right=10 width=100", 240.0),
+        ("right=10", 0.0),
+    ],
+)
+def test_a_clamped_box_keeps_the_edge_that_was_not_derived(
+    tmp_path: Path, written: str, expected: float
+) -> None:
+    """`right` alone is filled to `left=0 right=10`, so its left is kept.
+
+    Only a start the two of three *derived* gives way to the far edge.
+
+    """
+    band = '    detail height=20 { field text="A" maxwidth=50 ' + written + " }"
+    box = marks(built(tmp_path, band))[0].box
+    assert (box.x, box.width) == (expected, 50)
+
+
+def test_maxheight_clamps_a_height_taken_from_the_band(tmp_path: Path) -> None:
+    printout = built(
+        tmp_path,
+        "    detail height=100 {\n"
+        "      line left=0 top=0 maxheight=30\n"
+        "      line left=10 bottom=0 height=80 maxheight=30\n"
+        "    }",
+    )
+    assert [(box[1], box[3]) for box in boxes(printout)] == [(0, 30), (70, 30)]
+
+
 def test_a_negative_offset_reaches_past_the_container(tmp_path: Path) -> None:
     printout = built(
         tmp_path, '    detail height=20 { field text="A" left=0 right=-20 }'
@@ -152,6 +185,85 @@ def test_a_container_dependent_element_takes_the_first_height(
     assert rule.box.height == 6, "the rule spans the declared boxes"
     assert text.box.height == 12, "the line of text overflows its box"
     assert after.box.y == 12, "and the band is as tall as the mark"
+
+
+def test_a_stretch_field_with_no_vertical_geometry_has_a_height_of_its_own(
+    tmp_path: Path,
+) -> None:
+    """Its bottom was filled in, and its text is a content height.
+
+    So it takes part in the first maximum, and a rule beside it
+    spans the text rather than collapsing.
+
+    """
+    printout = built(
+        tmp_path,
+        '    detail { field text="1\\n2\\n3" left=0 width=50 stretch=#true\n'
+        "             line left=100 }",
+    )
+    text, rule = marks(printout)
+    assert (text.box.height, rule.box.height) == (36, 36)
+
+
+def test_a_declared_bottom_is_container_dependent_whatever_the_content(
+    tmp_path: Path,
+) -> None:
+    printout = built(
+        tmp_path,
+        '    detail { field text="C" left=0 top=3 bottom=0 width=50 stretch=#true\n'
+        "             line left=100 top=0 }\n"
+        "    summary height=5 { rectangle top=0 height=5 left=0 width=5 }",
+    )
+    text, rule, after = marks(printout)
+    assert rule.box.height == 0, "the field takes no part in the first height"
+    assert (text.box.y, text.box.height) == (3, 12)
+    assert after.box.y == 15, "but its mark reaches the second"
+
+
+def test_an_anchored_stretch_field_keeps_the_bands_box(tmp_path: Path) -> None:
+    """A declared `bottom` sizes the box from the band; the text overflows.
+
+    The band gives it no room at all here, and `valign="bottom"` puts
+    all three lines above the box, as it does any text taller than its box.
+
+    """
+    printout = built(
+        tmp_path,
+        '    detail { field text="1\\n2\\n3" left=0 width=60 top=14 bottom=0 \\\n'
+        '                   stretch=#true valign="bottom" }',
+    )
+    (text,) = marks(printout)
+    assert isinstance(text, Text)
+    assert (text.box.y, text.box.height, len(text.lines)) == (-22, 36, 3)
+
+
+@pytest.mark.parametrize(
+    ("clamp", "kept"),
+    [("", 5), ("maxheight=30", 1)],
+)
+def test_a_clamp_is_what_lets_a_stretched_field_be_cut(
+    tmp_path: Path, clamp: str, kept: int
+) -> None:
+    """The band gives the field 10; only a `maxheight` makes it cut to that."""
+    printout = built(
+        tmp_path,
+        "    detail height=40 {\n"
+        '      field text="1\\n2\\n3\\n4\\n5" left=0 width=40 top=0 bottom=30'
+        " stretch=#true " + clamp + "\n"
+        "    }",
+    )
+    (text,) = marks(printout)
+    assert isinstance(text, Text)
+    assert len(text.lines) == kept
+
+
+def test_a_mark_past_the_bottom_edge_grows_the_band(tmp_path: Path) -> None:
+    printout = built(
+        tmp_path,
+        "    detail height=20 { rectangle left=0 right=200 top=0 bottom=-5 }\n"
+        "    summary height=5 { rectangle top=0 height=5 left=0 width=5 }",
+    )
+    assert boxes(printout) == [(0, 0, 100, 25), (0, 25, 300, 5)]
 
 
 def test_a_band_of_container_dependent_elements_alone_collapses(
@@ -292,6 +404,39 @@ def test_an_unset_property_falls_through_to_the_next_match(tmp_path: Path) -> No
     assert (mark.stroke, mark.fill) == ("#000000", "#00FF00")
 
 
+def test_the_next_match_may_be_in_the_same_scope(tmp_path: Path) -> None:
+    """A scope is not a unit of the walk: each property is first-win.
+
+    The first style here sets no `bgcolor`, so the second supplies it,
+    while its `color` is too late to replace the first one's.
+
+    """
+    printout = built(
+        tmp_path,
+        "    detail height=20 {\n"
+        '      style color="#123456"\n'
+        '      style bgcolor="lime" color="#999999"\n'
+        "      rectangle left=0 top=0 height=10\n"
+        "    }",
+    )
+    mark = marks(printout)[0]
+    assert isinstance(mark, Rectangle)
+    assert (mark.stroke, mark.fill) == ("#123456", "#00FF00")
+
+
+def test_an_elements_own_style_comes_first(tmp_path: Path) -> None:
+    printout = built(
+        tmp_path,
+        "    detail height=20 {\n"
+        '      style bgcolor="lime"\n'
+        '      rectangle left=0 top=0 height=10 { style color="#123456"; }\n'
+        "    }",
+    )
+    mark = marks(printout)[0]
+    assert isinstance(mark, Rectangle)
+    assert (mark.stroke, mark.fill) == ("#123456", "#00FF00")
+
+
 def test_a_rectangle_with_no_colour_at_all_draws_no_outline(tmp_path: Path) -> None:
     template = tmp_path / "plain.kdl"
     template.write_text(
@@ -332,6 +477,281 @@ def test_a_suppressed_band_contributes_nothing(tmp_path: Path) -> None:
         "    detail height=10 { rectangle left=0 top=0 width=5 height=5 }",
     )
     assert marks(printout)[0].box.y == 0
+
+
+# -- floating elements ------------------------------------------------
+
+# A field whose declared box is 0..12 and whose three lines make it 36.
+GROWING = '      field text="1\\n2\\n3" left=0 top=0 height=12 width=40 stretch=#true\n'
+
+
+def floated(tmp_path: Path, *elements: str) -> list[float]:
+    """Return the tops of a detail band's marks after the floating pass.
+
+    Args:
+        tmp_path: Where to write the report.
+        *elements: The band's elements after :data:`GROWING`, as KDL.
+
+    """
+    body = "    detail {\n" + GROWING + "".join(f"      {one}\n" for one in elements)
+    return [box[1] for box in boxes(built(tmp_path, body + "    }"))]
+
+
+def test_a_float_keeps_its_declared_gap_below_what_grew(tmp_path: Path) -> None:
+    tops = floated(
+        tmp_path,
+        'field text="B" left=0 top=14 height=12 width=40 float=#true',
+        'field text="C" left=0 top=30 height=12 width=40 float=#true',
+        'field text="D" left=50 top=14 height=12 width=40',
+    )
+    assert tops == [0, 38, 54, 14], "D does not float and stays"
+
+
+def test_the_horizontal_axis_plays_no_part(tmp_path: Path) -> None:
+    tops = floated(
+        tmp_path, 'field text="E" left=200 top=14 height=12 width=40 float=#true'
+    )
+    assert tops == [0, 38]
+
+
+def test_the_gap_is_to_the_nearest_predecessor(tmp_path: Path) -> None:
+    """Below two fields, the gap is to the lower declared bottom.
+
+    The one above at 0..20 is nearer than the one at 0..12,
+    so the gap is 10, added to the lowest edge either reached, 36.
+
+    """
+    tops = floated(
+        tmp_path,
+        'field text="1" left=50 top=0 height=20 width=40 stretch=#true',
+        'field text="F" left=0 top=30 height=12 width=40 float=#true',
+    )
+    assert tops == [0, 0, 46]
+
+
+def test_a_suppressed_element_is_not_a_predecessor(tmp_path: Path) -> None:
+    tops = floated(
+        tmp_path,
+        'field text="S" left=0 top=14 height=12 width=40 float=#true printwhen="False"',
+        'field text="T" left=0 top=30 height=12 width=40 float=#true',
+    )
+    assert tops == [0, 54]
+
+
+def test_an_element_sized_from_the_band_is_not_a_predecessor(
+    tmp_path: Path,
+) -> None:
+    """The rule's declared box is above F, but its height is the band's."""
+    body = (
+        "    detail height=30 {\n"
+        '      field text="1" left=0 top=0 height=2 width=40 stretch=#true\n'
+        "      line left=100 right=100 top=0 bottom=22\n"
+        '      field text="F" left=0 top=10 height=12 width=40 float=#true\n'
+        "    }"
+    )
+    rule, field = boxes(built(tmp_path, body))[1:]
+    assert field[1] == 20, "a gap of 8 to the field, not 2 to the rule"
+    assert rule[3] == 10, "and the rule spans the band the float made 32"
+
+
+def test_an_earlier_float_precedes_one_it_overlaps(tmp_path: Path) -> None:
+    """Floats are ordered by where they start, not by wholly above.
+
+    T's gap is still measured to what is wholly above it, the field,
+    and added to the edge U reached.
+
+    """
+    tops = floated(
+        tmp_path,
+        'field text="U" left=100 top=20 height=12 width=40 float=#true',
+        'field text="T" left=0 top=30 height=12 width=40 float=#true',
+    )
+    assert tops == [0, 44, 74]
+
+
+def test_a_float_of_no_height_keeps_its_gap(tmp_path: Path) -> None:
+    """doc/'s rule, which the reference does not follow; see divergences.toml."""
+    tops = floated(tmp_path, "line left=100 right=100 top=14 height=0 float=#true")
+    assert tops == [0, 38]
+
+
+def test_a_clamp_shortens_the_element_but_not_the_gap(tmp_path: Path) -> None:
+    """Declared 6 and clamped to 5: the float keeps its 8 and adds it to 5."""
+    body = (
+        "    detail height=40 {\n"
+        "      rectangle left=50 right=100 height=6 maxheight=5\n"
+        "      rectangle left=50 right=100 top=14 height=20 float=#true\n"
+        "    }"
+    )
+    assert [box[1] for box in boxes(built(tmp_path, body))] == [0, 13]
+
+
+def test_a_level_float_of_no_declared_height_makes_the_gap_nothing(
+    tmp_path: Path,
+) -> None:
+    """P2's declared box is 30..30: wholly above P1, but not before it."""
+    body = (
+        "    detail {\n"
+        '      field text="x\\ny" left=0 right=30 top=30 height=6 stretch=#true'
+        " float=#true\n"
+        '      field text="1\\n2\\n3" right=10 width=60 top=30 stretch=#true'
+        " float=#true\n"
+        '      field text="z" left=120 width=40 height=12\n'
+        "    }"
+    )
+    assert [box[1] for box in boxes(built(tmp_path, body))] == [12, 30, 0]
+
+
+def test_with_nothing_above_the_gap_runs_to_the_highest_top(
+    tmp_path: Path,
+) -> None:
+    """The rectangle starts at -5, so F's gap is 5 rather than 0."""
+    body = (
+        "    detail height=100 {\n"
+        "      rectangle left=0 right=200 top=-5 height=45\n"
+        '      field text="P" left=100 width=40 top=-1 height=6 float=#true\n'
+        '      field text="F" left=200 width=40 top=0 height=12 float=#true\n'
+        "    }"
+    )
+    assert [box[1] for box in boxes(built(tmp_path, body))] == [-5, -1, 10]
+
+
+def test_a_float_with_no_predecessor_stays_where_it_was_declared(
+    tmp_path: Path,
+) -> None:
+    body = (
+        "    detail {\n"
+        '      field text="U" left=100 top=20 height=12 width=40 float=#true\n'
+        "    }"
+    )
+    assert boxes(built(tmp_path, body))[0][1] == 20
+
+
+# -- xref -------------------------------------------------------------
+
+
+def test_an_xref_holds_its_childrens_marks_in_page_coordinates(
+    tmp_path: Path,
+) -> None:
+    printout = built(
+        tmp_path,
+        "    detail {\n"
+        '      xref type="url" target="\'https://example.com\'" caption="\'A\'" \\\n'
+        "           left=10 top=5 width=200 height=30 {\n"
+        '        field text="inside" left=5 top=5 width=50\n'
+        "        line left=100\n"
+        "      }\n"
+        "    }",
+    )
+    (link,) = marks(printout)
+    assert isinstance(link, XrefMark)
+    assert (link.link, link.target, link.caption) == (
+        "url",
+        "https://example.com",
+        "A",
+    )
+    box = link.box
+    assert (box.x, box.y, box.width, box.height) == (10, 5, 200, 30)
+    text, rule = link.marks
+    assert (text.box.x, text.box.y) == (15, 10)
+    assert (rule.box.x, rule.box.y, rule.box.height) == (110, 5, 30)
+
+
+def test_an_xref_does_not_grow_but_its_contents_grow_the_band(
+    tmp_path: Path,
+) -> None:
+    printout = built(
+        tmp_path,
+        "    detail {\n"
+        '      xref type="url" target="\'u\'" {\n'
+        '        field text="1\\n2\\n3" left=0 width=50 stretch=#true\n'
+        "      }\n"
+        "      line left=100\n"
+        "    }\n"
+        "    summary height=5 { rectangle top=0 height=5 left=0 width=5 }",
+    )
+    link, rule, after = marks(printout)
+    assert link.box.height == 0, "an xref has no height of its own"
+    assert rule.box.height == 0, "so the band's first height is zero"
+    assert after.box.y == 36, "and its field's mark still reaches the second"
+
+
+def test_an_xrefs_alignment_moves_nothing(tmp_path: Path) -> None:
+    printout = built(
+        tmp_path,
+        "    detail {\n"
+        '      xref type="url" target="\'u\'" right=0 width=200 height=20 \\\n'
+        '           halign="right" valign="bottom" {\n'
+        '        field text="end" width=50\n'
+        "      }\n"
+        "    }",
+    )
+    (link,) = marks(printout)
+    assert isinstance(link, XrefMark)
+    assert (link.marks[0].box.x, link.marks[0].box.y) == (100, 0)
+
+
+@pytest.mark.parametrize(
+    ("child", "reached"),
+    [
+        ("top=0 height=30", 30),
+        ("top=0 bottom=-20", 12),
+    ],
+)
+def test_an_xref_child_reaches_as_far_as_its_own_box(
+    tmp_path: Path, child: str, reached: float
+) -> None:
+    """A box of its own counts in full; one from the xref, only its line."""
+    printout = built(
+        tmp_path,
+        "    detail {\n"
+        '      xref type="url" target="\'u\'" left=0 width=100 top=0 height=10 {\n'
+        f'        field text="x" left=0 width=60 {child}\n'
+        "      }\n"
+        "      line left=200\n"
+        "    }\n"
+        "    summary height=5 { rectangle top=0 height=5 left=0 width=5 }",
+    )
+    _, rule, after = marks(printout)
+    assert rule.box.height == 10, "the first maximum sees only the xref"
+    assert after.box.y == reached
+
+
+def test_an_xrefs_target_must_be_a_string(tmp_path: Path) -> None:
+    with pytest.raises(BuildError, match="target must be a string"):
+        built(tmp_path, '    detail { xref type="url" target="1" height=5 }')
+
+
+# -- the font table ---------------------------------------------------
+
+
+def test_the_font_table_lists_the_fonts_a_walk_resolved_to(
+    tmp_path: Path,
+) -> None:
+    """`body` is shadowed and `never` never matches, so neither is used."""
+    template = tmp_path / "fonts.kdl"
+    template.write_text(
+        'report name="Fonts" {\n'
+        + "".join(
+            f'  font "{name}" file="{REGULAR}" size={size}\n'
+            for name, size in (("body", 10), ("big", 14), ("boxed", 12), ("never", 9))
+        )
+        + "  layout width=300 height=800 {\n"
+        '    style font="body" color="black"\n'
+        "    detail height=40 {\n"
+        '      style when="False" font="never"\n'
+        '      field text="a" top=0 height=12 { style font="big"; }\n'
+        '      rectangle top=20 height=5 { style font="boxed"; }\n'
+        "    }\n"
+        "  }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    rows = tmp_path / "rows.jsonl"
+    rows.write_text(ONE_ROW, encoding="utf-8")
+    asked = Options(build_time="2026-08-04T09:12:44Z", strict_fonts=True)
+    printout = build(template, rows, asked).printout
+    assert sorted(one.name for one in printout.fonts) == ["big", "boxed"]
 
 
 # -- the frame --------------------------------------------------------
@@ -430,8 +850,6 @@ def test_a_variable_folds_per_record_and_the_summary_reads_the_total(
     [
         ('    detail height=10 { barcode type="Code128" text="1" }', "M10"),
         ('    detail height=10 { image file="x.png" }', "M11"),
-        ('    detail height=10 { xref type="url" target="\'u\'" }', "M13"),
-        ("    detail height=10 { rectangle float=#true top=0 height=1 }", "M7"),
         ('    detail height=10 { eject type="page" }', "M8"),
         ("    columns count=2\n    detail height=10", "M8"),
         ('    group "g" expr="1" { detail height=10 }', "M8"),

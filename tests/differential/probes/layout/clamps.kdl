@@ -1,0 +1,34 @@
+// probes/layout/clamps.kdl -- what `maxwidth` and `maxheight` clamp,
+// and which edge a clamped box keeps.
+//
+// doc/template.md#position-and-size-any-two-of-three says the two
+// clamp a resolved extent and do not count toward the two of three.
+// What it does not say is which end of the axis a clamped box stays
+// against when the far edge was the one written.
+//
+// - `a`: `left` and `right` resolve a width of 280; clamped to 50.
+// - `b`: `right` and `width`: the left edge is derived.
+// - `c`: `right` alone: the fill order gives `left=0`,
+//   so the left edge is the derived-but-filled one.
+// - `d`: a field whose height comes from the band, clamped.
+// - the first rule's height comes from the band, clamped.
+// - the second rule has `bottom` and `height`, its top derived.
+// - `1`..`4` stretch to 48 and are clamped to 30: two lines survive.
+// - the rectangle's declared height is clamped.
+
+report name="layout/clamps" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=300 height=800 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=100 {
+      field text="a" left=10 right=10 maxwidth=50 top=0 height=12
+      field text="b" right=10 width=100 maxwidth=50 top=12 height=12
+      field text="c" right=10 maxwidth=50 top=24 height=12
+      field text="d" left=0 width=50 top=36 bottom=0 maxheight=20
+      line left=100 top=0 maxheight=30
+      line left=110 bottom=0 height=80 maxheight=30
+      field text="1\n2\n3\n4" left=150 top=0 width=50 stretch=#true maxheight=30
+      rectangle left=210 right=10 top=0 height=200 maxheight=50
+    }
+  }
+}

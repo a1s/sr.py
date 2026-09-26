@@ -1,0 +1,17 @@
+// probes/printout/no-fonts.kdl -- a document in which no element prints.
+//
+// doc/printout.md#fonts lists the fonts used, and here none is: the only
+// element is suppressed.  The table is then empty, and doc/ writes it
+// as an empty array, `"fonts":[]`, as it writes an empty `data` as `{}`.
+// The reference writes `"fonts":null`, which is a registered divergence
+// rather than the rule; see divergences.toml, `empty-font-table-is-null`.
+
+report name="printout/no-fonts" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=300 height=800 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=10 {
+      field text="a" left=0 width=100 printwhen="False"
+    }
+  }
+}

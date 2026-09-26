@@ -199,9 +199,10 @@ lists what a command that works does not reach yet -- today a mark that
 lands outside the printable area is not judged an
 [overflow](doc/layout.md#errors), which is the one row of that table
 neither engine checks. Today it builds a single
-page of `field`, `line` and `rectangle` elements and writes it as NDJSON;
-groups, columns, pagination, barcodes, images, subreports and PDF are the
-milestones after this one. The cases the differential corpus cannot yet
+page of `field`, `line`, `rectangle` and `xref` elements, floating ones
+among them, and writes it as NDJSON; groups, columns, pagination,
+deferred values, barcodes, images, subreports and PDF are the milestones
+after this one. The cases the differential corpus cannot yet
 compare are listed, with the milestone each waits for, in
 [tests/differential/pending.toml](tests/differential/pending.toml).
 

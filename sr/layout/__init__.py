@@ -16,9 +16,12 @@ keep-together, measured header reservation and deferred evaluation
 are all consequences of that separation, which is why the separation
 is here before the features that need it.
 
-This milestone is the walking skeleton: one frame that never ejects,
-no groups, no columns, no subreports.  Everything left out raises
-:class:`~sr.errors.Unsupported` naming the milestone that brings it.
+What is here is one frame that never ejects, filled with bands built
+in full: styles, geometry and its clamps, floating elements, `xref`
+containers, and the two maxima a band's height is.  There are no groups,
+no columns and no subreports yet, and no barcodes or images inside a band.
+Everything left out raises :class:`~sr.errors.Unsupported` naming
+the milestone that brings it.
 
 """
 

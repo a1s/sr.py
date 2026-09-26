@@ -1,0 +1,53 @@
+// probes/printout/used-fonts.kdl -- which fonts the header's table lists.
+//
+// doc/printout.md#fonts lists "one entry per distinct font used".
+// The reference reads "used" as: some element that was measured
+// had a style walk that resolved to that font.  So:
+//
+// - `body` is the layout's font but every element here names its own,
+//   so no walk resolves to it and it is left out;
+// - `boxed` is named by a rectangle's own style, which sets no text,
+//   and is listed all the same;
+// - `never` is on a style whose `when` is false, and is left out;
+// - `gone` is on an element that its `printwhen` suppressed,
+//   and on a band that never prints, and is left out;
+// - `foot` is on a footer that prints when it is reserved,
+//   before any record, and not when it is placed; the reservation
+//   measured it, so it is listed.
+//
+// Every one of them is still resolved at load, so a font that cannot
+// be found is refused whether or not it would have been listed.
+
+report name="printout/used-fonts" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  font "big" file="../../../../example/fonts/Go-Regular.ttf" size=14
+  font "boxed" file="../../../../example/fonts/Go-Regular.ttf" size=12
+  font "never" file="../../../../example/fonts/Go-Regular.ttf" size=11
+  font "gone" file="../../../../example/fonts/Go-Regular.ttf" size=9
+  font "foot" file="../../../../example/fonts/Go-Regular.ttf" size=8
+  layout width=300 height=800 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=40 {
+      style when="False" font="never"
+      field text="a" left=0 width=100 top=0 height=12 {
+        style font="big"
+      }
+      rectangle left=0 right=200 top=20 height=5 {
+        style font="boxed"
+      }
+      field text="b" left=0 width=100 top=30 height=10 printwhen="False" {
+        style font="gone"
+      }
+    }
+    title printwhen="False" {
+      field text="t" left=0 width=100 top=0 height=12 {
+        style font="gone"
+      }
+    }
+    footer printwhen="THIS == None" {
+      field text="f" left=0 width=100 top=0 height=12 {
+        style font="foot"
+      }
+    }
+  }
+}

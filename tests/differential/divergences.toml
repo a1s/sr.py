@@ -18,7 +18,8 @@
 # The rest came from building against the oracle: two are defects in
 # the reference, one is a grammar that had been left to the host, one
 # is a clause doc/ was missing, and one -- `time-before-year-one` --
-# is a difference this engine chose and will keep.
+# is a difference this engine chose and will keep.  M7 added a further
+# defect in the reference, `zero-height-float-gap`.
 #
 # The milestone numbers:
 #   M0: Scaffold and oracle
@@ -263,3 +264,42 @@ of the corpus is not.\
 ticket = "M6: warning order, printout.md#header-line; filed against the Go engine"
 since = "2026-09-20"
 affects = ["probe/breaking/codepoints", "probe/breaking/opportunities"]
+
+[[divergence]]
+id = "zero-height-float-gap"
+summary = "a floating element of no height keeps its gap here; the reference drops it"
+reason = """
+doc/layout.md#floating-elements places a floating element at the lowest \
+bottom edge among its predecessors plus its declared gap to the nearest \
+one, and nothing in that depends on the element's own height.  The \
+reference follows it everywhere but one place: when the element's \
+measured height is zero and something precedes it, the gap is dropped \
+and the element sits exactly on the edge above it.  A field declared \
+`height=0` whose text makes it taller keeps its gap there too, so it is \
+the measured height that decides, and a zero-height float with nothing \
+above it keeps its declared top.  That is the pattern of an element \
+counted as its own nearest predecessor: only a box of no height is \
+wholly above itself.  No reading of the text gives the reference's \
+answer, and a rule 2pt under a paragraph that grows should stay 2pt \
+under it, so this engine keeps the gap and the reference is the side \
+that changes.\
+"""
+ticket = "M7: floating elements, layout.md#floating-elements; filed against the Go engine"
+since = "2026-09-26"
+affects = ["probe/layout/float-zero-height"]
+
+[[divergence]]
+id = "empty-font-table-is-null"
+summary = "an empty font table is [] here; the reference writes null"
+reason = """
+doc/printout.md#fonts lists the fonts a document used, and a document in \
+which no element prints uses none.  The table is an array whatever its \
+length, and `data` beside it is written `{}` when it is empty, so this \
+engine writes `"fonts":[]`.  The reference writes `"fonts":null`, which \
+is not an array at all, and is the shape an absent list takes when it is \
+serialized without being made empty first.  A reader that iterates the \
+table fails on it.  The reference is the side that changes.\
+"""
+ticket = "M7: the font table, printout.md#fonts; filed against the Go engine"
+since = "2026-09-26"
+affects = ["probe/printout/no-fonts"]

@@ -45,6 +45,7 @@ from sr.printout.model import (
     Printout,
     Rectangle,
     Text,
+    Xref,
 )
 
 __all__ = [
@@ -358,6 +359,13 @@ def mark_object(mark: Mark) -> dict[str, Any]:
             found["fill"] = mark.fill
         if mark.radius:
             found["radius"] = mark.radius
+        return found
+    if isinstance(mark, Xref):
+        found["type"] = mark.link
+        found["target"] = mark.target
+        if mark.caption is not None:
+            found["caption"] = mark.caption
+        found["marks"] = [mark_object(one) for one in mark.marks]
         return found
     raise TypeError(f"cannot write a {type(mark).__name__} mark")
 

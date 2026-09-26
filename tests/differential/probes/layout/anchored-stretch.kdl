@@ -1,0 +1,38 @@
+// probes/layout/anchored-stretch.kdl -- a stretch field that declared a `bottom`.
+//
+// doc/layout.md#building-a-band makes an element that declared a `bottom`
+// container-dependent whatever its content, and a stretch field is no
+// exception.  What that leaves open is what `stretch` still does there.
+// The reference's answer: the box is the one the band gives, it does not
+// grow, and the text keeps every line and runs past it, placed by
+// `valign` like any content taller than its box -- unless a `maxheight`
+// is set, in which case the lines beyond the box are dropped, as for
+// a field without `stretch`, whether or not the clamp was what made
+// the box short.
+//
+// In Go-Regular at size 10 a line is 12pt, and each field holds five.
+//
+// - `title`: a box of 0 under `valign="bottom"`: the text sits 36 above it.
+// - `detail`: a box of 12 under `valign="center"`: the 60 of text is
+//   centred on it, starting 24 above it.
+// - `summary`: three boxes of 30, 10 and 30.  The first has no clamp and
+//   keeps five lines; the second has a clamp that does not bind and keeps
+//   one; the third is clamped to 20 and keeps one, at its bottom.
+
+report name="layout/anchored-stretch" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=300 height=800 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    title {
+      field text="1\n2\n3" left=0 width=60 top=14 bottom=0 stretch=#true valign="bottom"
+    }
+    detail height=40 {
+      field text="1\n2\n3\n4\n5" left=0 width=30 bottom=2 height=12 stretch=#true valign="center"
+    }
+    summary height=40 {
+      field text="1\n2\n3\n4\n5" left=0 width=40 top=0 bottom=10 stretch=#true
+      field text="1\n2\n3\n4\n5" left=50 width=40 top=0 bottom=30 stretch=#true maxheight=30
+      field text="1\n2\n3\n4\n5" left=100 width=40 top=0 bottom=10 stretch=#true maxheight=20 valign="bottom"
+    }
+  }
+}

@@ -102,10 +102,24 @@ the reference gave, and names the section of `doc/` that answer became.
 | `rounding/tolerance-admits` | the same, where the addition lands exactly |
 | `printout/numbers` | how a number reaches the file |
 | `printout/strings` | how a string reaches the file |
+| `printout/used-fonts` | which fonts the header's table lists |
+| `printout/no-fonts` | the table when no element prints |
 | `layout/band-height` | the two maxima a band's height is |
 | `layout/alignment` | where a field's content sits in its box |
 | `layout/reserved-bands` | what a header and a footer are measured against |
 | `layout/guarded-footer` | a footer whose `printwhen` reserves nothing |
+| `layout/content-height` | which elements have a height of their own |
+| `layout/anchored-stretch` | a stretch field that declared a `bottom` |
+| `layout/rules` | lines, rectangles, and boxes that reach past their band |
+| `layout/clamps` | what `maxwidth` and `maxheight` clamp, and which edge stays |
+| `layout/style-walk` | how far an unset style property falls through |
+| `layout/floats` | the floating DAG, its gaps, and what is not in it |
+| `layout/float-chains` | floating elements below floating elements |
+| `layout/float-order` | which elements precede a floating one |
+| `layout/float-gaps` | what a floating element's gap is measured to |
+| `layout/float-zero-height` | a floating element of no height |
+| `layout/xref` | a link region, measured as a container |
+| `layout/xref-reach` | how far an xref's contents take the band |
 | `data/blob-names` | the name an embedded image gets |
 | `data/blob-collision` | a generated name that is already taken |
 | `data/key-order` | the order of the header's `data` object |
@@ -145,6 +159,12 @@ A thirteenth was added in M6 and covers the two `breaking` probes that
 report more than one missing glyph: the reference has two orders for
 the `warnings` array and uses them both, so it cannot settle the question
 and doc/printout.md does.
+
+M7 added two more, both filed against the reference.
+`layout/float-zero-height` is one: the reference drops the gap
+of a floating element whose height is zero, which no reading of doc/ gives.
+`printout/no-fonts` is the other: where no element prints, the reference
+writes the font table as `null` rather than as an empty array.
 
 Of the rest, every one agrees byte for byte except four: the three
 `data/` probes, which need an image, and `rounding/tolerance-refuses`,

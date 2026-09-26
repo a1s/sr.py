@@ -1,0 +1,36 @@
+// probes/layout/content-height.kdl -- which elements have a height of their own.
+//
+// doc/layout.md#building-a-band leaves a container-dependent element out
+// of the band's first maximum, and makes a `stretch` field the exception:
+// its wrapped text is a content height, so it takes part in the maximum
+// even with no vertical geometry at all.  A rule with no geometry spans
+// the first maximum, which is what makes the difference visible.
+//
+// In Go-Regular at size 10 a line is 12pt.
+//
+// - `title`: a three-line stretch field with no vertical geometry.
+//   The rule spans 36 if the field counts, 0 if it does not.
+// - `detail`: the same with `top=5` and two lines, so 29.
+// - `summary`: a stretch field whose declared height is shorter than
+//   its text grows to it; one whose declared height is taller keeps
+//   its box and draws its line where `valign` puts it.
+
+report name="layout/content-height" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=300 height=800 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    title {
+      field text="one\ntwo\nthree" left=0 width=50 stretch=#true
+      line left=100
+    }
+    detail {
+      field text="one\ntwo" left=0 top=5 width=50 stretch=#true
+      line left=100
+    }
+    summary height=10 {
+      field text="one\ntwo\nthree" left=0 top=0 height=12 width=50 stretch=#true
+      field text="x" left=60 top=0 height=40 width=50 stretch=#true valign="bottom"
+      line left=200
+    }
+  }
+}

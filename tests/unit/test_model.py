@@ -83,13 +83,19 @@ def test_an_axis_given_a_size_starts_at_the_near_edge() -> None:
 
 
 def test_an_axis_given_an_end_starts_at_the_near_edge() -> None:
-    assert span(None, 5.0, None) == Span(0.0, 5.0, None, None)
+    assert span(None, 5.0, None) == Span(0.0, 5.0, None, None, end_written=True)
 
 
 def test_an_axis_given_two_keeps_them() -> None:
-    assert span(10.0, 5.0, None) == Span(10.0, 5.0, None, None)
+    assert span(10.0, 5.0, None) == Span(10.0, 5.0, None, None, end_written=True)
     assert span(10.0, None, 30.0) == Span(10.0, None, 30.0, None)
-    assert span(None, 5.0, 30.0) == Span(None, 5.0, 30.0, None)
+    assert span(None, 5.0, 30.0) == Span(None, 5.0, 30.0, None, end_written=True)
+
+
+def test_a_filled_in_end_is_not_written() -> None:
+    """Container-dependence reads the difference; see doc/layout.md."""
+    assert not span(10.0, None, None).end_written
+    assert span(10.0, 0.0, None).end_written
 
 
 def test_a_clamp_is_not_part_of_the_count() -> None:

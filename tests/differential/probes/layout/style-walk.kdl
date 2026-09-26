@@ -1,0 +1,48 @@
+// probes/layout/style-walk.kdl -- how far "falls through" reaches.
+//
+// doc/layout.md#building-a-band: walk `style` nodes innermost scope first,
+// the first whose `when` is true supplies `font`, `color` and `bgcolor`,
+// and unset properties fall through to the next match in the same walk.
+// The question is whether the next match can be a later node in the
+// *same* scope, or only one in an enclosing scope.
+//
+// - `title` has no style of its own.  The layout's first style sets no
+//   `bgcolor` and its second sets one.  The rectangle is filled red if
+//   a scope yields more than one match, and not filled if it does not.
+// - `detail` has a `when`-false style, then one setting only `bgcolor`:
+//   the colour falls through to the layout, the fill does not.
+//   An element's own style sits in front of the band's.
+// - `summary`: a `when` that reads the record, and an element style
+//   that sets a font, which a text mark then carries.
+
+report name="layout/style-walk" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  font "big" file="../../../../example/fonts/Go-Regular.ttf" size=14
+  layout width=300 height=800 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    style bgcolor="#FF0000" color="#00FF00"
+    title {
+      rectangle left=0 right=200 top=0 height=10
+    }
+    detail {
+      style when="False" color="#00FF00" bgcolor="#00FF00"
+      style bgcolor="#0000FF"
+      rectangle left=0 right=200 top=0 height=10
+      rectangle left=0 right=200 top=10 height=10 {
+        style color="#123456"
+      }
+      field text="x" left=150 top=0 width=50 {
+        style when="n == 1" color="#654321"
+      }
+      rectangle left=0 right=200 top=20 height=10 opaque=#false
+      rectangle left=0 right=200 top=30 height=10 stroke=#false radius=2 dash="dot" width=1
+    }
+    summary {
+      style when="n == 2" font="big"
+      field text="y" left=0 top=0 width=50
+      field text="z" left=60 top=0 width=50 {
+        style font="big"
+      }
+    }
+  }
+}

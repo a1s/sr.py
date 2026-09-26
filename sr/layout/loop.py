@@ -596,6 +596,11 @@ class Builder:
     def printout(self, paper: Paper) -> Printout:
         """Return the finished document.
 
+        The font table holds the fonts that were used rather than every
+        one declared, per doc/printout.md#fonts: a font some measured
+        element's style walk resolved to.  Every declared font was still
+        resolved at load, so an unusable one is refused all the same.
+
         Args:
             paper: The page geometry.
 
@@ -609,7 +614,11 @@ class Builder:
             engine=meta.engine(),
             strict_fonts=self.build.strict_fonts,
             paper=paper,
-            fonts=tuple(font_entry(one) for one in self.build.fonts),
+            fonts=tuple(
+                font_entry(one)
+                for one in self.build.fonts
+                if one.font.name in self.measurer.used
+            ),
             data={},
             pages=tuple(self.pages),
             warnings=(

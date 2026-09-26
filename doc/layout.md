@@ -427,6 +427,10 @@ Given a band template and a context, measurement proceeds:
    scope first: the band's own, then its `columns`, then each enclosing `group`,
    then `layout`. The first whose `when` is true supplies `font`, `color`, and
    `bgcolor`. Unset properties fall through to the next match in the same walk.
+   The walk is one sequence, each scope's nodes in document order, and the
+   next match may be a later node of the same scope: a `layout` whose first
+   `style` sets a `font` and a `color` and whose second sets a `bgcolor`
+   gives a band with no styles of its own all three.
 3. **Resolve the band's geometry** against the frame, per
    [the two-of-three rule](template.md#position-and-size-any-two-of-three).
    An explicit `height` is known here; `height="auto"` is settled at step 6.
@@ -444,6 +448,14 @@ Given a band template and a context, measurement proceeds:
         wrap to the box width by the rule in [Line breaking](#line-breaking).
         With `stretch`, the box height grows to the wrapped text;
         without it, lines beyond the box are dropped at a line boundary.
+        A stretch field that is [container-dependent](#building-a-band)
+        is the exception: its box is the one the band gives it in step 6
+        and does not grow, and its text keeps every line and runs past
+        that box, placed by `valign` like any content taller than its box.
+        A `maxheight` on a stretch field, whether or not the field is
+        container-dependent and whether or not the clamp is what made
+        its box short, drops the lines beyond the box as they are dropped
+        without `stretch`.
       - `image`: decode and sniff the type, then apply `scale`. `cut` draws the
         image at natural size clipped to the box, and the retained region becomes
         the mark's `crop`. `fill` scales the image to the box: with `proportional=#true`
@@ -456,6 +468,24 @@ Given a band template and a context, measurement proceeds:
       - `barcode`: encode, obtaining stripe widths and a minimum symbol size;
         the box grows along the coding direction to at least that minimum.
       - `xref`: recurse — an xref is a container of elements and is measured as one.
+        Its own box comes from its geometry alone and never grows to what it
+        holds. An xref has no content height, so it is container-dependent,
+        and waits for step 6, unless it declares a `height` and no `bottom`.
+        Its children are then built against that box as a band's elements
+        are built against the band, except that the height the
+        container-dependent among them resolve against is the xref's own
+        rather than a maximum they take part in. The xref's `halign` and
+        `valign` move nothing: each child is placed by its own geometry
+        and its own alignment.
+
+        What an xref holds still takes room from the band, in the second
+        maximum of step 6 and not the first. A child whose vertical extent
+        is its own reaches as far as its box, whether or not its mark does;
+        a container-dependent child reaches as far as its mark; a nested
+        xref reaches as far as its own contents do. So a stretch field that
+        runs past its xref pushes the next band down, and so does a field
+        declared taller than the xref that holds it, while a rule beside
+        the xref spans only the xref.
       - A field or barcode with `evaltime` is measured from its placeholder content
         and [registered](#deferred-evaluation).
 5. **Resolve floating elements.** See [below](#floating-elements).
@@ -476,11 +506,11 @@ Given a band template and a context, measurement proceeds:
    - a `barcode`: the symbol's minimum height;
    - an `image` with `scale="grow"`: the bitmap's natural height.
 
-   Those three participate in the maximum even with no vertical geometry given
-   at all, which is why a band of barcodes and stretch fields sizes to them.
-   A non-stretch `field`, a `line`, a `rectangle`, and an image that is
-   not `grow` have no content height, so with a derived `bottom` they are
-   container-dependent.
+   Those three participate in the maximum even with no vertical geometry
+   given at all, which is why a band of barcodes and stretch fields sizes
+   to them. A non-stretch `field`, a `line`, a `rectangle`, an image that
+   is not `grow`, and an `xref` have no content height, so with a derived
+   `bottom` they are container-dependent.
 
    If every element in a band is container-dependent and the band declares
    no height, the height is zero and all of them collapse.
@@ -524,23 +554,62 @@ whatever lies above it, using measured heights rather than declared ones.
 
 Resolution is a partial order, not declaration order:
 
-1. Consider every element whose vertical extent is **its own** and non-negative:
-   either a declared `height`, or a
+1. Consider every element that prints and whose vertical extent
+   is **its own**: either a declared `height`, or a
    [content height](#building-a-band) the element determines itself.
-   An element sized from the band's bottom edge does not participate.
-2. Build the minimal DAG of "wholly above" relations from the **declared** boxes:
-   - a non-floating element precedes a floating element it is wholly above;
-   - a floating element precedes another floating element only when it starts
-     earlier, which settles the case of a zero-height floater.
+   An element sized from the band's bottom edge does not participate,
+   and neither does one its `printwhen` suppressed, since it is not there
+   at all. An element of zero height does participate.
+2. Build the DAG from the **declared** boxes. An element's declared box
+   runs from its `top` down by its declared `height`, or by nothing where
+   it declared none: a stretch field given only a `top` has a declared box
+   of no height at that top. The declared height is the one written, before
+   `maxheight` clamps it.
+   - A non-floating element precedes a floating element it is **wholly
+     above**: its declared bottom edge is no lower than the floating
+     element's declared top.
+   - A floating element precedes another floating element when it
+     **starts earlier**: its declared top is strictly higher. That is the
+     whole test between two floating elements, so one precedes another
+     whose declared box it overlaps, and two that start level precede
+     neither way, which settles the case of a zero-height floater.
 
-   Minimal means: if C is above both A and B, and B is above A, C depends on B
-   only. Transitivity supplies the rest.
+   Only the vertical axis is read. An element at the far side of the band
+   is above one at the near side all the same.
 3. Walk the DAG in topological order, assigning each floating element
-   `top = max(bottom edges of its predecessors) + gap`, where `gap` is that
-   element's declared distance to the nearest predecessor.
+   `top = max(bottom edges of its predecessors) + gap`. The bottom edges
+   are the predecessors' as they now stand, floated, grown and clamped.
+   `gap` is the element's declared distance to the **nearest element
+   wholly above it** -- the one whose declared bottom is lowest -- among
+   those step 1 considers. Where none is, it is the distance to the band's
+   top edge, or to the highest declared top among those elements where one
+   starts above that edge. A floating element with no predecessor at all
+   keeps its declared top.
 
-Zero-height elements are skipped, so a suppressed field does not push its
-followers down.
+The gap is measured to what is wholly above because a distance to an element
+the box overlaps is not a distance. Where only an overlapping floating
+element precedes, the gap is therefore measured from the band's top edge
+and added below that element, which moves the follower a long way down:
+a template that overlaps two floating boxes is usually one to fix.
+
+The element the gap is measured to need not precede. The one case where
+it does not is a floating element with no declared height that starts level
+with this one: its declared box is wholly above, at a distance of nothing,
+but it does not start earlier. The gap is then zero, and the element sits
+directly on its predecessors.
+
+Both sides of the gap are declared, and what it is added to is not:
+under a `maxheight`, the gap below an element keeps the distance from
+its declared bottom and is added to its clamped one.
+
+Nothing in the rule depends on the floating element's own height. A rule
+of zero height floated 2 pt under a paragraph stays 2 pt under it when
+the paragraph grows.
+
+A suppressed element is not there to precede anything, so it does not push
+its followers down, and their gaps are measured past it to whatever is above.
+A non-floating element of zero height, such as a rule, is there, and a gap
+below it is measured from it.
 
 ### What a floating element may be
 

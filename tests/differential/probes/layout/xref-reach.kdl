@@ -1,0 +1,46 @@
+// probes/layout/xref-reach.kdl -- how far an xref's contents take the band.
+//
+// An xref's box never grows (see xref), but what is inside it can still
+// make the band taller, and doc/layout.md#building-a-band has to say how.
+// The reference measures an xref as one: each child whose vertical extent
+// is its own reaches as far as its box, whether or not its mark does,
+// while a child sized from the xref reaches only as far as its mark.
+// Neither reaches the band's first maximum, which a rule beside
+// the xref shows.
+//
+// In Go-Regular at size 10 a line is 12pt.
+//
+// - `title`: a child field declared 30 high holding one line.  The rule
+//   beside the xref spans the xref's 10, and the next band starts at 30.
+// - `detail`: a child field whose box comes from the xref and reaches
+//   20 below it.  The band ends at its line, 12, not at its box.
+// - `summary`: the same as `title` one xref further in:
+//   the inner xref's field is 40 high, and the band is 40.
+
+report name="layout/xref-reach" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=300 height=800 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    title {
+      xref type="url" target="'u'" left=0 width=100 top=0 height=10 {
+        field text="x" left=0 width=60 top=0 height=30
+      }
+      line left=200
+    }
+    detail {
+      xref type="url" target="'u'" left=0 width=100 top=0 height=10 {
+        field text="x" left=0 width=60 top=0 bottom=-20
+      }
+    }
+    summary {
+      xref type="url" target="'u'" left=0 width=100 top=0 height=10 {
+        xref type="url" target="'v'" left=0 width=50 top=0 height=5 {
+          field text="y" top=0 height=40
+        }
+      }
+    }
+    footer {
+      field expr="VERTICAL_POSITION" format="%.3f" left=0 top=0 width=100 height=12
+    }
+  }
+}

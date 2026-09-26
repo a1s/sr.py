@@ -18,9 +18,9 @@ Three rules of the format are visible in the shapes here.
   since that is when the destination is known.  :attr:`FontEntry.step`
   is what the writer reads to decide, per doc/printout.md#paths.
 
-The kinds this milestone produces are :class:`Text`, :class:`Line`
-and :class:`Rectangle`.  Images, barcodes, outline entries and
-cross references arrive with the elements that make them.
+The kinds produced so far are :class:`Text`, :class:`Line`,
+:class:`Rectangle` and :class:`Xref`.  Images, barcodes and outline
+entries arrive with the elements that make them.
 
 """
 
@@ -30,6 +30,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from sr.errors import BuildWarning
+from sr.units import round_points
 
 __all__ = [
     "VERSION",
@@ -43,6 +44,7 @@ __all__ = [
     "Rectangle",
     "Report",
     "Text",
+    "Xref",
 ]
 
 # The format version the `sr` field carries.
@@ -82,12 +84,20 @@ class Box:
         which is what makes splitting and splicing translations of
         already-built marks rather than re-measurements.
 
+        A translated corner is a computed coordinate like any other,
+        so doc/layout.md#coordinates-and-rounding rounds it at once.
+
         Args:
             across: What to add to ``x``.
             down: What to add to ``y``.
 
         """
-        return Box(self.x + across, self.y + down, self.width, self.height)
+        return Box(
+            round_points(self.x + across),
+            round_points(self.y + down),
+            self.width,
+            self.height,
+        )
 
 
 @dataclass(frozen=True)
@@ -183,6 +193,43 @@ class Rectangle(Mark):
     stroke: str | None
     fill: str | None
     radius: float
+
+
+@dataclass(frozen=True)
+class Xref(Mark):
+    """A link region, and the marks drawn inside it.
+
+    The box is purely a hit region.  doc/printout.md#xref puts the nested
+    marks in **page** coordinates rather than relative to that box,
+    so a renderer can flatten them recursively and draw in one pass,
+    which is why translating an xref translates everything inside it.
+
+    Attributes:
+        link: ``url`` or ``outline``, which the printout calls `type`.
+        target: The URL, or the `name` of the outline entry it points at.
+        caption: The hover text, where one was given.
+        marks: What is drawn inside it, in paint order.
+
+    """
+
+    link: str
+    target: str
+    caption: str | None
+    marks: tuple[Mark, ...]
+
+    def moved(self, across: float, down: float) -> Mark:
+        """Return this link region translated, with everything in it.
+
+        Args:
+            across: What to add to every ``x``.
+            down: What to add to every ``y``.
+
+        """
+        return replace(
+            self,
+            box=self.box.moved(across, down),
+            marks=tuple(one.moved(across, down) for one in self.marks),
+        )
 
 
 @dataclass(frozen=True)
