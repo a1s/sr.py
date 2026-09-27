@@ -89,7 +89,8 @@ class Build:
         strict_fonts: Whether font guessing was disabled.
         allow_overflow: Whether an oversized band is a warning
             rather than an error.
-        warnings: What loading and resolving had to say.
+        warnings: What loading had to say.  What resolving each font
+            had to say stays on its resolution in ``fonts``.
 
     """
 
@@ -596,10 +597,20 @@ class Builder:
     def printout(self, paper: Paper) -> Printout:
         """Return the finished document.
 
+        The font table holds the fonts that were used rather than every
+        one declared, per doc/printout.md#fonts: a font some measured
+        element's style walk resolved to.  Every declared font was still
+        resolved at load, so an unusable one is refused all the same.
+        What resolving a font had to say is carried only for a font the
+        table lists, so no warning names a font the document does not have.
+
         Args:
             paper: The page geometry.
 
         """
+        used = tuple(
+            one for one in self.build.fonts if one.font.name in self.measurer.used
+        )
         report = self.build.report
         return Printout(
             report=ReportMeta(
@@ -609,11 +620,12 @@ class Builder:
             engine=meta.engine(),
             strict_fonts=self.build.strict_fonts,
             paper=paper,
-            fonts=tuple(font_entry(one) for one in self.build.fonts),
+            fonts=tuple(font_entry(one) for one in used),
             data={},
             pages=tuple(self.pages),
             warnings=(
                 tuple(self.build.warnings)
+                + tuple(warning for one in used for warning in one.warnings)
                 + tuple(self.measurer.warnings)
                 + tuple(self.warnings)
             ),

@@ -14,7 +14,7 @@ For a probe named `NAME`:
 |---|---|
 | `NAME.kdl` | The template. Required — it is what makes the probe a case. |
 | `NAME.jsonl` | Its records. Optional; see below. |
-| `NAME.args` | Parameters and extra flags. Optional. |
+| `NAME.args` | Parameters, extra flags, and harness directives. Optional. |
 | `NAME.answer.jsonl` | The reference's printout, committed. Generated, not written. |
 | `NAME.inc.kdl` | A template another probe pulls in. Not built on its own. |
 
@@ -52,8 +52,10 @@ identifier appears in the test id, in a failure report, and in the
 divergence register's patterns, so it is renamed only deliberately.
 
 `NAME.args` holds one argument per line. A line starting with `-` is passed
-to the engine as written; any other line is a `NAME=VALUE` parameter. Blank
-lines and lines starting with `#` are ignored.
+to the engine as written; a line starting with `!` is a directive to the
+harness rather than an argument; any other line is a `NAME=VALUE` parameter.
+Blank lines and lines starting with `#` are ignored. There is one directive,
+`!host-fonts`, below, and any other is refused rather than ignored.
 
 ```
 # probes/breaking/overflow.args
@@ -79,6 +81,27 @@ An image in `example/` works too, and `example/fonts/` is where a probe's
 fonts come from, but prefer these: a fixture that exists to be a fixture
 can be changed when a probe needs it to be.
 
+### Fonts from the host
+
+A question about the [substitute face](../../../doc/template.md#the-substitute-face)
+cannot be asked that way, since `--strict-fonts` refuses a `typeface` outright.
+A probe whose sidecar holds `!host-fonts` is built without it, by both engines,
+and resolves its fonts against the machine it runs on. Keep such a probe
+to that question: everything else belongs in a strict one.
+
+What the host chose is then in the printout, and it is the machine's rather
+than the build's. The two engines run on one machine and are compared as
+they are, but the recorded answer is not allowed to depend on it: the
+substitute face's name is written `<substitute>` in the header, wherever
+it appears there, and a `resolvedIndex` is taken out, since one platform's
+substitute is a collection and the others' are not. `resolvedFile` is replaced
+as for every probe. The layout does not move with the face, because leading
+is a multiple of the font size, as long as the probe's text is too short to
+wrap; a probe that let a line wrap would record one machine's metrics.
+
+Every platform doc/ names ships a substitute face. A host without one fails
+the build in both engines, and the probe with it.
+
 ## What is here
 
 Each probe's own header comment states the question it isolates and the answer
@@ -102,10 +125,25 @@ the reference gave, and names the section of `doc/` that answer became.
 | `rounding/tolerance-admits` | the same, where the addition lands exactly |
 | `printout/numbers` | how a number reaches the file |
 | `printout/strings` | how a string reaches the file |
+| `printout/used-fonts` | which fonts the header's table lists |
+| `printout/no-fonts` | the table when no element prints |
+| `printout/font-warning` | the warning a substituted typeface gives |
 | `layout/band-height` | the two maxima a band's height is |
 | `layout/alignment` | where a field's content sits in its box |
 | `layout/reserved-bands` | what a header and a footer are measured against |
 | `layout/guarded-footer` | a footer whose `printwhen` reserves nothing |
+| `layout/content-height` | which elements have a height of their own |
+| `layout/anchored-stretch` | a stretch field that declared a `bottom` |
+| `layout/rules` | lines, rectangles, and boxes that reach past their band |
+| `layout/clamps` | what `maxwidth` and `maxheight` clamp, and which edge stays |
+| `layout/style-walk` | how far an unset style property falls through |
+| `layout/floats` | the floating DAG, its gaps, and what is not in it |
+| `layout/float-chains` | floating elements below floating elements |
+| `layout/float-order` | which elements precede a floating one |
+| `layout/float-gaps` | what a floating element's gap is measured to |
+| `layout/float-zero-height` | a floating element of no height |
+| `layout/xref` | a link region, measured as a container |
+| `layout/xref-reach` | how far an xref's contents take the band |
 | `data/blob-names` | the name an embedded image gets |
 | `data/blob-collision` | a generated name that is already taken |
 | `data/key-order` | the order of the header's `data` object |
@@ -128,6 +166,7 @@ the reference gave, and names the section of `doc/` that answer became.
 | `values/pagesize-envelope` | the same, under `landscape` |
 | `values/pagesize-card` | the same, for the entry whose round unit is not its own |
 | `values/unknown-names` | a node and a property the format does not define |
+| `values/negative-size` | a `height` below zero |
 
 Twelve are [registered divergences](../divergences.toml) and are *expected*
 to differ: the nine in the `expressions/` and `data/` groups, where the
@@ -145,6 +184,20 @@ A thirteenth was added in M6 and covers the two `breaking` probes that
 report more than one missing glyph: the reference has two orders for
 the `warnings` array and uses them both, so it cannot settle the question
 and doc/printout.md does.
+
+M7 added three more.
+`layout/float-zero-height` is one: the reference drops the gap of a
+floating element whose height is zero, which no reading of doc/ gives.
+`printout/no-fonts` is the other: where no element prints, the reference
+writes the font table as `null` rather than as an empty array.
+Both of those are filed against the reference. The third,
+`values/negative-size`, is a decision: doc/ now refuses a negative size,
+and the reference still builds one.
+
+`printout/font-warning` is older than any of them and was registered last.
+The reference leaves `node` out of a `font` warning, which doc/ requires,
+and has since M5; no probe could see it until `!host-fonts` let one reach
+the substitute face.
 
 Of the rest, every one agrees byte for byte except four: the three
 `data/` probes, which need an image, and `rounding/tolerance-refuses`,

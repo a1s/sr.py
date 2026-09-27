@@ -1,0 +1,50 @@
+// probes/layout/floats.kdl -- the floating DAG.
+//
+// doc/layout.md#floating-elements builds a DAG of "wholly above"
+// from the declared boxes and walks it, giving each floating
+// element `top = max(bottom edges of its predecessors) + gap`.
+//
+// In Go-Regular at size 10 a line is 12pt; the first field in each band
+// is a stretch field whose declared box is 0..12 and whose text is taller.
+//
+// - `title`: B floats below A with a declared gap of 2, and C below B
+//   with a gap of 4.  D does not float and stays put.  E floats and
+//   is wholly below A vertically but nowhere near it horizontally,
+//   which asks whether "wholly above" looks at the horizontal axis.
+//   The rule with no geometry spans whatever the floats settled.
+// - `detail`: F is below two stretch fields at different declared
+//   distances, which asks what "the nearest predecessor" is.
+// - `summary`: S is suppressed and so is not there to push T, while
+//   a rule of zero height that does not float is still there: T's gap
+//   is measured from it, 16 rather than the 18 to the field above.
+//
+// Floats of zero height are in float-zero-height, since the reference
+// places them differently from what doc/ says; see divergences.toml.
+
+report name="layout/floats" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=300 height=800 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    title {
+      field text="1\n2\n3" left=0 top=0 height=12 width=40 stretch=#true
+      field text="B" left=0 top=14 height=12 width=40 float=#true
+      field text="C" left=0 top=30 height=12 width=40 float=#true
+      field text="D" left=50 top=14 height=12 width=40
+      field text="E" left=200 top=14 height=12 width=40 float=#true
+      line left=290
+    }
+    detail {
+      field text="1\n2\n3\n4" left=0 top=0 height=12 width=40 stretch=#true
+      field text="1\n2" left=50 top=0 height=20 width=40 stretch=#true
+      field text="F" left=0 top=30 height=12 width=40 float=#true
+      line left=290
+    }
+    summary {
+      field text="1\n2\n3" left=0 top=0 height=12 width=40 stretch=#true
+      field text="S" left=0 top=14 height=12 width=40 float=#true printwhen="False"
+      line left=100 right=100 top=14 height=0
+      field text="T" left=0 top=30 height=12 width=40 float=#true
+      line left=290
+    }
+  }
+}

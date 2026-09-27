@@ -1,0 +1,3 @@
+# A typeface that is nowhere, so resolution reaches the substitute face,
+# which --strict-fonts would refuse.
+!host-fonts

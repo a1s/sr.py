@@ -1,0 +1,41 @@
+// probes/layout/rules.kdl -- lines and rectangles,
+// and boxes that reach past their band.
+//
+// - `header`: a rule with a declared top and nothing below it.
+// - `title`: a backslanted line spanning the band from its
+//   declared height, dashes, a rectangle with a radius.
+// - `detail`: a rectangle with a negative `bottom` reaches below
+//   the band, and a field with a negative `top` starts above it.
+//   Whether either moves the band's height is the second maximum
+//   of doc/layout.md#the-bands-height-is-settled-twice.
+// - `summary`: every element suppressed, and a declared height,
+//   so the band is that height and draws nothing.
+// - `footer` prints how far the content reached: 1 + 20 + 25 + 7 = 53,
+//   which is 48 if the rectangle's overhang did not grow the detail.
+
+report name="layout/rules" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=300 height=800 leftmargin=0 rightmargin=0 topmargin=100 bottommargin=0 {
+    style font="body" color="black"
+    header {
+      line left=0 right=0 top=1 height=0
+    }
+    title height=20 {
+      line left=0 right=200 backslant=#true width=0.5
+      line left=110 right=100 top=5 height=0 dash="dash"
+      line left=110 right=100 top=10 height=0 dash="dashdot"
+      rectangle left=220 right=10 top=0 height=15 radius=3 width=2
+    }
+    detail height=20 {
+      rectangle left=0 right=200 top=0 bottom=-5
+      field text="up" left=110 top=-5 width=50
+    }
+    summary height=7 {
+      field text="gone" printwhen="False"
+      line printwhen="False"
+    }
+    footer {
+      field expr="VERTICAL_POSITION" format="%.3f" left=0 top=0 width=100 height=12
+    }
+  }
+}

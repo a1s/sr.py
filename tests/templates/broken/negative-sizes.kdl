@@ -1,0 +1,23 @@
+// broken/negative-sizes.kdl -- a size below zero, on every node that has one.
+//
+// expect: width must not be negative; a negative right is what reaches past the container
+// expect: height must not be negative; a negative bottom is what reaches past the container
+// expect: maxwidth must not be negative
+// expect: maxheight must not be negative
+// expect: a stroke width must not be negative
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=-4 {
+      field text="a" left=0 width=-10 top=0 height=-5
+      field text="b" maxwidth=-1 maxheight=-2
+      xref type="url" target="'u'" height=-3 {
+        line left=0 width=-1
+      }
+      // Accepted: a negative offset reaches past the container.
+      rectangle left=0 right=-5 top=0 bottom=-5
+    }
+  }
+}

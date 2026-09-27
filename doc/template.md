@@ -381,11 +381,18 @@ Missing values are filled in a fixed order — `left` then `right`, `top` then
 
 Vertically the same, with `top`/`bottom`/`height`.
 
-A negative `right` or `bottom` means the box extends past the container edge,
-and is legal — for a container in the middle of the page that is perfectly ordinary.
-A mark that ends up outside the *page's* printable area is an
-[overflow](layout.md#errors), judged on the final page coordinates
-rather than on the declaration.
+A size is never negative: a negative `width`, `height`, `maxwidth`,
+or `maxheight` is a [validation](#validation) error, as is a negative
+`height` on a section and a negative stroke `width` on a `line` or
+a `rectangle`. An extent below zero describes no box, and what a
+negative size might have been meant to do, reach past the container,
+is what an offset is for.
+
+A negative `right` or `bottom` means the box extends past the container
+edge, and is legal -- for a container in the middle of the page that is
+perfectly ordinary.  A mark that ends up outside the *page's* printable
+area is an [overflow](layout.md#errors), judged on the final page
+coordinates rather than on the declaration.
 
 `x` and `y` are accepted as aliases for `left` and `top`.
 
@@ -396,12 +403,23 @@ of the two-of-three count:
 field left=10 right=10 maxwidth=50
 ```
 
+A clamped box keeps its `left` or `top` edge, and gives way at the other end.
+The exception is a box whose `left` or `top` the two-of-three rule *derived*,
+from a `right` or `bottom` and a size: that box stays against the far edge
+it was declared from and gives way at the near one. A value the fill order
+supplied counts as given rather than derived, so `right=10 maxwidth=50`,
+which the table resolves as `left=0 right=10`, is 50 wide at the left edge,
+while `right=10 width=100 maxwidth=50` is 50 wide ending 10 from the right.
+
 `maxheight` clamps a declared height and a height derived from the band alike.
 On a `field` it clamps a stretched one too, and the lines beyond the clamped box
 are dropped at a line boundary, exactly as they are for a field without
-`stretch`. It does not clamp a `barcode`, whose box extent along the coding
-direction is fixed by its stripe count and module, nor a `grow` image, which is
-drawn at natural size: shrinking either box would describe a mark that is not
+`stretch`. That holds for a stretch field sized from the band as well,
+even where the band gave it less room than the clamp would have: a
+`maxheight` is what says a stretched field may be cut. It does not
+clamp a `barcode`, whose box extent along the coding direction is fixed
+by its stripe count and module, nor a `grow` image, which is drawn at
+natural size: shrinking either box would describe a mark that is not
 what gets drawn.
 
 ### Section height
@@ -431,6 +449,12 @@ The defaults are `halign="left"` and `valign="top"`.
 
 For an `image` the content is the bitmap and for a `barcode` the symbol,
 so `halign` and `valign` position it inside the resolved box.
+
+An `xref` accepts both and they position nothing. What it holds is elements,
+each placed by its own geometry inside the xref's box and aligned by its own
+`halign` and `valign`, and there is no one natural size of theirs to move.
+A run of content at one end of an xref is put there by the child's geometry:
+`right=0 width="3cm"`, or no geometry and `align="right"` on a field.
 
 A `field` is the case where the two properties meet. Its text mark carries
 the **resolved box**, not a box shrunk to the widest line — that is what
@@ -475,7 +499,15 @@ A floating element's height must come from the element: a declared `height`, or
 content, which includes `stretch=#true` on a `field`. It cannot come from the
 container, since a floating element's own top is not settled until the other
 elements have been placed. In practice that rules out giving a floating element
-`bottom` and nothing else.
+`bottom` and nothing else. A floating element with neither a declared `height`
+nor a content height is a [validation](#validation) error.
+
+A floating element that declares a `bottom` is accepted whenever it has a
+height of its own, whether that is a declared `height` or a content height:
+`field bottom=0 height=12 float=#true` and `field top=3 bottom=0 stretch=#true
+float=#true` both load. Declaring a `bottom` anchors an element to the band's
+bottom edge, so neither floats; `float=#true` has no effect on them.
+See [layout.md](layout.md#what-a-floating-element-may-be).
 
 ## Ordering rules
 
@@ -483,10 +515,13 @@ Node order is significant in three places. Reordering siblings changes output.
 
 1. **Body elements paint in document order.** Later elements draw on top of
    earlier ones. A filled `rectangle` must precede the fields that sit on it.
-2. **`style` matches first-win.** Each section's `style` nodes are tested in
-   document order and the first whose `when` is true supplies the formatting.
-   Search continues outward: the section's own styles, then `columns`, then
-   each enclosing `group`, then `layout`.
+2. **`style` matches first-win, property by property.** The walk starts at
+   the element's own `style` nodes and continues outward: the section's own,
+   then `columns`, then each enclosing `group`, then `layout`, each scope's
+   nodes in document order. The first node whose `when` is true supplies
+   `font`, `color`, and `bgcolor`, and a property it leaves unset comes
+   from the next node whose `when` is true, which may be a later node
+   of the same scope. See [layout.md](layout.md#building-a-band).
 3. **`eject` selects first-win**, in document order: the first node whose
    `when` is true is selected and stops the search, even if its `require`
    then declines to eject. See [`eject`](#eject).
@@ -1068,6 +1103,9 @@ See [layout.md](layout.md#deferred-evaluation).
 
 `stretch=#true` grows the box's height to fit wrapped text.
 Without it, text that does not fit is truncated at a line boundary.
+A stretch field that declares a `bottom` takes its height from the
+band instead, and its text runs past that box rather than being cut;
+see [layout.md](layout.md#building-a-band).
 
 ### `line`
 
@@ -1313,11 +1351,16 @@ Plus geometry and body-element children (`field`, `line`, `rectangle`, `image`,
 
 `type="url"` links to the expression's string result.
 `type="outline"` links to an `outline` whose `name` matches.
+`target` and `caption` must each evaluate to a string;
+anything else is an error rather than a value converted to text.
 
-An `xref`'s box follows the ordinary [geometry](#geometry) rules, the same as
-a body element's: it is a container for the elements inside it, and with nothing
-specified it fills its section. Use `halign` to put a narrower run of content at
-one end of it.
+An `xref`'s box follows the ordinary [geometry](#geometry) rules,
+the same as a body element's: it is a container for the elements
+inside it, and with nothing specified it fills its section.
+It does not grow to what it holds, and its own `halign` and `valign`
+move nothing; see [alignment](#alignment). To put a narrower run
+of content at one end of it, give the child the geometry that puts it there.
+How an xref is measured is in [layout.md](layout.md#building-a-band).
 
 ### `outline`
 
@@ -1748,6 +1791,11 @@ Validation runs once, at load, before any data is read. It checks:
 - Every name used as `FINAL.`*name* is a predefined variable or a declared
   `variable`. Parameters and bare record fields are not in `FINAL`.
 - Every `xref type="outline"` has a reachable target `outline name=`.
+- No `width`, `height`, `maxwidth`, or `maxheight` is negative, on an element,
+  an `xref`, or a section, and no stroke `width` on a `line` or a `rectangle`.
+  A negative `right` or `bottom` is legal; see [geometry](#geometry).
+- Every floating element has a declared `height` or a content height:
+  `stretch=#true` on a `field`, any `barcode`, or `scale="grow"` on an `image`.
 - Per axis, at most two of `left`/`right`/`width` and at most two of
   `top`/`bottom`/`height`.
 - [Content sources](#content-sources) are consistent: on a `field` or `barcode`

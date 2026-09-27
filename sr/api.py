@@ -127,9 +127,9 @@ def build(
         report, blobs, strict=asked.strict_fonts, verbose=asked.verbose
     )
     records = read_records(data, report.records) if data is not None else ()
+    # A font's own warnings stay on its resolution: the builder carries
+    # them only for the fonts the document turns out to use.
     warnings = tuple(carried(one) for one in loaded.warnings if one.kind is not None)
-    for resolution in fonts:
-        warnings += resolution.warnings
     builder = Builder(
         Build(
             report=report,

@@ -32,7 +32,13 @@ BUILD_TIME = "2026-08-04T09:12:44Z"
 
 # Every case builds strictly: only fonts the template names by path resolve,
 # so the output does not depend on what is installed on the machine.
-COMMON_FLAGS: tuple[str, ...] = ("--build-time", BUILD_TIME, "--strict-fonts")
+# A probe whose sidecar says `!host-fonts` is the one exception,
+# and builds without STRICT_FONTS; see read_sidecar.
+STRICT_FONTS = "--strict-fonts"
+COMMON_FLAGS: tuple[str, ...] = ("--build-time", BUILD_TIME, STRICT_FONTS)
+
+# The harness directive that lets a probe resolve fonts on the host.
+HOST_FONTS = "!host-fonts"
 
 # The extension for each printout encoding, per doc/cli.md.
 SUFFIXES = {"jsonl": ".srp.jsonl", "cbor": ".srp.cbor"}
@@ -79,6 +85,11 @@ class Case:
         params: ``--param`` values, in the order the command line takes them.
         flags: Further engine flags, appended after the common ones.
         encoding: The printout encoding to compare; a key of SUFFIXES.
+        host_fonts: Whether to build without ``--strict-fonts``, so that
+            a `typeface` resolves against the host, and the substitute
+            face with it.  What the host chose is then part of the
+            printout, which :func:`~tests.differential.answers.distil`
+            takes out of the recorded answer.
 
     """
 
@@ -88,6 +99,7 @@ class Case:
     params: tuple[str, ...] = ()
     flags: tuple[str, ...] = ()
     encoding: str = "jsonl"
+    host_fonts: bool = False
 
     def __post_init__(self) -> None:
         """Reject an encoding no extension names."""
@@ -115,7 +127,12 @@ class Case:
         arguments += ["--out", str(out)]
         for value in self.params:
             arguments += ["--param", value]
-        return arguments + list(COMMON_FLAGS) + list(self.flags)
+        common = [
+            flag
+            for flag in COMMON_FLAGS
+            if not (self.host_fonts and flag == STRICT_FONTS)
+        ]
+        return arguments + common + list(self.flags)
 
     def missing_inputs(self) -> list[Path]:
         """Return the case's input files that are not on disk."""
@@ -176,26 +193,46 @@ class Sidecar:
 
     params: tuple[str, ...] = ()
     flags: tuple[str, ...] = ()
+    host_fonts: bool = False
 
 
 def read_sidecar(path: Path) -> Sidecar:
     """Read a probe's ``.args`` file.
 
     One argument per line.  A line starting with ``-`` is passed through
-    as written; any other line is a ``NAME=VALUE`` parameter.
+    as written; a line starting with ``!`` is a directive to the harness
+    rather than an argument; any other line is a ``NAME=VALUE`` parameter.
     Blank lines and lines starting with ``#`` are ignored.
+
+    The one directive is ``!host-fonts``, which drops ``--strict-fonts``
+    so that a `typeface` can reach the host's substitute face.  A flag
+    cannot say that, because the engines have no flag that undoes another.
+
+    Raises:
+        ValueError: A directive the harness does not know, which is refused
+            rather than ignored: a probe built other than as its author
+            asked answers some other question.
 
     """
     params: list[str] = []
     flags: list[str] = []
+    host_fonts = False
     if not path.is_file():
         return Sidecar()
     for line in path.read_text(encoding="utf-8").splitlines():
         argument = line.strip()
         if not argument or argument.startswith("#"):
             continue
+        if argument.startswith("!"):
+            if argument != HOST_FONTS:
+                raise ValueError(
+                    f"{path.name}: unknown harness directive {argument!r};"
+                    f" the one there is is {HOST_FONTS!r}"
+                )
+            host_fonts = True
+            continue
         (flags if argument.startswith("-") else params).append(argument)
-    return Sidecar(tuple(params), tuple(flags))
+    return Sidecar(tuple(params), tuple(flags), host_fonts)
 
 
 def probe_cases(directory: Path = PROBE_DIR) -> list[Case]:
@@ -234,6 +271,7 @@ def probe_cases(directory: Path = PROBE_DIR) -> list[Case]:
                 data=within_root(data) if data.is_file() else None,
                 params=sidecar.params,
                 flags=sidecar.flags,
+                host_fonts=sidecar.host_fonts,
             )
         )
     return cases

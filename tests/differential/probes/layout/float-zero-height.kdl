@@ -1,0 +1,46 @@
+// probes/layout/float-zero-height.kdl -- a floating element of no height.
+//
+// doc/layout.md#floating-elements gives a floating element
+// `top = max(bottom edges of its predecessors) + gap`, with
+// the gap its declared distance to the nearest predecessor,
+// and nothing there depends on the element's own height.
+//
+// The reference agrees except when the element's measured height is zero
+// and it has a predecessor: then it drops the gap and sits exactly on the
+// lowest bottom edge above it.  That is a registered divergence rather
+// than the rule; see divergences.toml, `zero-height-float-gap`.
+//
+// In Go-Regular at size 10 a line is 12pt.
+//
+// - `title`: a rule of no height floats 2pt below a field that grows
+//   from 12 to 36.  doc/ puts it at 38; the reference at 36.
+// - `detail`: the same with a rectangle, and a second rectangle 5pt
+//   below the first, whose own gap is kept on both sides.
+// - `summary`: a field declared `height=0`, whose box has no height
+//   although its text does.  Its gap goes the same way.
+// - `header`: a rule of no height with nothing above it keeps its
+//   declared top on both sides.
+
+report name="layout/float-zero-height" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=300 height=800 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    title {
+      field text="1\n2\n3" left=0 top=0 height=12 width=40 stretch=#true
+      line left=100 right=100 top=14 height=0 float=#true
+    }
+    detail {
+      field text="1\n2\n3" left=0 top=0 height=12 width=40 stretch=#true
+      rectangle left=100 right=100 top=20 height=0 float=#true
+      rectangle left=100 right=100 top=25 height=1 float=#true
+    }
+    summary {
+      field text="1\n2\n3" left=0 top=0 height=12 width=40 stretch=#true
+      field text="N" left=0 top=20 height=0 width=40 float=#true
+    }
+    header {
+      line left=100 right=100 top=20 height=0 float=#true
+      field text="Z" left=0 top=30 height=12 width=40
+    }
+  }
+}

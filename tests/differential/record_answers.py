@@ -46,7 +46,7 @@ def main() -> int:
                 refused += 1
                 continue
             destination.write_text(
-                distil(build.printout.decode("utf-8")),
+                distil(build.printout.decode("utf-8"), case.host_fonts),
                 encoding="utf-8",
                 newline="\n",
             )

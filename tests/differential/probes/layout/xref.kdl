@@ -1,0 +1,51 @@
+// probes/layout/xref.kdl -- a link region, measured as a container.
+//
+// doc/layout.md#building-a-band: "an xref is a container of elements
+// and is measured as one", and doc/template.md#xref gives it ordinary
+// geometry, filling its section when nothing is given, with `halign`
+// putting "a narrower run of content at one end of it".
+//
+// - `title`: a sized xref.  Its field is placed relative to it,
+//   and a rule inside with no geometry spans it.
+// - `detail`: an xref with no geometry around a three-line stretch
+//   field, and a rule beside it: whether the xref's height is its
+//   contents', and whether that counts toward the band's.
+// - `summary`: `halign="right"` and `valign="bottom"` on an xref wider
+//   than its one field.  The reference moves nothing: the field sits
+//   where its own geometry puts it, at the xref's left and top.
+// - `header`: an xref 10pt tall around a stretch field that is 36.
+//   The xref keeps its box; a rule inside it spans the 10, not the 36;
+//   a float inside it floats below the field; and the band is as tall
+//   as the float's bottom edge, since the marks inside an xref reach
+//   the band's second maximum.
+
+report name="layout/xref" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=300 height=800 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    title {
+      xref type="url" target="'https://example.com/a'" caption="'A'" left=10 top=5 width=200 height=30 {
+        field text="inside" left=5 top=5 width=50
+        line left=100
+      }
+    }
+    detail {
+      xref type="url" target="'https://example.com/b'" {
+        field text="1\n2\n3" left=0 width=50 stretch=#true
+      }
+      line left=100
+    }
+    summary {
+      xref type="url" target="'https://example.com/c'" right=0 width=200 height=20 halign="right" valign="bottom" {
+        field text="end" width=50 align="right"
+      }
+    }
+    header {
+      xref type="url" target="'https://example.com/d'" left=0 top=0 width=200 height=10 {
+        field text="1\n2\n3" left=0 width=50 stretch=#true
+        line left=100
+        field text="B" left=60 top=14 height=12 width=30 float=#true
+      }
+    }
+  }
+}

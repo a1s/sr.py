@@ -238,12 +238,19 @@ class Span:
     :func:`span` has filled the rest in, so the third follows from the
     container and nothing downstream has to remember the fill order.
 
+    Filling a value in loses whether it was written, and one rule needs
+    that back: doc/layout.md#building-a-band makes an element that
+    *declared* a ``bottom`` container-dependent whatever its content,
+    while one whose ``bottom`` was filled in is container-dependent only
+    when it has no height of its own.  ``end_written`` keeps the answer.
+
     Attributes:
         start: Offset from the container's near edge.
         end: Offset inward from the container's far edge.
         size: The extent.
         limit: ``maxwidth`` or ``maxheight``, which clamps a resolved
             extent and does not count toward the two of three.
+        end_written: Whether ``end`` was written rather than filled in.
 
     """
 
@@ -251,6 +258,7 @@ class Span:
     end: float | None = None
     size: float | None = None
     limit: float | None = None
+    end_written: bool = False
 
     @property
     def given(self) -> int:
@@ -279,13 +287,14 @@ def span(
         limit: ``maxwidth`` or ``maxheight``, where the node gave one.
 
     """
-    filled = Span(start, end, size, limit)
+    written = end is not None
+    filled = Span(start, end, size, limit, written)
     if filled.given >= 2:
         return filled
     if filled.start is None:
-        filled = Span(0.0, filled.end, filled.size, limit)
+        filled = Span(0.0, filled.end, filled.size, limit, written)
     if filled.given < 2:
-        filled = Span(filled.start, 0.0, filled.size, limit)
+        filled = Span(filled.start, 0.0, filled.size, limit, written)
     return filled
 
 

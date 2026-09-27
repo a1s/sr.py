@@ -1,0 +1,47 @@
+// probes/layout/float-gaps.kdl -- what a floating element's gap is measured to.
+//
+// doc/layout.md#floating-elements measures the gap from the floating
+// element's declared top to the nearest element wholly above it.
+// Three details of that, each read off the reference:
+//
+// - `title`: the element wholly above need not precede.  P2 floats with
+//   no declared height, so its declared box is 30..30; it starts level
+//   with P1 and does not precede it, but it is wholly above it, so P1's
+//   gap is 0 and P1 sits on the field Z.  P2's own gap is the 18 to Z.
+// - `detail`: the declared box is the declaration before any clamp.
+//   The rectangle declared 6 high is clamped to 5; the float below it
+//   keeps the 8 from the declared 6 and adds it to the clamped 5.
+// - `summary`: with nothing wholly above, the gap runs to the band's top
+//   edge, or to the highest declared top among the elements taking part
+//   where one starts above it.  The rectangle at -5 is that, so F's gap
+//   is 5 and it lands 5 below P.
+// - `header`: the same with a rule of no height of its own at -7 and a
+//   suppressed field at -9, neither of which takes part, so the gap is
+//   the 1 to P's top.
+
+report name="layout/float-gaps" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=300 height=800 leftmargin=0 rightmargin=0 topmargin=20 bottommargin=0 {
+    style font="body" color="black"
+    title {
+      field text="x\ny" left=0 right=30 top=30 height=6 stretch=#true float=#true
+      field text="1\n2\n3" right=10 width=60 top=30 stretch=#true float=#true
+      field text="z" left=120 width=40 height=12
+    }
+    detail height=40 {
+      rectangle left=50 right=100 height=6 maxheight=5
+      rectangle left=50 right=100 top=14 height=20 float=#true
+    }
+    summary height=100 {
+      rectangle left=0 right=200 top=-5 height=45
+      field text="P" left=100 width=40 top=-1 height=6 float=#true
+      field text="F" left=200 width=40 top=0 height=12 float=#true
+    }
+    header height=50 {
+      line left=0 right=200 top=-7
+      field text="S" left=0 width=40 top=-9 height=6 printwhen="False"
+      field text="P" left=100 width=40 top=-1 height=6 float=#true
+      field text="F" left=200 width=40 top=0 height=12 float=#true
+    }
+  }
+}

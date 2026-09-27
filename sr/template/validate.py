@@ -55,8 +55,10 @@ from sr.template.model import (
     Group,
     Image,
     Layout,
+    Line,
     Nesting,
     Parameter,
+    Rectangle,
     Report,
     Section,
     Style,
@@ -608,6 +610,13 @@ def band_rules(visit: Visit, space: Space, band: Section) -> None:
         if isinstance(element, Image):
             image_source(visit, element)
         blob_reference(visit, element)
+        floating_height(visit, element)
+        stroke_width(visit, element)
+    for element in elements_of(band):
+        sizes(visit, element)
+    for xref in xrefs_of(band):
+        sizes(visit, xref)
+    band_height(visit, band)
     for subreport in band.subreports:
         subreport_rules(visit, band, subreport)
     collapsing(visit, band)
@@ -806,6 +815,113 @@ def blob_reference(visit: Visit, element: Element) -> None:
         )
 
 
+def floating_height(visit: Visit, element: Element) -> None:
+    """Report a floating element whose height would come from the band.
+
+    doc/template.md#floating-elements: a floating element's top is
+    not settled until the others are placed, so its height has to be
+    its own, a declared ``height`` or a content height.  One that
+    declares a ``bottom`` is accepted whenever it has either, a ``height``
+    beside the ``bottom`` or ``stretch=#true``; the ``bottom`` anchors it
+    to the band's bottom edge, so it does not float.
+
+    Args:
+        visit: The document and its collectors.
+        element: The node to check.
+
+    """
+    if not element.floating or element.box.down.size is not None:
+        return
+    if content_height(element):
+        return
+    visit.diagnostics.error(
+        "a floating element's height must come from the element: "
+        "give it a height, or stretch=#true"
+        if isinstance(element, Field)
+        else "a floating element's height must come from the element, "
+        "not from the band",
+        path=element.path,
+        prop="float",
+    )
+
+
+# What each size is called, and the offset that does what a negative
+# one might have been meant to: reach past the container's far edge.
+SIZES = (
+    ("across", "size", "width", "right"),
+    ("down", "size", "height", "bottom"),
+    ("across", "limit", "maxwidth", "right"),
+    ("down", "limit", "maxheight", "bottom"),
+)
+
+
+def sizes(visit: Visit, box: Element | Xref) -> None:
+    """Report a negative ``width``, ``height``, ``maxwidth``, or ``maxheight``.
+
+    doc/template.md#position-and-size-any-two-of-three: a size is an
+    extent, and an extent below zero describes no box.  Reaching past
+    the container is what a negative ``right`` or ``bottom`` is for,
+    so the message names that instead.  A ``line`` and a ``rectangle``
+    spend ``width`` on their pen, which :func:`stroke_width` checks.
+
+    Args:
+        visit: The document and its collectors.
+        box: The element or ``xref`` to check.
+
+    """
+    for axis, part, prop, offset in SIZES:
+        value = getattr(getattr(box.box, axis), part)
+        if value is not None and value < 0:
+            visit.diagnostics.error(
+                f"{prop} must not be negative; a negative {offset} is what"
+                " reaches past the container",
+                path=box.path,
+                prop=prop,
+            )
+
+
+def stroke_width(visit: Visit, element: Element) -> None:
+    """Report a ``line`` or ``rectangle`` whose pen is narrower than nothing.
+
+    Args:
+        visit: The document and its collectors.
+        element: The node to check.
+
+    """
+    if isinstance(element, Line | Rectangle) and element.stroke < 0:
+        visit.diagnostics.error(
+            "a stroke width must not be negative", path=element.path, prop="width"
+        )
+
+
+def band_height(visit: Visit, band: Section) -> None:
+    """Report a band whose declared minimum height is below zero.
+
+    Args:
+        visit: The document and its collectors.
+        band: The band to check.
+
+    """
+    if band.height is not None and band.height < 0:
+        visit.diagnostics.error(
+            "height must not be negative", path=band.path, prop="height"
+        )
+
+
+def content_height(element: Element) -> bool:
+    """Report whether an element has a height of its own from its content.
+
+    Args:
+        element: The node to weigh.
+
+    """
+    if isinstance(element, Field):
+        return element.stretch
+    if isinstance(element, Barcode):
+        return True
+    return isinstance(element, Image) and element.scale == "grow"
+
+
 def collapsing(visit: Visit, band: Section) -> None:
     """Warn about a band that declares no height and can have none.
 
@@ -843,11 +959,7 @@ def contributes(element: Element | Xref) -> bool:
         return True
     if isinstance(element, Xref):
         return any(contributes(child) for child in element.elements)
-    if isinstance(element, Field):
-        return element.stretch
-    if isinstance(element, Barcode):
-        return True
-    return isinstance(element, Image) and element.scale == "grow"
+    return content_height(element)
 
 
 # -- subreports -------------------------------------------------------

@@ -1,0 +1,40 @@
+// probes/layout/float-chains.kdl -- floats against floats.
+//
+// doc/layout.md#floating-elements: a floating element precedes another
+// only when it is wholly above it in the declared boxes, and the DAG
+// is minimal, so a float below two others that are stacked depends only
+// on the lower of them.
+//
+// - `title`: G and H are floating stretch fields, H below G;
+//   each grows and pushes the next.  K floats below both G and H.
+// - `detail`: a floating rectangle and a floating line with declared
+//   heights, below a stretch field; and a float whose declared box
+//   overlaps the stretch field's, which is therefore not below it.
+// - `summary`: a float whose declared top is its predecessor's declared
+//   bottom exactly -- a gap of zero.
+
+report name="layout/float-chains" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=300 height=800 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    title {
+      field text="1\n2" left=0 top=0 height=12 width=40 stretch=#true
+      field text="G\nG" left=0 top=15 height=12 width=40 stretch=#true float=#true
+      field text="H\nH\nH" left=0 top=30 height=12 width=40 stretch=#true float=#true
+      field text="K" left=50 top=50 height=12 width=40 float=#true
+      line left=290
+    }
+    detail {
+      field text="1\n2\n3" left=0 top=0 height=12 width=40 stretch=#true
+      rectangle left=50 right=200 top=13 height=5 float=#true
+      line left=110 right=150 top=20 height=4 float=#true
+      field text="O" left=160 top=6 height=12 width=40 float=#true
+      line left=290
+    }
+    summary {
+      field text="1\n2" left=0 top=0 height=12 width=40 stretch=#true
+      field text="Z" left=0 top=12 height=12 width=40 float=#true
+      line left=290
+    }
+  }
+}
