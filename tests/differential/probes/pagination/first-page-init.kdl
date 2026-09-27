@@ -1,0 +1,55 @@
+// probes/pagination/first-page-init.kdl -- `init` from the start of the report.
+//
+// Totals seeded with 100 and reset per report, per page, per column,
+// per group, per detail, and per item.  doc/expressions.md#iter-and-reset
+// seeds every variable from its `init` at the start of the report,
+// before the first page's header, whatever its scope, and counts that
+// as the reset of the first page and the first column.  So every one
+// reads 100 in the first headers and the title, and the rows count on
+// from there: page 1's total is 106 after six rows, and page 2's 103
+// after three.  A's counters read 0 and 1 before its first run,
+// doc/expressions.md#between-a-groups-runs.
+//
+// The reference seeds the report's total at the start, and the others
+// only at their scope's first reset: the page's and the column's from
+// their first eject on, the group's at its first break.  Before that
+// they read None, so page 1's total counts from 1 and is 6.
+// The detail's and the item's never reset in the reference at all,
+// `detail-and-item-resets`, so the rows do not read them here.
+//
+// Registered as the divergence `first-page-init`.
+
+report name="pagination/first-page-init" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  records {
+    member "n" type="int"
+  }
+  variable "rs" expr="1" init="100" calc="sum" reset="report"
+  variable "ps" expr="1" init="100" calc="sum" reset="page"
+  variable "cs" expr="1" init="100" calc="sum" reset="column"
+  variable "gs" expr="1" init="100" calc="sum" reset="group" resetgrp="A"
+  variable "ds" expr="1" init="100" calc="sum" reset="detail"
+  variable "its" expr="1" init="100" calc="sum" reset="item"
+  layout width=200 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    title height=5 {
+      field expr="'T rs %s ps %s cs %s A_C %d A_PN %d gs %s ds %s its %s' % (rs, ps, cs, A_COUNT, A_PAGE_NUMBER, gs, ds, its)" left=0 top=0 height=5
+    }
+    header height=5 {
+      field expr="'H pn %d rs %s ps %s cs %s' % (PAGE_NUMBER, rs, ps, cs)" left=0 top=0 height=5
+    }
+    footer height=5 {
+      field expr="'F pn %d rs %s ps %s cs %s' % (PAGE_NUMBER, rs, ps, cs)" left=0 top=0 height=5
+    }
+    columns count=2 gap=10 {
+      header height=5 {
+        field expr="'CH cn %d rs %s ps %s cs %s' % (COLUMN_NUMBER, rs, ps, cs)" left=0 top=0 height=5
+      }
+    }
+    group "A" expr="0" {
+      detail height=10 {
+        field expr="'r%d rs %s ps %s cs %s' % (ITEM_NUMBER, rs, ps, cs)" left=0 top=0 height=5
+      }
+    }
+  }
+}

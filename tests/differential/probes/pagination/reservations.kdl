@@ -1,0 +1,38 @@
+// probes/pagination/reservations.kdl -- when a header's space is reserved.
+//
+// Each header and footer here prints one more line on later pages
+// and in later columns, up to a limit, so its height depends on when
+// it is measured. If a reservation were measured once, before any record,
+// every page would be inset by the first page's one-line bands.
+//
+// The reference reserves again every time a frame begins: the page frame
+// on every page, and a column frame in every column.  Page 2's content
+// starts at 17 below a two-line header, and the second column of page 1
+// starts at 23 below its own two-line column header while the first
+// starts at 17. VERTICAL_SPACE in each column is that column's own extent.
+//
+// doc/layout.md#headerfooter-reservation is what this became.
+
+report name="pagination/reservations" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    header {
+      field expr=#"'H' + '\nH' * min(PAGE_NUMBER - 1, 1)"# left=0 top=0 width=190 stretch=#true
+    }
+    footer {
+      field expr=#"'F' + '\nF' * min(PAGE_NUMBER - 1, 1)"# left=0 top=0 width=190 stretch=#true
+    }
+    columns count=2 gap=10 {
+      header {
+        field expr=#"'CH%d' % COLUMN_NUMBER + '\nCH' * min(COLUMN_NUMBER + PAGE_NUMBER - 2, 2)"# left=0 top=0 stretch=#true
+      }
+      footer {
+        field expr=#"'CF%d' % COLUMN_NUMBER + '\nCF' * min(COLUMN_NUMBER + PAGE_NUMBER - 2, 2)"# left=0 top=0 stretch=#true
+      }
+    }
+    detail height=10 {
+      field expr="'r%d vp %s vs %s' % (ITEM_NUMBER, VERTICAL_POSITION, VERTICAL_SPACE)" left=0 top=0 height=6
+    }
+  }
+}

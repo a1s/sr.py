@@ -1,0 +1,35 @@
+// probes/pagination/item-order.kdl -- when `iter="item"` folds.
+//
+// An `item` variable folds once per record whether or not its detail prints.
+// Where in the record loop is the question: a group's title reads it, and
+// so does a group variable folded at the break.  The reference folds it
+// with the detail band, after every title, so the second group's title
+// and its group fold both read the first two records and not the third.
+//
+// doc/expressions.md#ordering-against-section-printing is what this became.
+
+report name="pagination/item-order" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  records {
+    member "a" type="int"
+  }
+  variable "iv" expr="ITEM_NUMBER" calc="list" iter="item" reset="report"
+  variable "gv" expr="(ITEM_NUMBER, iv)" calc="list" iter="group" itergrp="A" reset="report"
+  layout width=200 height=90 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    group "A" expr="a" {
+      title height=5 {
+        field expr="'AT it %d iv %s gv %s' % (ITEM_NUMBER, iv, gv)" left=0 top=0 height=5
+      }
+      summary height=5 {
+        field expr="'AS it %d iv %s gv %s' % (ITEM_NUMBER, iv, gv)" left=0 top=0 height=5
+      }
+      detail height=5 printwhen="ITEM_NUMBER != 2" {
+        field expr="'r it %d iv %s' % (ITEM_NUMBER, iv)" left=0 top=0 height=5
+      }
+    }
+    summary height=5 {
+      field expr="'S it %d iv %s' % (ITEM_NUMBER, iv)" left=0 top=0 height=5
+    }
+  }
+}

@@ -19,7 +19,10 @@
 # the reference, one is a grammar that had been left to the host, one
 # is a clause doc/ was missing, and one -- `time-before-year-one` --
 # is a difference this engine chose and will keep.  M7 added a further
-# defect in the reference, `zero-height-float-gap`.
+# defect in the reference, `zero-height-float-gap`, and M8 nine more.
+# From `column-floor` on, seven are defects in the reference's pagination;
+# the last two, `footer-at-a-group-break` and `first-page-init`, are
+# decisions.
 #
 # The milestone numbers:
 #   M0: Scaffold and oracle
@@ -342,3 +345,176 @@ the harness could build a probe without `--strict-fonts`, which refuses a \
 ticket = "M5: font warnings, printout.md#header-line; filed against the Go engine"
 since = "2026-09-27"
 affects = ["probe/printout/font-warning"]
+
+[[divergence]]
+id = "column-floor"
+summary = "a column opened after a band across the columns begins below it here; the reference begins it at the frame's top, under the band"
+reason = """
+A report title under the report's columns, or a group title under the \
+group's, is placed across every column, below the first column's header.  \
+When the first column fills, the reference opens the second at the column \
+frame's top, which is where that band is, and draws the second column's \
+rows over it.  doc/layout.md said every frame below a committed band moves \
+down with it, and doc/layout.md#extent-and-fill now says how: the band \
+pushes every frame inside its own down to its bottom edge and leaves that \
+as the floor a column opened later on the same page begins at.  The \
+column's header stays at the frame's top, where every column's header \
+goes, and above the band.  Everything else about the reference's column \
+fill is what doc/ describes and is unchanged, including that a band placed \
+across the columns goes below the deepest and that the column in progress \
+stays in progress after it.  The reference is the side that changes.\
+"""
+ticket = "M8: frames, layout.md#extent-and-fill; filed against the Go engine"
+since = "2026-09-27"
+affects = [
+    "probe/pagination/column-after-title",
+    "probe/pagination/column-after-group-title",
+]
+
+[[divergence]]
+id = "cut-in-place"
+summary = "a band too tall for any frame is cut where it is here; the reference ejects first and cuts it on an empty page"
+reason = """
+doc/layout.md#placing-a-band gives a band taller than an empty frame, with \
+no legal split point, a last branch: split at the last cut point that fits \
+`available`, because making progress beats honouring a preference.  The \
+reference ejects instead and cuts the band on the next page, leaving the \
+rest of the frame it was tried in empty.  Nothing in the branch asks for an \
+eject, and the third branch, the one that does eject, is for a band that \
+fits an empty frame, which this one does not.  doc/ now says outright that \
+every branch tests the frame as it stands.  The reference is the side that \
+changes.\
+"""
+ticket = "M8: placing a band, layout.md#placing-a-band; filed against the Go engine"
+since = "2026-09-27"
+affects = ["probe/pagination/cut-in-place"]
+
+[[divergence]]
+id = "overflow-record-zero"
+summary = "an overflow warning on the first record carries record 0 here; the reference leaves record out"
+reason = """
+doc/printout.md#header-line has a warning carry the record that produced it \
+and leave `record` out only where no record did.  An oversized band on the \
+first record was produced by record 0, and the reference writes `record` on \
+the second such warning and not on the first, which is what serializing an \
+integer with its zero value omitted does rather than a rule about warnings.  \
+doc/layout.md#errors now says the first record's 0 is included.  The \
+reference is the side that changes.\
+"""
+ticket = "M8: overflow, layout.md#errors; filed against the Go engine"
+since = "2026-09-27"
+affects = ["probe/pagination/overflow-first-record"]
+
+[[divergence]]
+id = "last-outer-summary"
+summary = "every open group is closed at the end of the report here; the reference drops the outer group's last summary when groups nest"
+reason = """
+doc/expressions.md#the-report-boundary builds every remaining group summary, \
+innermost first, before the report's summary.  With one group the reference \
+does.  With two, it builds the inner group's last summary and not the outer \
+one's, whether or not there is room for it on the page, so the last run of \
+the outer group is the only one without a total.  No sentence in doc/ \
+gives that, and it is not a preference about space.  The reference is the \
+side that changes.\
+"""
+ticket = "M8: the record loop, layout.md#the-end-of-the-report; filed against the Go engine"
+since = "2026-09-27"
+affects = ["probe/pagination/nested-groups"]
+
+[[divergence]]
+id = "group-opens-where-its-title-lands"
+summary = "a group whose title moves to the next page begins on that page here; the reference counts the page it left"
+reason = """
+When a group opens with no room for its title, the title moves to the next \
+page, and two things follow from where the group is taken to begin.  The \
+reference takes it to begin where the loop opened it: the page eject counts \
+as the group's second page, so `X_PAGE_NUMBER` reads 2 on the page its title \
+is on, and the group-scoped fold made at the break is lost to that page's \
+reset before the title can read it.  \
+doc/expressions.md#predefined-variables counts `X_PAGE_NUMBER` from the \
+start of the group, and doc/layout.md#rollback already undid a detail \
+band's fold around the eject it causes for the same reason: a \
+row counts on the page it lands on.  doc/ now says both: a group that is \
+still opening is not advanced by a page eject, and a title's fold is rolled \
+back and applied again like a detail band's.  The reference is the side \
+that changes.\
+"""
+ticket = "M8: the eject sequence and rollback, layout.md#sequence; filed against the Go engine"
+since = "2026-09-27"
+affects = ["probe/pagination/group-title-moves"]
+
+[[divergence]]
+id = "mintailrows"
+summary = "mintailrows moves rows onto the summary's frame here; the reference ignores it"
+reason = """
+doc/layout.md#group-minrows-and-mintailrows measures the last `mintailrows` \
+rows with the group's summary and ejects before the first of them when they \
+do not fit, and doc/template.md#group gives it a default of 1.  The \
+reference does neither, at any value: a summary that does not fit starts \
+the next frame on its own.  So this is also the difference in any report \
+whose group summary would land alone at the top of a frame, with the \
+default left as it is.  doc/ now says when the test is made -- the first \
+printed row from which no more than `mintailrows` remain, once per opening \
+of a group -- and that what it measures is capped at an empty frame.  The \
+reference is the side that changes.\
+"""
+ticket = "M8: keeping content together, layout.md#group-minrows-and-mintailrows; filed against the Go engine"
+since = "2026-09-27"
+affects = ["probe/pagination/mintailrows"]
+
+[[divergence]]
+id = "detail-and-item-resets"
+summary = "reset=\"detail\" and reset=\"item\" fire here, with their init; the reference never fires them"
+reason = """
+doc/expressions.md#iter-and-reset gives `reset` the same six scopes as \
+`iter`, `detail` firing once per printed detail section and `item` once per \
+record, and seeds an accumulator from `init` at every reset.  The reference \
+never fires either reset, so such a variable accumulates for the whole \
+report, and never folds its `init` in, not even once at the start.  This \
+engine has fired both since M6, and M8 is where a probe reached them.  \
+doc/ now says outright that such a variable holds the one section's or the \
+one record's fold.  The reference is the side that changes.\
+"""
+ticket = "M8: variable scopes, expressions.md#iter-and-reset; filed against the Go engine"
+since = "2026-09-27"
+affects = ["probe/pagination/scope-resets"]
+
+[[divergence]]
+id = "footer-at-a-group-break"
+summary = "a footer at a group break reads the run that ended here; the reference reads the run that begins"
+reason = """
+When a group's opening ejects -- a keep-together rule, a title's `eject` \
+node, the title not fitting -- the page or column that ends holds the runs \
+that ended and nothing of the new record.  The reference builds its footer \
+against the new record, so a footer that prints the group's key, count, or \
+total describes a run of which nothing is on that page.  doc/layout.md#what-\
+a-header-or-footer-sees now builds such a footer against the context the \
+break's summaries were built in, the previous record and the ended runs, \
+and the header against the new record and the new runs, until a band of \
+the new record has been placed.  It is a decision rather than a defect, \
+and the reference is the side that changes.\
+"""
+ticket = "M8: headers and footers, layout.md#what-a-header-or-footer-sees"
+since = "2026-09-27"
+affects = ["probe/pagination/footer-at-a-break"]
+
+[[divergence]]
+id = "first-page-init"
+summary = "every variable is seeded from init at the start of the report here; the reference seeds only reset=\"report\" ones there"
+reason = """
+doc/expressions.md#iter-and-reset folds `init` in at each reset, and did \
+not say whether the start of the report is one for every scope.  The \
+reference seeds a `reset="report"` variable at the start and every other \
+one only at its scope's first reset: a `reset="page"` or `reset="column"` \
+one at the first eject, a group's at its first break.  Before that the \
+variable reads None, in the title and the first headers alike, and the \
+first page's and the first column's totals count from their first row, \
+without the `init` every later page's and column's has.  doc/ now seeds \
+every variable from `init` at the start of the report, before the first \
+page's header, and counts that as the reset of the first page and the \
+first column.  It is a decision rather than a defect, and the reference \
+is the side that changes.\
+"""
+ticket = "M8: variable scopes, expressions.md#iter-and-reset"
+since = "2026-09-27"
+affects = ["probe/pagination/first-page-init"]

@@ -1,0 +1,34 @@
+// probes/pagination/keeptogether-capped.kdl -- a group too big to keep together.
+//
+// The second group is twelve bands, 60pt, and an empty frame is 50.
+// It cannot be kept on one frame, and what keeptogether asks for
+// is then capped at an empty frame's height.  That is more than the 30
+// left on the first page, so the group still starts a fresh page, where
+// as much of it as any frame could hold is together.
+//
+// doc/layout.md#how-they-combine is what this became.
+
+report name="pagination/keeptogether-capped" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  records {
+    member "a" type="int"
+    member "s" type="bool"
+  }
+  layout width=200 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    title height=10 {
+      field text="T" left=0 top=0 height=5
+    }
+    group "A" expr="a" keeptogether=#true {
+      title height=5 {
+        field expr="'AT a%d it %d' % (a, ITEM_NUMBER)" left=0 top=0 height=5
+      }
+      summary height=5 {
+        field expr="'AS a%d it %d' % (a, ITEM_NUMBER)" left=0 top=0 height=5
+      }
+      detail height=5 printwhen="not s" {
+        field expr="'r%d' % ITEM_NUMBER" left=0 top=0 height=5
+      }
+    }
+  }
+}

@@ -301,8 +301,11 @@ A **frame** is a rectangular region that bands fill from the top down.
 | `header`, `footer` | Bands reserved at the frame's top and bottom. |
 | `parent`, `children` | Tree links. |
 | `fillY` | Where the next band goes. |
+| `floor` | The lowest edge a band placed in an ancestor reaches on this page. |
 
 Frames form a tree, each frame's geometry derived from its parent's.
+A template nests one group per level, so the tree is a chain:
+a frame has at most one child.
 
 ### Construction
 
@@ -314,28 +317,79 @@ Built once, before any data is read:
 2. **Column frames.** A `columns` node creates a child frame with
    `width = (parent.width - (count - 1) × gap) / count`, carrying `count` and
    `gap`. If that `columns` node has its own header or footer, they attach to
-   this frame and a further child frame holds the content.
+   this frame and are reserved out of each of its columns.
 3. **Group levels.** For each `group`, from outermost in, its `columns` node — if
    any — creates frames by the same rule. The group's `title` and `summary` bands
    belong to the frame that *contains* the group's columns, so a group title spans
    all columns.
 4. **Detail frame.** The innermost frame holds the `detail` band.
 
-`title` and `summary` at layout level belong to the innermost non-column frame,
-unless `swapheader` / `swapfooter` is set, which moves them to the page frame so
-they sit outside the page header and footer.
+`title` and `summary` at layout level belong to the page frame, which is the
+frame that contains the layout's own columns. `swapheader` / `swapfooter`
+moves them outside the page header and footer as well; see
+[below](#swapheader-and-swapfooter).
+
+### Extent and fill
+
+A frame's **extent** is fixed for the length of a column. Its `top` is its
+parent's `top` with its own header reserved below that, and its `bottom`
+its parent's `bottom` with its own footer reserved above that; the page
+frame's are the margins'. So a column frame reaches down to the page
+frame's `bottom`, a column footer sits directly above the page footer's
+reservation, and `VERTICAL_POSITION` is measured from a `top` that does
+not move while the column is being filled.
+
+Where the next band goes is the frame's **fill**, and a committed band
+moves three sets of fills:
+
+- **Its own frame's**, which advances by the band's height.
+- **Every ancestor's**, which comes down to at least the band's bottom edge.
+  A column lies inside its parent's current column, so a band in a column
+  is in the parent's way too. A band placed in the parent afterwards --
+  a group summary under a group's columns, a report summary under the
+  report's -- therefore goes below the **deepest** column, not below
+  the one that happened to be filling last.
+- **Every descendant's**, which comes down to at least the band's bottom
+  edge too, since the band spans all of their columns. The descendant
+  keeps that edge as its **floor**, and a column it opens later on the
+  same page begins at its `top` or at its floor, whichever is lower.
+  So a column opened after a group title begins below the title, beside
+  the column opened before it, rather than on top of it.
+
+A header and a footer take no fill of their own: they are drawn at the edges
+of the column. They do come in the way of the frames above, which is why a
+report title placed after the first page's column headers goes below them,
+and why a column that has had its footer placed counts as filled to its
+bottom: a band placed across the columns after that one has ended needs
+the next page.
+
+A column is **empty** when its fill is as high as a column of its frame
+can begin. That is the frame's `top`, or, in a frame with columns inside
+it, the `top` of the innermost of them: every column it opens draws their
+headers again, and a band placed across them goes below. No column of the
+frame gives a band more room. A column that begins at its floor is not
+empty, even with nothing placed in it: the next column on the page
+begins as low, but the next page begins at the top.
+
+A column eject resets the frames inside the ejecting one to their
+first column; a page eject resets every frame, and every floor.
 
 ### Header/footer reservation
 
 A frame reserves space for its header and footer by measuring them.
-Both are measured against the context as it stands when the frame begins.
+Both are measured against the context as it stands when the frame begins,
+and a frame begins **each time one of its columns opens**: the page frame
+on every page, a column frame on every page and at every column eject.
+So a header whose content changes from page to page reserves a different
+height on each, and the columns of one page may start at different heights.
 
-So each of the two is measured **twice**: once to find out how much space to
-reserve, before any record has been read, and once when the band is built onto
-the page. The two measurements can disagree — the second sees a record, and a
-`printwhen` or a stretch field may answer differently for it — and where they
-do, the reservation is what the frame was inset by and the second measurement
-is what is drawn.
+So each of the two is measured **twice**: once to find out how much space
+to reserve, when the column opens, and once when the band is built onto
+the page. The two measurements can disagree, since the footer is built when
+the column ends and a `printwhen` or a stretch field may answer differently
+by then. Where they do, the reservation is what the frame was inset by
+and the second measurement is what is drawn. On the first page the
+reservation is measured before any record has been read.
 
 A footer is placed flush against the frame's reserved bottom band — including
 a column footer. For content that should follow immediately below the last band,
@@ -391,6 +445,29 @@ In both, the names resolve as they do anywhere else. Specifically:
   and the reset values in the next page's header.
 - Variables hold their accumulated values. In a footer that is before the reset
   for the scope just ended, so a `reset="page"` total is that page's.
+- A group's own names hold
+  [unspecified](expressions.md#between-a-groups-runs) values between its
+  runs, and the last page's footers come after every group's last run.
+
+**At a group break** an eject can end the page, or the column, that the
+runs which ended are on, and begin the one the new runs start on. That is
+so while nothing of the new record has been placed: an eject a keep-together
+rule causes as a group opens, one of its title's `eject` nodes, the title
+not fitting, and for a group whose title does not print, the first detail
+band not fitting or one of its `eject` nodes. Such an eject's footers are
+built against the context the break's summaries were built in: `THIS` and
+`ITEM_NUMBER` are the previous record's, every group of the break reads
+as its ended run left it, and every variable holds what it held then.
+Its headers are built against the new record, with every group of the
+break at the start of its new run: `_COUNT` at 0, `_PAGE_NUMBER` at 1,
+and the variables it resets reset. As in the headers of any eject a band
+causes, the band's own fold is not in them yet: a group's `iter="group"`
+fold goes with its title, and is counted on the page the title lands on.
+
+Once a band of the new record has been placed, an outer group's title for
+one, an eject is built as any other, and a group of the break that has not
+opened yet is [between its runs](expressions.md#between-a-groups-runs) in
+its footers.
 
 Before the first record — on a page filled by a tall `title`, or in a report with
 no data at all — `THIS` is `None` and reading a record field from it is an error.
@@ -416,6 +493,12 @@ Since the last page is only known when the record loop ends, the summary is
 placed like any other band: if what remains above the enlarged bottom
 reservation is already filled, a page eject happens first, and the summary gets a
 fresh page carrying that page's header and footer.
+
+Where it fits, the page frame's bottom moves up by the summary's height before
+the last page's footers are placed, so the page footer and every column footer
+are placed flush against the new bottom, above the summary. The page footer's
+`VERTICAL_POSITION` then counts the summary as filled: it is measured to the
+summary's bottom edge.
 
 ## Building a band
 
@@ -662,6 +745,12 @@ else:
     band cannot fit any frame → see Errors
 ```
 
+Each branch is tried against the frame **as it stands**, and the fourth
+is no exception: a band too tall for any frame is cut here, at the last
+cut point that fits what this column has left, and not after an eject
+has found it an emptier one. A band is only ever moved whole when
+it would fit an empty column, or when it overflows.
+
 A **cut point** is an offset no mark's span falls through; a **legal split point**
 is a cut point that also divides content and satisfies `orphans` and `widows`.
 Both are defined in [legal split points](#legal-split-points).
@@ -675,20 +764,35 @@ Branch order matters. A cut that leaves one side blank is excluded by requiremen
 precisely so that branch 2 declines it and branch 3 ejects the band whole, which is
 the better outcome. Without that, branch 2 would win by being tried first.
 
-`frame.height(empty)` is `bottom - top` for a fresh frame — the most a band could
-ever get.
+`frame.height(empty)` is the room an [empty](#extent-and-fill) column offers,
+from where it begins down to `bottom`: the most a band could ever get.
 
-An eject a band triggers by not fitting is always a **column** eject. In a
-single-column frame that is the same thing as a page eject, and in a multi-column
-one it advances to the next column, escalating to a page eject only when no column
-remains — see [which frames participate](#which-frames-participate). A band that
-overflows its column should move to the next column, not skip the rest of the page.
+No branch moves a band whole out of an empty column, and none has to say so.
+A band that fails the first branch there is taller than `frame.height(empty)`,
+so the third does not take it; the fourth cuts it where it is, and an overflow
+is placed where it is. A column that is not empty, including one that begins
+at its floor, ejects under the third branch until the band fits or the column
+is empty, which is on the next page at the latest.
 
-An [`eject` node](template.md#eject) is the only way to force a page eject, via
-`type="page"`.
+That is why the empty height is measured below the headers of the columns
+inside the frame. Measured from the frame's own `top`, it would count room
+that no page offers a band across the columns. A band in the page frame
+that fits the frame, but not the room below the column headers, would then
+be ejected from page to page for ever.
 
-After committing, `frame.fillY` advances by the band's height, and every descendant
-frame's `top` moves down with it.
+An eject a band triggers by not fitting is always a **column** eject.
+In a single-column frame that is the same thing as a page eject, and
+in a multi-column one it advances to the next column, escalating to
+a page eject only when no column remains, or none that would offer the band
+more room -- see [which frames participate](#which-frames-participate).
+A band that overflows its column should move to the next column, not
+skip the rest of the page.
+
+An [`eject` node](template.md#eject) is the only way to force a page eject,
+via `type="page"`.
+
+After committing, `frame.fillY` advances by the band's height, and the frames
+above and below it move as [extent and fill](#extent-and-fill) describes.
 
 ## Band splitting
 
@@ -781,13 +885,32 @@ An eject ends the current page or column and starts the next.
 
 ### Which frames participate
 
-Given the frame of the band that triggered the eject:
+Given the frame of the band that triggered the eject, the walk finds
+the **ejecting frame**:
 
-- **Page eject**: that frame and every ancestor, up to and including the page
-  frame.
+- **Page eject**: the page frame.
 - **Column eject**: that frame and ancestors, stopping at the first frame that
   still has an unused column. If none does, the walk reaches the page frame and the
   column eject becomes a page eject.
+
+A column eject that is looking for room also walks past a frame whose next
+column would offer the band no more than it has. That column begins at the
+frame's floor at the highest, so it gains nothing for a band whose column
+is filled no lower than that floor: a column that opened below a band
+placed across it, and has had nothing placed in it since. Every eject
+looks for room except one an [`eject` node](#eject-nodes) without `require`
+asks for, which is an instruction and goes to the next column whatever that
+offers. A band that does not fit, a keep-together rule, and a `require`
+that is not met all want the room, and a column that begins no higher would
+not give it.
+
+The ejecting frame participates, and so does **every frame inside it**,
+since the columns they are filling end with it. For a band in the innermost
+frame that is the same set as the walk passed through; for a band in an
+outer frame -- a group summary placed across the columns of its group --
+it includes the columns below the band as well, so each of them has its
+footer placed before the page ends and its header placed when the next one
+begins.
 
 ### Sequence
 
@@ -806,11 +929,22 @@ Given the frame of the band that triggered the eject:
    A page eject ends a column as well, so it does all of the above and then:
    - increments `PAGE_NUMBER` and resets `PAGE_COUNT`;
    - applies `page`-scoped variable resets, then `page`-scoped iterations;
-   - updates each group's `_PAGE_NUMBER`;
+   - adds one to each group's `_PAGE_NUMBER`, except a group that is still
+     opening;
    - starts a new page, with every frame's `column` back to 0.
-4. **Headers, outermost first** — the reverse of the footer order.
+4. **Headers, outermost first**: the reverse of the footer order.
+   Each participating frame's next column opens: its header and footer
+   are reserved and its header is placed at its top.
 
 The two orders together are the order in which the bands appear on the page.
+
+A group is **opening** from its break, where the record loop starts its
+new run, until a band of that run has been placed: its title, or for
+a group whose title does not print, the first band inside it. An eject
+in that time -- one of the title's `eject` nodes, a
+[keep-together](#keeping-content-together) rule, or the title not fitting --
+moves the group to the page that band lands on rather than making that page
+its second, so `_PAGE_NUMBER` is 1 wherever a run's first band is.
 
 ### `eject` nodes
 
@@ -818,7 +952,10 @@ A band's `eject` nodes are tested in document order. The first whose `when` is t
 is selected, and the search stops there whether or not it ejects; a `when`-false
 node is skipped and the next is tried. The selected node ejects unconditionally if
 it has no `require`, and otherwise only when less than `require` remains in the
-frame. Full table in [template.md](template.md#eject).
+frame. Full table in [template.md](template.md#eject). A column eject with no
+`require` goes to the next column; one with `require` is looking for room,
+and passes over a column that would offer none, as
+[which frames participate](#which-frames-participate) says.
 
 Ejects are evaluated **before** the band is placed, with one exception: a report's
 own `title` — the band at `layout` or `embedded` level — evaluates them **after**,
@@ -853,9 +990,17 @@ filled is even already, and comes out of the pass unchanged.
    the room left decided it, and the fragment is left alone.
 3. The shallowest bottom the same bands still reach in those columns is found by
    bisection, and every band is moved to the column and position it is assigned.
+   The bisection runs over whole thousandths of a point, which is the grid
+   every coordinate is on, so what it finds is the smallest bottom that
+   grid has, and packing to it gives the assignment.
 4. The frame is left filled to the deepest of the balanced columns, so that
    what follows starts immediately below them rather than at the bottom the
-   ragged fill reached.
+   ragged fill reached. It stays in the column the fill left it in, which is
+   what `COLUMN_NUMBER` reads after the pass.
+
+A column the fragment never reached begins at the frame's `top`, or at
+its [floor](#extent-and-fill) where a band placed across the columns
+earlier on the page reaches lower.
 
 Nothing is measured or evaluated a second time: the columns are the same width,
 so moving a band is a translation of the marks already built. An expression
@@ -893,27 +1038,53 @@ see [how they combine](#how-they-combine).
 
 ### `group keeptogether`
 
-Before committing a group's `title`, the group's whole extent — title, every
-detail, summary — is measured, accumulating until either the group ends or the
-total exceeds an empty frame. If it fits an empty frame but not the space
-remaining, an eject happens first.
+Before committing a group's `title`, the group's whole extent is measured:
+its title, every detail, its summary, and the titles and summaries of the
+groups inside it. It accumulates until either the group ends or the total
+exceeds an empty frame. If it does not fit the space remaining, an eject
+happens first.
 
 Accumulation stops at the empty-frame height, which bounds the lookahead cost
-regardless of group size: a group that cannot fit one frame cannot be kept
-together.
+regardless of group size. A group that cannot fit one frame cannot be kept
+together, and what it asks for is then an empty frame: it starts at the top
+of an empty column, where it gets as much of itself onto one frame as any
+frame could hold.
 
 Lookahead is available because the data sequence is fully buffered.
+It measures what the record loop would place, folding variables and
+counting rows as the loop would, and then puts all of that back:
+nothing it measures is committed, and nothing it folds is kept.
 
 ### `group minrows` and `mintailrows`
 
 `minrows` is the minimum number of detail rows that must share a frame with the
 group title. Before committing the title, it plus the next `minrows` details are
-measured; if the total does not fit, an eject happens first.
+measured, with any nested group titles among them; if the total does not fit,
+an eject happens first. Like `keeptogether`, what it asks for is capped at an
+empty frame, and a group with fewer rows asks for all of them.
 
-`mintailrows` is the minimum that must share a frame with the group summary. When
-the record loop reaches the point where `mintailrows` details plus the summary
-remain, they are measured together; if they do not fit, an eject happens before the
-first of them.
+`mintailrows` is the minimum that must share a frame with the group summary.
+When the record loop reaches the point where `mintailrows` details plus the
+summary remain, they are measured together; if they do not fit, an eject
+happens before the first of them. The point is the first printed row from
+which no more than `mintailrows` printed rows remain in the group, so a group
+shorter than `mintailrows` is tested at its first row, and each opening of a
+group is tested once. What is measured runs from that row through the group's
+summary, nested summaries included, and is capped at an empty frame like the
+rest.
+
+The default for both is 1, which is not a no-op: a title is never left at
+the bottom of a frame without a row after it, and a summary never starts
+a frame without a row before it.
+
+No keep-together rule ejects from an [empty](#extent-and-fill) column.
+An eject there could offer no more room, and would leave a blank page behind.
+Only an `eject require` taller than an empty frame could ask for one, since
+what the others ask for is capped at an empty frame. A column that begins
+at its floor is not empty, and a rule it does not satisfy ejects from it as
+from any other. The columns left on that page begin below the same band and
+offer no more room, so the eject passes over them to the next page: see
+[which frames participate](#which-frames-participate).
 
 Both are counted in rows, distinct from a band's line-counted `orphans` and
 `widows`. **Rows means printed rows**: a record whose `detail` is suppressed
@@ -934,7 +1105,8 @@ along with `minrows`. They are not applied in turn. Before the group's `title`
 is committed, each mechanism that applies contributes the height it wants available:
 
 - `keeptogether`: the whole group's extent, capped at an empty frame's height;
-- `minrows`: the title plus the next `minrows` printed detail rows;
+- `minrows`: the title plus the next `minrows` printed detail rows,
+  capped likewise;
 - `eject require` on the title: the `require` dimension,
   if a `when` selected that node.
 
@@ -965,10 +1137,22 @@ For each record, in this order:
    determines the break level; every group nested inside it breaks too.
 3. For each breaking group, **innermost first**: place its `summary`, built against
    the **previous** record's context, so a group summary can print its own total.
-4. Reset variables whose scope just ended.
-5. For each breaking group, **outermost first**: iterate variables for that scope,
-   then place its `title`.
-6. Iterate `detail`-scoped variables, then place the `detail` band.
+   The previous record's context is the whole of it: `THIS` and `ITEM_NUMBER`
+   are the previous record's while the summaries are placed, including in
+   the footers and headers of any eject a summary causes.
+4. Reset variables whose scope just ended, and every breaking group's
+   `_COUNT` to 0 and its `_PAGE_NUMBER` to 1. Each breaking group's new
+   run begins here, and is **opening** until a band of it is placed.
+5. For each breaking group, **outermost first**: the group opens --
+   its group-scoped variables iterate -- then its `title` is placed.
+   What a group's own names read between its break and its opening,
+   in an outer group's summary or title, is
+   [unspecified](expressions.md#between-a-groups-runs). An eject in
+   steps 5 and 6 before anything of the new record has been placed
+   is built on both sides of the break; see
+   [what a header or footer sees](#what-a-header-or-footer-sees).
+6. Iterate `item`-scoped variables; then, where the `detail` band prints,
+   `detail`-scoped variables; then place the `detail` band.
 
 Full variable semantics are in
 [expressions.md](expressions.md#variables).
@@ -992,8 +1176,31 @@ has its fold rolled back before the eject and reapplied after, so no value is
 counted twice. Step 6 iterates variables before placing because the band's content
 usually depends on them.
 
+The same holds for every eject a band causes before it is committed:
+one of its `eject` nodes, a [keep-together](#keeping-content-together)
+rule, or its not fitting. The fold is undone, so the footers of the page
+it leaves do not count it; the eject resets what it resets; and the fold
+is applied again, evaluated afresh, so the band counts on the page it
+lands on. A `reset="page"` total therefore neither counts a row twice
+nor loses one to the reset in between.
+
+A group's title is a band like any other here, and its fold is the
+group-scoped iteration of step 5. A title that moves to the next page
+takes its group's iteration with it, as a detail band takes its own.
+
+A band that is split is committed, head first, and nothing is rolled back:
+its fold belongs to the page its head is on.
+
 A band suppressed by `printwhen` does not iterate `detail`-scoped variables, but
-does advance `ITEM_NUMBER`.
+does advance `ITEM_NUMBER` and iterates `item`-scoped ones.
+
+### The end of the report
+
+After the last record, every group still open is closed, innermost first:
+its summary is placed against the last record's context, as step 3 places
+one at a break. Then the fragment of any balanced frame is balanced, the
+report's `summary` is placed, and the last page's footers are placed,
+innermost first.
 
 ### Report structure
 
@@ -1297,6 +1504,13 @@ Each of these names the template node, the record index, and the measured values
 The rows marked **overflow** are errors that `--allow-overflow` downgrades to a
 warning, placing the marks anyway. The warning is recorded in the printout header,
 so an overflowing document is identifiable from the artifact.
+
+An oversized band is placed at the top of an [empty](#extent-and-fill) column:
+where it was tried if that column is empty, and otherwise after as many column
+ejects as it takes to reach one, which is the next page at the latest.
+It runs past that column's bottom, and the band after it starts the next column.
+The warning is raised once for each band, before any eject, and carries the
+record that band was being placed for, the first record's 0 included.
 
 A mark outside the printable area is the case a negative `right` or `bottom`
 produces. Such an offset is legal in the template — it means the box reaches past

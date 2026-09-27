@@ -1,0 +1,25 @@
+// probes/pagination/eject-blank-page.kdl -- an eject node on an empty page.
+//
+// Every detail band carries an unconditional page eject, which is tested
+// before the band is placed.  The first detail is the first band on page 1,
+// so the frame it would eject from is empty.
+//
+// The eject happens anyway: page 1 is blank, and each row has a page of its
+// own after it.  An `eject` node ejects whenever it is selected and has no
+// `require`, whatever the frame holds; the summary follows the last row.
+//
+// doc/template.md#eject is what this became.
+
+report name="pagination/eject-blank-page" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=100 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    detail height=10 {
+      eject type="page"
+      field expr="'r%d pn %d vp %s' % (ITEM_NUMBER, PAGE_NUMBER, VERTICAL_POSITION)" left=0 top=0 height=6
+    }
+    summary height=6 {
+      field text="S" left=0 top=0 height=6
+    }
+  }
+}

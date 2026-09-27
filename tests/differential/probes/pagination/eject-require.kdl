@@ -1,0 +1,24 @@
+// probes/pagination/eject-require.kdl -- `require`, and a column eject in one column.
+//
+// Two `eject` nodes on the detail band.  The first is selected on the third
+// record only and asks for 35pt; the second is never reached on that record,
+// since the first to be selected ends the search, and on every other record
+// it is selected and asks for 25.
+//
+// 25 is never short: the second record and the fourth each find 40 left.
+// On the third record 30 is left, less than 35, so it ejects, and a column
+// eject in a frame of one column is a page eject.
+//
+// doc/template.md#eject is what this became.
+
+report name="pagination/eject-require" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=100 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    detail height=10 {
+      eject type="column" when="ITEM_NUMBER == 3" require=35
+      eject require=25
+      field expr="'r%d pn %d vp %s' % (ITEM_NUMBER, PAGE_NUMBER, VERTICAL_POSITION)" left=0 top=0 height=6
+    }
+  }
+}

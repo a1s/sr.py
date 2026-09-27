@@ -1,0 +1,49 @@
+// probes/pagination/footer-at-a-break.kdl -- a page that ends at a group break.
+//
+// The second group does not fit what the first leaves on page 1,
+// and `keeptogether` moves it to page 2.  The page ends where
+// one run ends and the next begins, and each side of the eject reads
+// its own side of the break: doc/layout.md#what-a-header-or-footer-sees
+// builds the footer against the context the summary was built in,
+// the fifth record and the first run with its count and total,
+// and the header against the sixth record and the run that begins.
+//
+// The reference builds the footer against the new record and the new run,
+// so page 1's footer reads a run of which nothing is on page 1.
+//
+// The group fields print only where a record has been reached and one
+// is left to come: before the first record `THIS` is None, and the
+// last page's footer comes after the last run, where what the group's
+// names hold is unspecified.
+//
+// Registered as the divergence `footer-at-a-group-break`.
+
+report name="pagination/footer-at-a-break" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  records {
+    member "a" type="int"
+  }
+  variable "total" expr="1" calc="sum" reset="group" resetgrp="A"
+  layout width=200 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    header height=5 {
+      field expr="'H pn %d' % PAGE_NUMBER" left=0 top=0 width=40 height=5
+      field expr="'it %d a %d A_C %d total %s' % (ITEM_NUMBER, a, A_COUNT, total)" printwhen="THIS != None and ITEM_NUMBER < DATA_COUNT" left=40 top=0 height=5
+    }
+    footer height=5 {
+      field expr="'F pn %d' % PAGE_NUMBER" left=0 top=0 width=40 height=5
+      field expr="'it %d a %d A_C %d total %s' % (ITEM_NUMBER, a, A_COUNT, total)" printwhen="THIS != None and ITEM_NUMBER < DATA_COUNT" left=40 top=0 height=5
+    }
+    group "A" expr="a" keeptogether=#true {
+      title height=5 {
+        field expr="'AT a%d' % a" left=0 top=0 height=5
+      }
+      summary height=5 {
+        field expr="'AS a%d total %s' % (a, total)" left=0 top=0 height=5
+      }
+      detail height=5 {
+        field expr="'r%d' % ITEM_NUMBER" left=0 top=0 height=5
+      }
+    }
+  }
+}

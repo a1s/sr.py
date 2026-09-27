@@ -1,0 +1,42 @@
+// probes/pagination/group-title-moves.kdl -- a group whose title moves to the next page.
+//
+// The first page is full when the second group opens, so its title does not
+// fit and the group moves to page 2.  Two things depend on whether the group
+// is taken to begin where the loop opened it or where its title lands.
+//
+//   * A_PAGE_NUMBER.  The reference counts the page eject the title causes as
+//     the group's second page, so the group reads 2 on the page it begins on,
+//     and the page header above its title reads 2 as well.  doc/layout.md#sequence
+//     does not advance a group that is still opening: it reads 1 there.
+//   * The group's fold.  `gv` iterates at the break and resets per page.
+//     The reference folds it on page 1 and loses the value to page 2's reset,
+//     so the title never sees its own record.  doc/layout.md#rollback undoes
+//     a title's fold before the eject it causes and applies it after, as it
+//     does a detail band's: the page header, before the fold, reads [], and
+//     the title reads [5].
+//
+// Registered as the divergence `group-opens-where-its-title-lands`.
+
+report name="pagination/group-title-moves" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  records {
+    member "a" type="int"
+  }
+  variable "gv" expr="ITEM_NUMBER" calc="list" iter="group" itergrp="A" reset="page"
+  variable "pv" expr="ITEM_NUMBER" calc="list" iter="page" reset="report"
+  variable "cv" expr="PAGE_NUMBER" calc="list" iter="column" reset="report"
+  layout width=200 height=40 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    header height=5 {
+      field expr="'H pn %d A_PN %d A_C %d it %d gv %s pv %s cv %s' % (PAGE_NUMBER, A_PAGE_NUMBER, A_COUNT, ITEM_NUMBER, gv, pv, cv)" left=0 top=0 height=5
+    }
+    group "A" expr="a" {
+      title height=5 {
+        field expr="'AT a%d it %d A_PN %d A_C %d gv %s pv %s' % (a, ITEM_NUMBER, A_PAGE_NUMBER, A_COUNT, gv, pv)" left=0 top=0 height=5
+      }
+      detail height=5 {
+        field expr="'r%d A_PN %d A_C %d' % (ITEM_NUMBER, A_PAGE_NUMBER, A_COUNT)" left=0 top=0 height=5
+      }
+    }
+  }
+}

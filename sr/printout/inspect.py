@@ -34,7 +34,7 @@ __all__ = ["dump", "pages_wanted", "read_jsonl", "records_of"]
 # writes them.  A field the mark does not carry is left out rather than
 # written empty, so a rectangle with no `stroke` shows no `width`.
 MARK_FIELDS: dict[str, tuple[str, ...]] = {
-    "text": ("font", "color", "align", "leading"),
+    "text": ("font", "color", "align", "leading", "lastLineJustified"),
     "line": ("width", "dash", "color", "backslant"),
     "rectangle": ("stroke", "width", "dash", "fill", "radius"),
     "image": ("type", "data", "file"),
@@ -46,6 +46,9 @@ MARK_FIELDS: dict[str, tuple[str, ...]] = {
 # The fields that are shown as a bare value rather than as `name value`,
 # because the name would repeat what the value already says.
 BARE = {"type", "value", "title", "target"}
+
+# A true boolean is shown as its name, and these read better spelled out.
+LABELS = {"lastLineJustified": "last line justified"}
 
 # A rectangle's `width` is its stroke width and means nothing
 # without an outline, so it is shown only beside one.
@@ -406,7 +409,7 @@ def mark_line(mark: dict[str, Any]) -> str:
         value = mark[key]
         if isinstance(value, bool):
             if value:
-                parts.append(key)
+                parts.append(LABELS.get(key, key))
             continue
         shown = quote(value) if key in ("value", "target", "title") else spelled(value)
         parts.append(shown if key in BARE else f"{key} {shown}")

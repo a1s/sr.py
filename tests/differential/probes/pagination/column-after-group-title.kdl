@@ -1,0 +1,44 @@
+// probes/pagination/column-after-group-title.kdl -- a group's columns, below its title.
+//
+// A group with columns of its own: its title and summary belong to the frame
+// that contains the columns, so they span both.  The first group's third row
+// is moved to the second column by an `eject` node.  Where does that column
+// begin, and where do the second group's rows go once its title has been
+// placed across both columns?
+//
+// The reference begins the second column at the column frame's top, 11,
+// which is under the first group's title, and draws the row over it.
+// doc/layout.md#extent-and-fill begins it at the floor the title left, 17.
+// After the first group's summary and the second group's title, both below
+// the deepest column, the second group's rows continue in the second column,
+// below its title, in both engines: a band across the columns moves every
+// column down and resets none of them.
+//
+// Registered as the divergence `column-floor`, filed against the reference.
+
+report name="pagination/column-after-group-title" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "g" type="int"
+  }
+  layout width=200 height=150 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    group "grp" expr="g" {
+      title height=6 {
+        field expr="'GT g%d vp %s vs %s cn %d' % (g, VERTICAL_POSITION, VERTICAL_SPACE, COLUMN_NUMBER)" left=0 top=0 height=6
+      }
+      summary height=6 {
+        field expr="'GS g%d vp %s vs %s cn %d' % (g, VERTICAL_POSITION, VERTICAL_SPACE, COLUMN_NUMBER)" left=0 top=0 height=6
+      }
+      columns count=2 gap=10 {
+        header height=6 {
+          field expr="'CH cn %d vp %s vs %s' % (COLUMN_NUMBER, VERTICAL_POSITION, VERTICAL_SPACE)" left=0 top=0 height=6
+        }
+      }
+      detail height=10 {
+        eject type="column" when="ITEM_NUMBER == 3"
+        field expr="'r%d g%d cn %d vp %s vs %s' % (ITEM_NUMBER, g, COLUMN_NUMBER, VERTICAL_POSITION, VERTICAL_SPACE)" left=0 top=0 height=6
+      }
+    }
+  }
+}

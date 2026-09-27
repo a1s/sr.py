@@ -1,0 +1,34 @@
+// probes/pagination/split.kdl -- where a band splits, and what each half keeps.
+//
+// A band of five elements is 64pt tall and 30pt is left below the title:
+// a 2pt rule at the top, a ten-line justified stretch field from 4,
+// a three-line one beside it from 0, a rule at the band's bottom edge,
+// and a 3pt rectangle at 30.  A cut may fall on a line boundary of
+// a stretch field or outside every other element's marks, and the
+// greatest one not past 30 is at 28, four lines into the long field.
+//
+// The head keeps what is above 28 where it was: the top rule, the
+// short field whole, and the long field's first four lines, marked
+// `lastLineJustified` because the paragraph goes on.  The tail starts
+// the next page and every element in it moves up by 28: the remaining
+// six lines, the bottom rule at 36, and the rectangle, which started
+// below the cut, at 2.
+//
+// doc/layout.md#band-splitting is what this became.
+
+report name="pagination/split" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=100 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    title height=20 {
+      field text="T" left=0 top=0 height=6
+    }
+    detail split=#true {
+      rectangle left=0 top=0 width=1 height=2
+      field text="a1\na2\na3\na4\na5\na6\na7\na8\na9\na10" stretch=#true left=0 top=4 width=40 align="justified"
+      field text="b1\nb2\nb3" stretch=#true left=50 top=0 width=40
+      line left=0 width=0.5 bottom=0 height=0
+      rectangle left=45 top=30 width=1 height=3
+    }
+  }
+}

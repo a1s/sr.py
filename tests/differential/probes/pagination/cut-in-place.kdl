@@ -1,0 +1,29 @@
+// probes/pagination/cut-in-place.kdl -- the last resort, where the band is.
+//
+// Eighteen lines, 108pt, in a frame of 50 with 30 left below the title.
+// `orphans=6 widows=13` together ask for nineteen lines, so the field
+// permits no legal split point anywhere, and the band is taller than
+// an empty frame. That is the fourth branch of doc/layout.md#placing-a-band:
+// split at the last cut point that fits what is left, giving up orphans
+// and widows.
+//
+// Here that is after five lines, on the first page, beside the title.
+// The reference ejects first and cuts the band on an empty page instead,
+// leaving the first page with the title alone: the branch tests the frame
+// as it stands, and an eject is what the third branch does for a band
+// that would fit an empty frame, which this one does not.
+//
+// Registered as the divergence `cut-in-place`, filed against the reference.
+
+report name="pagination/cut-in-place" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=100 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    title height=20 {
+      field text="T" left=0 top=0 height=6
+    }
+    detail split=#true orphans=6 widows=13 {
+      field text="a1\na2\na3\na4\na5\na6\na7\na8\na9\na10\na11\na12\na13\na14\na15\na16\na17\na18" stretch=#true left=0 top=0 width=40
+    }
+  }
+}

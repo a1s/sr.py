@@ -1,0 +1,34 @@
+// probes/pagination/swapped-bands.kdl -- where swapheader and swapfooter put a band.
+//
+// The title is at the top of the page frame, above the page header,
+// which is reserved below it, so the content starts 6pt lower.
+// The title is measured against the page frame with neither
+// reservation taken out.
+//
+// The summary is at the bottom, below the page footer, and the footer
+// is placed flush against the bottom that is left, immediately above it.
+// The footer's VERTICAL_POSITION counts the summary as filled.
+//
+// doc/layout.md#swapheader-and-swapfooter is what this became.
+
+report name="pagination/swapped-bands" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  layout width=200 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    header height=5 {
+      field expr="'H pn %d vp %s vs %s' % (PAGE_NUMBER, VERTICAL_POSITION, VERTICAL_SPACE)" left=0 top=0 height=5
+    }
+    footer height=5 {
+      field expr="'F pn %d vp %s vs %s' % (PAGE_NUMBER, VERTICAL_POSITION, VERTICAL_SPACE)" left=0 top=0 height=5
+    }
+    title height=6 swapheader=#true {
+      field expr="'T vp %s vs %s' % (VERTICAL_POSITION, VERTICAL_SPACE)" left=0 top=0 height=5
+    }
+    detail height=5 {
+      field expr="'r%d vp %s vs %s' % (ITEM_NUMBER, VERTICAL_POSITION, VERTICAL_SPACE)" left=0 top=0 height=5
+    }
+    summary height=7 swapfooter=#true {
+      field expr="'S vp %s vs %s' % (VERTICAL_POSITION, VERTICAL_SPACE)" left=0 top=0 height=5
+    }
+  }
+}

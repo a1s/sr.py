@@ -1,0 +1,28 @@
+// probes/pagination/across-columns.kdl -- a band placed across columns.
+//
+// Four rows fill part of the first column, an `eject` node moves
+// the fifth to the second, and the second is left shorter than the first.
+// The summary belongs to the page frame and spans both columns, so where
+// it goes is the question: below the column that was filling last,
+// or below both.
+//
+// The reference puts it below the deepest, at 45: a committed band comes
+// down to at least the bottom of everything inside its frame's current
+// column, and both columns are inside the page frame's.
+//
+// doc/layout.md#extent-and-fill is what this became.
+
+report name="pagination/across-columns" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=200 height=150 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    columns count=2 gap=10
+    detail height=10 {
+      eject type="column" when="ITEM_NUMBER == 5"
+      field expr="'r%d cn %d vp %s vs %s' % (ITEM_NUMBER, COLUMN_NUMBER, VERTICAL_POSITION, VERTICAL_SPACE)" left=0 top=0 height=6
+    }
+    summary height=6 {
+      field expr="'S vp %s vs %s cn %d' % (VERTICAL_POSITION, VERTICAL_SPACE, COLUMN_NUMBER)" left=0 top=0 height=6
+    }
+  }
+}

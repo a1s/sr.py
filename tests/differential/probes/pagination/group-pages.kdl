@@ -1,0 +1,45 @@
+// probes/pagination/group-pages.kdl -- a group's page number.
+//
+// A_PAGE_NUMBER counts pages from the one a group began on.
+// Group 1 runs over two pages, the break a detail band that
+// did not fit, and page 2's header reads 2 while group 1 is
+// still open: a page eject adds one to the page number of
+// every group.  Group 2 begins in the middle of page 2 and
+// its title reads 1.  The page footer, built against the
+// outgoing context, reads the page number of the group open
+// when the page ends, which is group 2's.
+//
+// The last page's footer comes after group 2's summary,
+// where what A's names hold is unspecified,
+// doc/expressions.md#between-a-groups-runs.  So the footer reads them
+// only while a record is left to come, which leaves the last page out.
+//
+// doc/layout.md#sequence is what this became.
+
+report name="pagination/group-pages" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  records {
+    member "a" type="int"
+  }
+  layout width=200 height=50 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    header height=5 {
+      field expr="'H pn %d A_PN %d A_C %d' % (PAGE_NUMBER, A_PAGE_NUMBER, A_COUNT)" left=0 top=0 height=5
+    }
+    footer height=5 {
+      field expr="'F pn %d' % PAGE_NUMBER" left=0 top=0 width=40 height=5
+      field expr="'A_PN %d A_C %d' % (A_PAGE_NUMBER, A_COUNT)" printwhen="ITEM_NUMBER < DATA_COUNT" left=40 top=0 height=5
+    }
+    group "A" expr="a" {
+      title height=5 {
+        field expr="'AT a%d A_PN %d' % (a, A_PAGE_NUMBER)" left=0 top=0 height=5
+      }
+      summary height=5 {
+        field expr="'AS a%d A_PN %d A_C %d' % (a, A_PAGE_NUMBER, A_COUNT)" left=0 top=0 height=5
+      }
+      detail height=5 {
+        field expr="'r%d A_PN %d A_C %d' % (ITEM_NUMBER, A_PAGE_NUMBER, A_COUNT)" left=0 top=0 height=5
+      }
+    }
+  }
+}

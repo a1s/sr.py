@@ -950,9 +950,11 @@ def test_a_variable_folds_per_record_and_the_summary_reads_the_total(
     [
         ('    detail height=10 { barcode type="Code128" text="1" }', "M10"),
         ('    detail height=10 { image file="x.png" }', "M11"),
-        ('    detail height=10 { eject type="page" }', "M8"),
-        ("    columns count=2\n    detail height=10", "M8"),
-        ('    group "g" expr="1" { detail height=10 }', "M8"),
+        (
+            "    detail height=10 {"
+            ' field expr="FINAL.PAGE_NUMBER" evaltime="report" left=0 top=0 }',
+            "M9",
+        ),
     ],
 )
 def test_what_a_later_milestone_brings_says_so(
@@ -963,10 +965,12 @@ def test_what_a_later_milestone_brings_says_so(
     assert milestone in str(refused.value)
 
 
-def test_a_band_that_does_not_fit_is_refused_by_name(tmp_path: Path) -> None:
+def test_a_band_that_fits_no_frame_is_refused_by_name(tmp_path: Path) -> None:
     with pytest.raises(BuildError) as refused:
         built(tmp_path, "    detail height=900 { rectangle left=0 top=0 width=5 }")
-    assert "900" in str(refused.value)
+    assert "the band measures 900 pt and the largest frame offers 800 pt" in str(
+        refused.value
+    )
 
 
 def test_a_line_mark_carries_the_style_colour(tmp_path: Path) -> None:

@@ -1,0 +1,34 @@
+// probes/pagination/overflow.kdl -- where --allow-overflow puts a band.
+//
+// The second record's band holds an 80pt rectangle in a frame of 40,
+// so it fits no frame and cannot be cut: the rectangle blocks every
+// offset inside it. That is an overflow, which --allow-overflow turns
+// into a warning naming the band and the record, and then the band
+// is placed all the same.
+//
+// It is placed at the top of the next frame: the first record's band
+// had already been placed on page 1, so the column is not empty and
+// ejects first, and the band runs past the bottom of page 2.
+// The third record starts page 3.
+//
+// doc/layout.md#errors is what this became.
+
+report name="pagination/overflow" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=100 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    header height=5 {
+      rectangle left=0 top=0 width=1 height=5
+    }
+    footer height=5 {
+      rectangle left=0 top=0 width=1 height=5
+    }
+    title height=20 {
+      field text="T" left=0 top=0 height=6
+    }
+    detail height=10 {
+      field expr="'r%d' % ITEM_NUMBER" left=0 top=0 width=40 height=6
+      rectangle printwhen="ITEM_NUMBER == 2" left=50 top=0 width=1 height=80
+    }
+  }
+}

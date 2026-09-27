@@ -1,0 +1,37 @@
+// probes/pagination/mintailrows.kdl -- rows that must precede a group's summary.
+//
+// Six rows and a summary, with room on the first page for the title
+// and five rows.  Without `mintailrows` the summary would start page 2
+// on its own. With `mintailrows=2` the loop measures the last two rows
+// and the summary together when it reaches the fifth row, 15pt against
+// 10 left, and ejects before it, so the summary shares page 2 with two rows.
+//
+// The reference ignores `mintailrows`, at this value and at the default of 1:
+// its summary starts page 2 alone.
+//
+// Registered as the divergence `mintailrows`, filed against the reference.
+
+report name="pagination/mintailrows" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  records {
+    member "a" type="int"
+    member "s" type="bool"
+  }
+  layout width=200 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    title height=15 {
+      field text="T" left=0 top=0 height=5
+    }
+    group "A" expr="a" mintailrows=2 {
+      title height=5 {
+        field expr="'AT a%d it %d' % (a, ITEM_NUMBER)" left=0 top=0 height=5
+      }
+      summary height=5 {
+        field expr="'AS a%d it %d' % (a, ITEM_NUMBER)" left=0 top=0 height=5
+      }
+      detail height=5 printwhen="not s" {
+        field expr="'r%d' % ITEM_NUMBER" left=0 top=0 height=5
+      }
+    }
+  }
+}

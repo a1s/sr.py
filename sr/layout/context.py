@@ -44,6 +44,10 @@ class Context:
         page_number: The current page, 1-based.
         column_number: The current column, 1-based.
         build_time: When this run started.
+        group_counts: Each group's ``X_COUNT``: detail sections printed
+            since the group last began.
+        group_pages: Each group's ``X_PAGE_NUMBER``: the page counted
+            from the one the group last began on, from 1.
         file: The template, for a diagnostic.
 
     """
@@ -59,6 +63,8 @@ class Context:
     page_number: int = 1
     column_number: int = 1
     build_time: Time | None = None
+    group_counts: dict[str, int] = field(default_factory=dict)
+    group_pages: dict[str, int] = field(default_factory=dict)
     file: str | None = None
 
     @property
@@ -73,8 +79,13 @@ class Context:
         return self.item_number - 1 if self.item_number else None
 
     def predefined(self) -> dict[str, Any]:
-        """Return the predefined variables and their current values."""
-        return {
+        """Return the predefined variables and their current values.
+
+        A group named ``X`` adds ``X_COUNT`` and ``X_PAGE_NUMBER``,
+        per doc/template.md#group.
+
+        """
+        found: dict[str, Any] = {
             "THIS": self.record,
             "ITEM_NUMBER": self.item_number,
             "DATA_COUNT": self.data_count,
@@ -85,6 +96,11 @@ class Context:
             "COLUMN_NUMBER": self.column_number,
             "BUILD_TIME": self.build_time,
         }
+        for name, count in self.group_counts.items():
+            found[f"{name}_COUNT"] = count
+        for name, page in self.group_pages.items():
+            found[f"{name}_PAGE_NUMBER"] = page
+        return found
 
     def environment(self, position: float, space: float) -> dict[str, Any]:
         """Return every name in scope, in resolution order.
