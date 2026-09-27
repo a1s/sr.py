@@ -193,3 +193,38 @@ def test_an_include_is_not_a_case_of_its_own(tmp_path: Path) -> None:
 
 def test_a_missing_probe_directory_is_not_an_error(tmp_path: Path) -> None:
     assert probe_cases(tmp_path / "absent") == []
+
+
+def test_the_host_fonts_directive_drops_strict_fonts(tmp_path: Path) -> None:
+    """`!host-fonts` is a directive to the harness, not an argument.
+
+    It is the one way a probe reaches the substitute face, which
+    `--strict-fonts` refuses, and it is not passed to the engine.
+
+    """
+    (tmp_path / "substitute.kdl").write_text("report {}\n", encoding="utf-8")
+    (tmp_path / "substitute.args").write_text(
+        "# a comment\n!host-fonts\n", encoding="utf-8"
+    )
+    (tmp_path / "plain.kdl").write_text("report {}\n", encoding="utf-8")
+    found = {case.ident: case for case in probe_cases(tmp_path)}
+
+    host = found["probe/substitute"]
+    assert host.host_fonts
+    assert (host.params, host.flags) == ((), ())
+    arguments = host.argv(tmp_path / "out.srp.jsonl")
+    assert "--strict-fonts" not in arguments
+    assert "!host-fonts" not in arguments
+    assert arguments[arguments.index("--build-time") + 1] == BUILD_TIME
+
+    plain = found["probe/plain"]
+    assert not plain.host_fonts
+    assert "--strict-fonts" in plain.argv(tmp_path / "out.srp.jsonl")
+
+
+def test_an_unknown_directive_is_refused(tmp_path: Path) -> None:
+    """A probe built other than as its author asked answers another question."""
+    (tmp_path / "odd.kdl").write_text("report {}\n", encoding="utf-8")
+    (tmp_path / "odd.args").write_text("!host-font\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="unknown harness directive"):
+        probe_cases(tmp_path)

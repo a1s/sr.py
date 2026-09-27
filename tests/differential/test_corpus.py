@@ -184,7 +184,7 @@ def test_the_reference_still_answers_the_same_way(
         "`python -m tests.differential.record_answers`"
     )
     assert isinstance(outcome, Build)
-    got = distil(outcome.printout.decode("utf-8"))
+    got = distil(outcome.printout.decode("utf-8"), case.host_fonts)
     want = recorded.read_text(encoding="utf-8")
     assert got == want, (
         f"{case.ident}: the reference no longer answers as recorded in "

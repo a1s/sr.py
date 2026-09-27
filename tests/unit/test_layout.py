@@ -617,6 +617,17 @@ def test_with_nothing_above_the_gap_runs_to_the_highest_top(
     assert [box[1] for box in boxes(built(tmp_path, body))] == [-5, -1, 10]
 
 
+def test_a_declared_bottom_keeps_a_floating_stretch_field_in_place(
+    tmp_path: Path,
+) -> None:
+    """It loads, but the bottom anchors it: it does not float below A."""
+    tops = floated(
+        tmp_path,
+        'field text="C" left=0 top=14 bottom=0 width=40 float=#true stretch=#true',
+    )
+    assert tops == [0, 14]
+
+
 def test_a_float_with_no_predecessor_stays_where_it_was_declared(
     tmp_path: Path,
 ) -> None:

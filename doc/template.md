@@ -500,9 +500,14 @@ content, which includes `stretch=#true` on a `field`. It cannot come from the
 container, since a floating element's own top is not settled until the other
 elements have been placed. In practice that rules out giving a floating element
 `bottom` and nothing else. A floating element with neither a declared `height`
-nor a content height is a [validation](#validation) error. One that declares a
-`bottom` beside its `height` is accepted, and is anchored to the band's bottom
-edge rather than floating.
+nor a content height is a [validation](#validation) error.
+
+A floating element that declares a `bottom` is accepted whenever it has a
+height of its own, whether that is a declared `height` or a content height:
+`field bottom=0 height=12 float=#true` and `field top=3 bottom=0 stretch=#true
+float=#true` both load. Declaring a `bottom` anchors an element to the band's
+bottom edge, so neither floats; `float=#true` has no effect on them.
+See [layout.md](layout.md#what-a-floating-element-may-be).
 
 ## Ordering rules
 

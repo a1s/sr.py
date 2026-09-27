@@ -323,3 +323,22 @@ the side that changes.\
 ticket = "M7: negative sizes, template.md#position-and-size-any-two-of-three"
 since = "2026-09-27"
 affects = ["probe/values/negative-size"]
+
+[[divergence]]
+id = "font-warning-node"
+summary = "a font warning names its font node here; the reference leaves node out"
+reason = """
+doc/printout.md#header-line gives every warning `kind`, `node`, `record`, \
+and `message`, and a `font` warning, which says a typeface fell back to the \
+substitute face, has a node to name: the `font` node that asked for it.  \
+This engine writes it as `report > font "body"`.  The reference writes \
+`node` on a `glyph` warning, as the corpus shows, and leaves it out of this \
+kind, so a reader that goes from a warning to the template cannot find \
+which of several fonts fell back without matching the typeface in the \
+message.  The difference dates from M5; it went unregistered until \
+the harness could build a probe without `--strict-fonts`, which refuses a \
+`typeface` outright.  The reference is the side that changes.\
+"""
+ticket = "M5: font warnings, printout.md#header-line; filed against the Go engine"
+since = "2026-09-27"
+affects = ["probe/printout/font-warning"]

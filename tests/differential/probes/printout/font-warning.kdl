@@ -1,0 +1,24 @@
+// probes/printout/font-warning.kdl -- the warning a substituted typeface gives.
+//
+// doc/printout.md#header-line gives every warning `kind`, `node`,
+// `record`, and `message`, and a `font` warning has a node to name:
+// the `font` node whose typeface was not found.  This engine writes it;
+// the reference leaves `node` out of this one kind.  That is a
+// registered divergence rather than the rule; see divergences.toml,
+// `font-warning-node`.
+//
+// A substitute is only reached without `--strict-fonts`, so the sidecar
+// asks the harness for `!host-fonts`.  Which face the host offers is
+// the machine's business rather than the build's, and the recorded answer
+// names it `<substitute>`.  The field is one short word, so that no face
+// could wrap it: the layout is the same whatever the host has.
+
+report name="printout/font-warning" {
+  font "body" typeface="NoSuchFamilyAtAll" size=10
+  layout width=300 height=800 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=12 {
+      field text="a" left=0 top=0 width=200 height=12
+    }
+  }
+}

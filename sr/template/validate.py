@@ -821,9 +821,9 @@ def floating_height(visit: Visit, element: Element) -> None:
     doc/template.md#floating-elements: a floating element's top is
     not settled until the others are placed, so its height has to be
     its own, a declared ``height`` or a content height.  One that
-    declares a ``bottom`` beside a ``height`` does have one, and is
-    accepted; it is anchored to the band's bottom edge and so does
-    not float.
+    declares a ``bottom`` is accepted whenever it has either, a ``height``
+    beside the ``bottom`` or ``stretch=#true``; the ``bottom`` anchors it
+    to the band's bottom edge, so it does not float.
 
     Args:
         visit: The document and its collectors.
@@ -856,7 +856,7 @@ SIZES = (
 
 
 def sizes(visit: Visit, box: Element | Xref) -> None:
-    """Report a negative ``width``, ``height``, ``maxwidth`` or ``maxheight``.
+    """Report a negative ``width``, ``height``, ``maxwidth``, or ``maxheight``.
 
     doc/template.md#position-and-size-any-two-of-three: a size is an
     extent, and an extent below zero describes no box.  Reaching past

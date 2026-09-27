@@ -50,6 +50,9 @@ reproducibility `doc/cli.md` promises.
 
 A case is one template, its data, its parameters, and the two flags that
 make a build reproducible: `--build-time` fixed and `--strict-fonts` set.
+One kind of probe drops the second, because what it asks about is only
+reached by resolving a font on the host; see
+[probes/README.md](probes/README.md#fonts-from-the-host).
 The same case produces the argument list for **both** engines, so nothing
 about the comparison can drift between them, and both write into one
 directory, because a printout's paths are relative to where it lands.

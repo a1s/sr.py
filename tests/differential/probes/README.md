@@ -14,7 +14,7 @@ For a probe named `NAME`:
 |---|---|
 | `NAME.kdl` | The template. Required — it is what makes the probe a case. |
 | `NAME.jsonl` | Its records. Optional; see below. |
-| `NAME.args` | Parameters and extra flags. Optional. |
+| `NAME.args` | Parameters, extra flags, and harness directives. Optional. |
 | `NAME.answer.jsonl` | The reference's printout, committed. Generated, not written. |
 | `NAME.inc.kdl` | A template another probe pulls in. Not built on its own. |
 
@@ -52,8 +52,10 @@ identifier appears in the test id, in a failure report, and in the
 divergence register's patterns, so it is renamed only deliberately.
 
 `NAME.args` holds one argument per line. A line starting with `-` is passed
-to the engine as written; any other line is a `NAME=VALUE` parameter. Blank
-lines and lines starting with `#` are ignored.
+to the engine as written; a line starting with `!` is a directive to the
+harness rather than an argument; any other line is a `NAME=VALUE` parameter.
+Blank lines and lines starting with `#` are ignored. There is one directive,
+`!host-fonts`, below, and any other is refused rather than ignored.
 
 ```
 # probes/breaking/overflow.args
@@ -78,6 +80,27 @@ They are shaped for the questions the `data/` probes ask:
 An image in `example/` works too, and `example/fonts/` is where a probe's
 fonts come from, but prefer these: a fixture that exists to be a fixture
 can be changed when a probe needs it to be.
+
+### Fonts from the host
+
+A question about the [substitute face](../../../doc/template.md#the-substitute-face)
+cannot be asked that way, since `--strict-fonts` refuses a `typeface` outright.
+A probe whose sidecar holds `!host-fonts` is built without it, by both engines,
+and resolves its fonts against the machine it runs on. Keep such a probe
+to that question: everything else belongs in a strict one.
+
+What the host chose is then in the printout, and it is the machine's rather
+than the build's. The two engines run on one machine and are compared as
+they are, but the recorded answer is not allowed to depend on it: the
+substitute face's name is written `<substitute>` in the header, wherever
+it appears there, and a `resolvedIndex` is taken out, since one platform's
+substitute is a collection and the others' are not. `resolvedFile` is replaced
+as for every probe. The layout does not move with the face, because leading
+is a multiple of the font size, as long as the probe's text is too short to
+wrap; a probe that let a line wrap would record one machine's metrics.
+
+Every platform doc/ names ships a substitute face. A host without one fails
+the build in both engines, and the probe with it.
 
 ## What is here
 
@@ -104,6 +127,7 @@ the reference gave, and names the section of `doc/` that answer became.
 | `printout/strings` | how a string reaches the file |
 | `printout/used-fonts` | which fonts the header's table lists |
 | `printout/no-fonts` | the table when no element prints |
+| `printout/font-warning` | the warning a substituted typeface gives |
 | `layout/band-height` | the two maxima a band's height is |
 | `layout/alignment` | where a field's content sits in its box |
 | `layout/reserved-bands` | what a header and a footer are measured against |
@@ -169,6 +193,11 @@ writes the font table as `null` rather than as an empty array.
 Both of those are filed against the reference. The third,
 `values/negative-size`, is a decision: doc/ now refuses a negative size,
 and the reference still builds one.
+
+`printout/font-warning` is older than any of them and was registered last.
+The reference leaves `node` out of a `font` warning, which doc/ requires,
+and has since M5; no probe could see it until `!host-fonts` let one reach
+the substitute face.
 
 Of the rest, every one agrees byte for byte except four: the three
 `data/` probes, which need an image, and `rounding/tolerance-refuses`,

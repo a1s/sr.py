@@ -11,7 +11,8 @@ report name="probe" {
       field text="1\n2\n3" left=0 top=0 height=12 width=40 stretch=#true
       field text="B" left=0 bottom=0 width=40 float=#true
       rectangle left=0 right=100 top=12 float=#true
-      // Accepted: a content height, and a declared height beside a bottom.
+      // Accepted, and not floating, since a declared bottom anchors each:
+      // a content height beside the bottom, and a declared height beside it.
       field text="C" left=0 top=3 bottom=0 width=40 float=#true stretch=#true
       line left=0 right=0 bottom=2 height=0 float=#true
     }

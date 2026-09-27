@@ -578,7 +578,7 @@ Resolution is a partial order, not declaration order:
    is above one at the near side all the same.
 3. Walk the DAG in topological order, assigning each floating element
    `top = max(bottom edges of its predecessors) + gap`. The bottom edges
-   are the predecessors' as they now stand, floated, grown and clamped.
+   are the predecessors' as they now stand, floated, grown, and clamped.
    `gap` is the element's declared distance to the **nearest element
    wholly above it** -- the one whose declared bottom is lowest -- among
    those step 1 considers. Where none is, it is the distance to the band's
@@ -624,6 +624,15 @@ What a floating element may **not** do is take its height from the band — a de
 has finished, and the band's height is not known until step 6, so such an element
 has neither end fixed. It is excluded here for the same reason it is excluded from
 the band's height: the two would define each other.
+[Validation](template.md#validation) refuses one.
+
+A floating element that **declares** a `bottom` is another matter. With a height
+of its own, a declared `height` or a content height, it loads, but a declared
+`bottom` makes an element [container-dependent](#building-a-band) whatever its
+content, so it is resolved against the band in step 6 like any other and takes
+no part in this pass. Its `float=#true` has no effect. A stretch field of that
+kind keeps the box the band gives it, as any container-dependent stretch field
+does.
 
 The DAG itself is built from **declared** boxes, so it depends on the template and
 not on the data. Measured heights are used to propagate positions along it, but they
