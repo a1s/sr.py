@@ -1,0 +1,23 @@
+// probes/values/negative-size.kdl -- a size below zero.
+//
+// doc/template.md#position-and-size-any-two-of-three: a negative
+// `right` or `bottom` reaches past the container, and a negative
+// `width`, `height`, `maxwidth`, or `maxheight` is a validation error,
+// since an extent below zero describes no box.
+//
+// The reference accepts the size and draws the box with no height, while
+// keeping the declared bottom above the top for the floating pass: the
+// float here lands 5pt lower than it would below a height of 0.  That is
+// a registered divergence rather than the rule; see divergences.toml,
+// `negative-sizes-refused`.  Both engines refuse a negative stroke width.
+
+report name="values/negative-size" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=300 height=800 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail {
+      field text="1\n2\n3" left=0 top=10 height=-5 width=40 stretch=#true
+      field text="F" left=0 top=14 height=12 width=40 float=#true
+    }
+  }
+}

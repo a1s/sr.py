@@ -303,3 +303,23 @@ table fails on it.  The reference is the side that changes.\
 ticket = "M7: the font table, printout.md#fonts; filed against the Go engine"
 since = "2026-09-26"
 affects = ["probe/printout/no-fonts"]
+
+[[divergence]]
+id = "negative-sizes-refused"
+summary = "a negative width, height, maxwidth, or maxheight is a validation error here; the reference accepts it"
+reason = """
+Neither doc/ nor either engine said what a size below zero means.  The \
+reference accepts one and draws the box with no extent, while keeping \
+the declared bottom above the top, so a floating element below it \
+measures its gap from a point above the box and lands lower than it \
+would below a height of 0.  Nothing needs that: every other effect of a \
+negative size is written more plainly with a size of 0 or a negative \
+`right` or `bottom`, which is what reaching past the container is for.  \
+doc/template.md#position-and-size-any-two-of-three now makes a negative \
+size an error, on an element, an `xref`, and a section alike, as the \
+reference already does for a negative stroke width.  The reference is \
+the side that changes.\
+"""
+ticket = "M7: negative sizes, template.md#position-and-size-any-two-of-three"
+since = "2026-09-27"
+affects = ["probe/values/negative-size"]

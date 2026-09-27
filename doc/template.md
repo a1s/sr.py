@@ -381,11 +381,18 @@ Missing values are filled in a fixed order — `left` then `right`, `top` then
 
 Vertically the same, with `top`/`bottom`/`height`.
 
-A negative `right` or `bottom` means the box extends past the container edge,
-and is legal — for a container in the middle of the page that is perfectly ordinary.
-A mark that ends up outside the *page's* printable area is an
-[overflow](layout.md#errors), judged on the final page coordinates
-rather than on the declaration.
+A size is never negative: a negative `width`, `height`, `maxwidth`,
+or `maxheight` is a [validation](#validation) error, as is a negative
+`height` on a section and a negative stroke `width` on a `line` or
+a `rectangle`. An extent below zero describes no box, and what a
+negative size might have been meant to do, reach past the container,
+is what an offset is for.
+
+A negative `right` or `bottom` means the box extends past the container
+edge, and is legal -- for a container in the middle of the page that is
+perfectly ordinary.  A mark that ends up outside the *page's* printable
+area is an [overflow](layout.md#errors), judged on the final page
+coordinates rather than on the declaration.
 
 `x` and `y` are accepted as aliases for `left` and `top`.
 
@@ -492,7 +499,10 @@ A floating element's height must come from the element: a declared `height`, or
 content, which includes `stretch=#true` on a `field`. It cannot come from the
 container, since a floating element's own top is not settled until the other
 elements have been placed. In practice that rules out giving a floating element
-`bottom` and nothing else.
+`bottom` and nothing else. A floating element with neither a declared `height`
+nor a content height is a [validation](#validation) error. One that declares a
+`bottom` beside its `height` is accepted, and is anchored to the band's bottom
+edge rather than floating.
 
 ## Ordering rules
 
@@ -500,10 +510,13 @@ Node order is significant in three places. Reordering siblings changes output.
 
 1. **Body elements paint in document order.** Later elements draw on top of
    earlier ones. A filled `rectangle` must precede the fields that sit on it.
-2. **`style` matches first-win.** Each section's `style` nodes are tested in
-   document order and the first whose `when` is true supplies the formatting.
-   Search continues outward: the section's own styles, then `columns`, then
-   each enclosing `group`, then `layout`.
+2. **`style` matches first-win, property by property.** The walk starts at
+   the element's own `style` nodes and continues outward: the section's own,
+   then `columns`, then each enclosing `group`, then `layout`, each scope's
+   nodes in document order. The first node whose `when` is true supplies
+   `font`, `color`, and `bgcolor`, and a property it leaves unset comes
+   from the next node whose `when` is true, which may be a later node
+   of the same scope. See [layout.md](layout.md#building-a-band).
 3. **`eject` selects first-win**, in document order: the first node whose
    `when` is true is selected and stops the search, even if its `require`
    then declines to eject. See [`eject`](#eject).
@@ -1773,6 +1786,11 @@ Validation runs once, at load, before any data is read. It checks:
 - Every name used as `FINAL.`*name* is a predefined variable or a declared
   `variable`. Parameters and bare record fields are not in `FINAL`.
 - Every `xref type="outline"` has a reachable target `outline name=`.
+- No `width`, `height`, `maxwidth`, or `maxheight` is negative, on an element,
+  an `xref`, or a section, and no stroke `width` on a `line` or a `rectangle`.
+  A negative `right` or `bottom` is legal; see [geometry](#geometry).
+- Every floating element has a declared `height` or a content height:
+  `stretch=#true` on a `field`, any `barcode`, or `scale="grow"` on an `image`.
 - Per axis, at most two of `left`/`right`/`width` and at most two of
   `top`/`bottom`/`height`.
 - [Content sources](#content-sources) are consistent: on a `field` or `barcode`

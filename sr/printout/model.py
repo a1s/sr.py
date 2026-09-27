@@ -19,7 +19,7 @@ Three rules of the format are visible in the shapes here.
   is what the writer reads to decide, per doc/printout.md#paths.
 
 The kinds produced so far are :class:`Text`, :class:`Line`,
-:class:`Rectangle` and :class:`Xref`.  Images, barcodes and outline
+:class:`Rectangle`, and :class:`Xref`.  Images, barcodes, and outline
 entries arrive with the elements that make them.
 
 """

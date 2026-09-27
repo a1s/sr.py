@@ -12,13 +12,14 @@ against a frame and the frame is what the layout builds.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from sr.api import Options, build
-from sr.errors import BuildError, Unsupported
+from sr.errors import BuildError, BuildWarning, Unsupported
 from sr.printout.model import Line, Mark, Printout, Rectangle, Text
 from sr.printout.model import Xref as XrefMark
 
@@ -717,6 +718,55 @@ def test_an_xref_child_reaches_as_far_as_its_own_box(
     assert after.box.y == reached
 
 
+def test_an_xref_to_an_outline_entry_waits_for_the_outline(
+    tmp_path: Path,
+) -> None:
+    """The target is there, on a band that never prints, so the load passes."""
+    with pytest.raises(Unsupported, match="M13"):
+        built(
+            tmp_path,
+            '    title printwhen="False" { outline title="\'Top\'" name="\'top\'" }\n'
+            "    detail height=10 {\n"
+            '      xref type="outline" target="\'top\'" height=5\n'
+            "    }",
+        )
+
+
+def test_an_xrefs_children_are_evaluated_in_document_order(
+    tmp_path: Path,
+) -> None:
+    """The xref's child fails first, although the xref is arranged last."""
+    with pytest.raises(BuildError) as refused:
+        built(
+            tmp_path,
+            "    detail {\n"
+            '      xref type="url" target="\'u\'" {\n'
+            '        field expr="1 // 0" left=0 width=50\n'
+            "      }\n"
+            '      field expr="undefined_name" left=0 top=20 width=50\n'
+            "    }",
+        )
+    assert "xref" in str(refused.value)
+
+
+def test_a_glyph_warning_names_the_xref_child_that_needed_it_first(
+    tmp_path: Path,
+) -> None:
+    printout = built(
+        tmp_path,
+        "    detail {\n"
+        '      xref type="url" target="\'u\'" {\n'
+        '        field text="中" left=0 width=50\n'
+        "      }\n"
+        '      field text="中文" left=0 top=20 width=50\n'
+        "    }",
+    )
+    glyphs = [one for one in printout.warnings if one.kind == "glyph"]
+    assert glyphs[0].node is not None
+    assert "xref" in glyphs[0].node
+    assert "中" in glyphs[0].message
+
+
 def test_an_xrefs_target_must_be_a_string(tmp_path: Path) -> None:
     with pytest.raises(BuildError, match="target must be a string"):
         built(tmp_path, '    detail { xref type="url" target="1" height=5 }')
@@ -752,6 +802,45 @@ def test_the_font_table_lists_the_fonts_a_walk_resolved_to(
     asked = Options(build_time="2026-08-04T09:12:44Z", strict_fonts=True)
     printout = build(template, rows, asked).printout
     assert sorted(one.name for one in printout.fonts) == ["big", "boxed"]
+
+
+def test_a_font_the_table_leaves_out_takes_its_warnings_with_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every font is resolved and warned about; only a used one is reported."""
+    import sr.api
+
+    real = sr.api.resolve_fonts
+
+    def warned(*args: Any, **kwargs: Any) -> Any:
+        fonts, diagnostics = real(*args, **kwargs)
+        fonts = tuple(
+            replace(
+                one,
+                warnings=(BuildWarning("font", f"about {one.font.name}"),),
+            )
+            for one in fonts
+        )
+        return fonts, diagnostics
+
+    monkeypatch.setattr(sr.api, "resolve_fonts", warned)
+    template = tmp_path / "fonts.kdl"
+    template.write_text(
+        'report name="Fonts" {\n'
+        f'  font "body" file="{REGULAR}" size=10\n'
+        f'  font "spare" file="{REGULAR}" size=12\n'
+        "  layout width=300 height=800 {\n"
+        '    style font="body" color="black"\n'
+        '    detail height=20 { field text="a" top=0 height=12; }\n'
+        "  }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    rows = tmp_path / "rows.jsonl"
+    rows.write_text(ONE_ROW, encoding="utf-8")
+    asked = Options(build_time="2026-08-04T09:12:44Z", strict_fonts=True)
+    printout = build(template, rows, asked).printout
+    assert [one.message for one in printout.warnings] == ["about body"]
 
 
 # -- the frame --------------------------------------------------------

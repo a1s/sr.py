@@ -25,7 +25,7 @@ one and the difference shows in every band that holds a rule.
 5. The band is as tall as the lowest bottom edge of the marks it produced,
    or that first height, whichever is greater.
 
-Stage 3 cannot feed back into stage 2, and that is not a simplification:
+Stage 5 cannot feed back into stage 4, and that is not a simplification:
 resolving the rule against the final height instead would make the two
 define each other.  A band whose only content is an overflowing field
 therefore grows to the text while a rule inside it keeps the height
@@ -35,16 +35,22 @@ An `xref` is the one container inside a band.  Its box comes from its
 own geometry and nothing else, it never grows to what it holds, and its
 children are laid out against it the way a band's elements are laid out
 against the band, except that the height they resolve against is the
-xref's rather than a maximum they take part in.  Their marks still reach
-the band's second maximum, so a stretch field inside an xref that does
-not hold it pushes the next band down all the same.
+xref's rather than a maximum they take part in.  What they hold still
+reaches the band's second maximum, so a stretch field inside an xref
+that does not hold it pushes the next band down all the same.
+
+Everything that evaluates -- content, conditions, styles -- happens
+in stage 1 and in document order, an xref's children at the xref's
+place among the band's elements.  A glyph warning names the first element
+that needed the character and an error is the first one the document reaches,
+which is only true if nothing is evaluated out of turn.
 
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Any
 
 from sr.errors import BuildError, BuildWarning, Location, NodePath, Unsupported
@@ -66,7 +72,7 @@ from sr.template.model import Line as LineElement
 from sr.template.model import Rectangle as RectangleElement
 from sr.units import fits, round_points
 
-__all__ = ["Measurement", "Measurer", "Styling", "lowest", "resolve_span"]
+__all__ = ["Measurement", "Measurer", "Styling", "resolve_span"]
 
 # The colour a mark is drawn in when no `style` in the walk set one.
 # doc/template.md leaves a text mark's `color` required and a
@@ -128,6 +134,7 @@ class Placement:
         declared_bottom: The bottom of that box.
         target: An `xref`'s link, evaluated.
         caption: An `xref`'s hover text, evaluated, where it has one.
+        children: An `xref`'s children, placed as far as its box allows.
         marks: An `xref`'s children's marks, relative to its box.
         reach: How far down an `xref`'s contents reach, relative to
             its top, which is what it gives the band's second maximum.
@@ -147,6 +154,7 @@ class Placement:
     declared_bottom: float = 0.0
     target: str = ""
     caption: str | None = None
+    children: list[Placement] = field(default_factory=list)
     marks: tuple[Mark, ...] = ()
     reach: float = 0.0
 
@@ -219,42 +227,24 @@ def fitting_lines(lines: tuple[str, ...], height: float, leading: float) -> int:
     return max(1, taken)
 
 
-def lowest(marks: Iterable[Mark]) -> float | None:
-    """Return the lowest bottom edge among some marks, looking inside xrefs.
-
-    An xref's box is a hit region and never grows to what it holds,
-    so what it holds is looked at separately: a field inside it that
-    runs past its box still takes room from the band.
-
-    Args:
-        marks: The marks, in any coordinates.
-
-    """
-    found: float | None = None
-    for mark in marks:
-        edge = round_points(mark.box.bottom)
-        if isinstance(mark, XrefMark):
-            inner = lowest(mark.marks)
-            if inner is not None:
-                edge = max(edge, inner)
-        found = edge if found is None else max(found, edge)
-    return found
-
-
 def reached(placements: list[Placement], marks: tuple[Mark, ...]) -> float:
     """Return the lowest edge a container's contents reach.
 
     That is the lowest of its marks, and of how far each xref in it
-    reached, which an xref's mark alone does not say: its box is fixed,
-    while an element inside it with a box of its own reaches as far as
-    that box whether or not the element's mark does.
+    reached.  An xref's mark alone does not say the second: its box is
+    fixed, while an element inside it with a box of its own reaches as
+    far as that box whether or not the element's mark does.  The reach
+    already covers every mark inside the xref, so those are not walked
+    a second time here.
 
     Args:
         placements: The container's elements, settled.
         marks: The marks they produced, in the same coordinates.
 
     """
-    found = lowest(marks) or 0.0
+    found = 0.0
+    for mark in marks:
+        found = max(found, round_points(mark.box.bottom))
     for placed in placements:
         if isinstance(placed.element, Xref):
             found = max(found, round_points(placed.top + placed.reach))
@@ -362,16 +352,46 @@ class Measurer:
         ):
             return None
         self.refuse_unsupported(section)
-        walk = tuple(style for scope in styles for style in scope)
+        outer = self.outer(
+            tuple(style for scope in styles for style in scope), names, context
+        )
         placements = self.placements(
-            section.elements, frame.width, context, names, walk
+            section.elements, frame.width, context, names, outer
         )
-        first = self.arrange(
-            placements, context, names, walk, minimum=section.height or 0.0
-        )
+        first = self.arrange(placements, minimum=section.height or 0.0)
         marks = tuple(self.mark(placed) for placed in placements)
         height = max(first, reached(placements, marks))
         return Measurement(round_points(height), marks)
+
+    def outer(
+        self,
+        walk: tuple[Style, ...],
+        names: dict[str, Any],
+        context: Context,
+    ) -> Callable[[], Styling]:
+        """Return the band's part of every element's style walk, resolved once.
+
+        Everything outward of an element's own `style` nodes -- the band's,
+        and the scopes around it -- is the same walk for every element in
+        the band, evaluated against the same names, so it gives the same
+        answer each time.  It is resolved the first time an element needs it
+        and kept, rather than asked again per element; a band whose elements
+        all set every property themselves never asks at all.
+
+        Args:
+            walk: The band's `style` nodes, innermost scope first.
+            names: The environment a ``when`` is evaluated in.
+            context: The report as it stands.
+
+        """
+        kept: list[Styling] = []
+
+        def resolved() -> Styling:
+            if not kept:
+                kept.append(self.styling(walk, names, context))
+            return kept[0]
+
+        return resolved
 
     # -- the steps --------------------------------------------------------
 
@@ -381,7 +401,7 @@ class Measurer:
         width: float,
         context: Context,
         names: dict[str, Any],
-        walk: tuple[Style, ...],
+        outer: Callable[[], Styling],
     ) -> list[Placement]:
         """Place every element that prints, as far as its container allows.
 
@@ -394,21 +414,18 @@ class Measurer:
             width: The container's width, which each box resolves against.
             context: The report as it stands.
             names: The environment their expressions are evaluated in.
-            walk: The container's `style` nodes, innermost first.
+            outer: The band's part of the `style` walk.
 
         """
         return [
             placed
             for element in elements
-            if (placed := self.element(element, width, context, names, walk))
+            if (placed := self.element(element, width, context, names, outer))
         ]
 
     def arrange(
         self,
         placements: list[Placement],
-        context: Context,
-        names: dict[str, Any],
-        walk: tuple[Style, ...],
         minimum: float = 0.0,
         fixed: float | None = None,
     ) -> float:
@@ -418,12 +435,11 @@ class Measurer:
         elements after it, which is the order of doc/layout.md#building-a-band:
         a floated element's new bottom edge is what the band's first height
         reaches, and a rule spanning the band spans the floats as well.
+        Nothing here evaluates anything; that was done in document order
+        when the elements were placed.
 
         Args:
             placements: The container's elements, sized where they can be.
-            context: The report as it stands.
-            names: The environment their expressions are evaluated in.
-            walk: The container's `style` nodes, innermost first.
             minimum: A band's declared ``height``, which is a minimum.
             fixed: An xref's height, which its children resolve against
                 instead of a maximum they would take part in.
@@ -443,7 +459,7 @@ class Measurer:
                 self.size_dependent(placed, height)
         for placed in placements:
             if isinstance(placed.element, Xref):
-                self.fill(placed, context, names, walk)
+                self.fill(placed)
         return height
 
     def element(
@@ -452,7 +468,7 @@ class Measurer:
         width: float,
         context: Context,
         names: dict[str, Any],
-        walk: tuple[Style, ...],
+        outer: Callable[[], Styling],
     ) -> Placement | None:
         """Place one element, or return ``None`` where it does not print.
 
@@ -461,14 +477,14 @@ class Measurer:
             width: The container's width, which its box resolves against.
             context: The report as it stands.
             names: The environment its expressions are evaluated in.
-            walk: The container's `style` walk, which its own extends.
+            outer: The band's part of the `style` walk, which its own extends.
 
         """
         self.refuse_unsupported_element(element)
         placed = (
-            self.xref(element, width, context, names)
+            self.xref(element, width, context, names, outer)
             if isinstance(element, Xref)
-            else self.body(element, width, context, names, walk)
+            else self.body(element, width, context, names, outer)
         )
         if placed is None:
             return None
@@ -486,7 +502,7 @@ class Measurer:
         width: float,
         context: Context,
         names: dict[str, Any],
-        walk: tuple[Style, ...],
+        outer: Callable[[], Styling],
     ) -> Placement | None:
         """Place a body element across, and resolve its content.
 
@@ -495,12 +511,12 @@ class Measurer:
             width: The container's width.
             context: The report as it stands.
             names: The environment its expressions are evaluated in.
-            walk: The container's `style` walk.
+            outer: The band's part of the `style` walk.
 
         """
         if not condition(element.printwhen, names, element.path, context, "printwhen"):
             return None
-        style = self.styling((*element.styles, *walk), names, context)
+        style = self.styling(element.styles, names, context, outer)
         if style.font is not None:
             self.used.add(style.font)
         x, extent = resolve_span(element.box.across, width)
@@ -515,17 +531,22 @@ class Measurer:
         width: float,
         context: Context,
         names: dict[str, Any],
+        outer: Callable[[], Styling],
     ) -> Placement:
-        """Place an `xref` across, and evaluate where it links to.
+        """Place an `xref` across, evaluate its link, and place its children.
 
-        Its children wait for :meth:`fill`, since they are laid out
-        against its height and that may come from the band's.
+        The children are placed here, at the xref's own place among the
+        band's elements, so that their content is evaluated in document
+        order.  Only their vertical extent waits, for :meth:`fill`,
+        since they are laid out against the xref's height and that may be
+        the band's.  Their `style` walk is the band's, as an xref has none.
 
         Args:
             xref: The node.
             width: The container's width.
             context: The report as it stands.
             names: The environment its expressions are evaluated in.
+            outer: The band's part of the `style` walk.
 
         Raises:
             BuildError: The target or the caption is not a string.
@@ -537,6 +558,7 @@ class Measurer:
         placed.target = self.string(xref, "target", xref.target, names, context)
         if xref.caption is not None:
             placed.caption = self.string(xref, "caption", xref.caption, names, context)
+        placed.children = self.placements(xref.elements, extent, context, names, outer)
         return placed
 
     def string(
@@ -573,31 +595,19 @@ class Measurer:
             )
         return value
 
-    def fill(
-        self,
-        placed: Placement,
-        context: Context,
-        names: dict[str, Any],
-        walk: tuple[Style, ...],
-    ) -> None:
+    def fill(self, placed: Placement) -> None:
         """Lay an xref's children out inside its box.
 
-        They are placed against the xref as a band's elements are placed
-        against the band, and their own ``halign`` and ``valign`` are
-        the only alignment they get: the xref's are not applied to them.
-        Their `style` walk is the band's, since an xref has none.
+        They are arranged against the xref as a band's elements are
+        arranged against the band, and their own ``halign`` and ``valign``
+        are the only alignment they get: the xref's are not applied to them.
 
         Args:
             placed: The xref, with its box settled.
-            context: The report as it stands.
-            names: The environment its children are evaluated in.
-            walk: The band's `style` walk.
 
         """
-        xref = placed.element
-        assert isinstance(xref, Xref)
-        children = self.placements(xref.elements, placed.width, context, names, walk)
-        self.arrange(children, context, names, walk, fixed=placed.height)
+        children = placed.children
+        self.arrange(children, fixed=placed.height)
         placed.marks = tuple(self.mark(child) for child in children)
         placed.reach = max(
             placed.height,
@@ -614,6 +624,7 @@ class Measurer:
         a ``maxheight`` shortens the element but not the gap below it.
         An element with no declared height -- a stretch field given only
         a ``top`` -- has a declared box of no height at its top.
+        A negative height never gets this far: validation refuses one.
 
         Args:
             placed: The element being placed.
@@ -622,13 +633,9 @@ class Measurer:
         down = placed.element.box.down
         assert down.start is not None
         declared = down.size
-        size = max(0.0, declared) if declared is not None else 0.0
+        size = max(0.0, declared or 0.0, placed.content_height or 0.0)
         if down.limit is not None:
             size = min(size, down.limit)
-        if placed.content_height is not None:
-            size = max(size, placed.content_height)
-            if down.limit is not None:
-                size = min(size, down.limit)
         placed.top = down.start
         placed.height = round_points(size)
         placed.declared_top = down.start
@@ -833,6 +840,7 @@ class Measurer:
         walk: tuple[Style, ...],
         names: dict[str, Any],
         context: Context,
+        outer: Callable[[], Styling] | None = None,
     ) -> Styling:
         """Return the formatting an outward walk of `style` nodes gives.
 
@@ -848,6 +856,8 @@ class Measurer:
                 in document order.
             names: The environment a ``when`` is evaluated in.
             context: The report as it stands.
+            outer: The rest of the walk, already resolved,
+                for whatever ``walk`` leaves unset.
 
         """
         font = color = bgcolor = None
@@ -859,6 +869,11 @@ class Measurer:
             font = font if font is not None else style.font
             color = color if color is not None else style.color
             bgcolor = bgcolor if bgcolor is not None else style.bgcolor
+        if outer is not None and None in (font, color, bgcolor):
+            rest = outer()
+            font = font if font is not None else rest.font
+            color = color if color is not None else rest.color
+            bgcolor = bgcolor if bgcolor is not None else rest.bgcolor
         return Styling(font, color, bgcolor)
 
     # -- marks ------------------------------------------------------------

@@ -142,6 +142,7 @@ the reference gave, and names the section of `doc/` that answer became.
 | `values/pagesize-envelope` | the same, under `landscape` |
 | `values/pagesize-card` | the same, for the entry whose round unit is not its own |
 | `values/unknown-names` | a node and a property the format does not define |
+| `values/negative-size` | a `height` below zero |
 
 Twelve are [registered divergences](../divergences.toml) and are *expected*
 to differ: the nine in the `expressions/` and `data/` groups, where the
@@ -160,11 +161,14 @@ report more than one missing glyph: the reference has two orders for
 the `warnings` array and uses them both, so it cannot settle the question
 and doc/printout.md does.
 
-M7 added two more, both filed against the reference.
-`layout/float-zero-height` is one: the reference drops the gap
-of a floating element whose height is zero, which no reading of doc/ gives.
+M7 added three more.
+`layout/float-zero-height` is one: the reference drops the gap of a
+floating element whose height is zero, which no reading of doc/ gives.
 `printout/no-fonts` is the other: where no element prints, the reference
 writes the font table as `null` rather than as an empty array.
+Both of those are filed against the reference. The third,
+`values/negative-size`, is a decision: doc/ now refuses a negative size,
+and the reference still builds one.
 
 Of the rest, every one agrees byte for byte except four: the three
 `data/` probes, which need an image, and `rounding/tolerance-refuses`,

@@ -19,7 +19,7 @@ is here before the features that need it.
 What is here is one frame that never ejects, filled with bands built
 in full: styles, geometry and its clamps, floating elements, `xref`
 containers, and the two maxima a band's height is.  There are no groups,
-no columns and no subreports yet, and no barcodes or images inside a band.
+no columns, and no subreports yet, and no barcodes or images inside a band.
 Everything left out raises :class:`~sr.errors.Unsupported` naming
 the milestone that brings it.
 
