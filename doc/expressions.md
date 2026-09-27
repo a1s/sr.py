@@ -95,7 +95,7 @@ Nested objects come from nested JSON and are declared
 | `COLUMN_NUMBER` | int | Current column number, 1-based. |
 | *group*`_PAGE_NUMBER` | int | Page number relative to the start of the named group, 1-based. |
 | `VERTICAL_POSITION` | float, points | Distance from the top of the frame to where the section being measured begins. |
-| `VERTICAL_SPACE` | float, points | Space from there to the frame's reserved bottom — what the section has left to grow into. |
+| `VERTICAL_SPACE` | float, points | Space from there to the frame's reserved bottom — what the section has left to grow into. Across columns, that stops above their footers. |
 | `BUILD_TIME` | time | When this run started. Constant for the whole run. |
 | `FINAL` | namespace | Every name above, and every `variable`, read at the end of a scope instead of now. See [`FINAL`](#final). |
 

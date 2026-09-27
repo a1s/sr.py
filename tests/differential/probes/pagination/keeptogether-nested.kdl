@@ -1,0 +1,46 @@
+// probes/pagination/keeptogether-nested.kdl -- keeping a group with groups inside.
+//
+// Group A keeps together, and group B inside it has a title and a summary.
+// Every band is 6pt.  The report's title takes 18 and A's first run 24,
+// which leaves 48.  A's second run holds three runs of B, and with their
+// titles and summaries it needs 60: it does not fit, and it starts the
+// next page.
+//
+// doc/layout.md#group-keeptogether measures the group with "the titles and
+// summaries of the groups inside it".  The reference measures the second
+// run without B's breaks, as its title, one title of B, the three rows,
+// and one summary of B, which is 36 and fits.  It keeps the run on a page
+// it does not fit, and the run is split across two.  A has no summary,
+// which keeps `last-outer-summary` out of this probe.
+//
+// Registered as the divergence `keep-rules-see-nested-groups`.
+
+report name="pagination/keeptogether-nested" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "a" type="int"
+    member "b" type="int"
+  }
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    title height=18 {
+      field text="T" left=0 top=0 height=6
+    }
+    group "A" expr="a" keeptogether=#true {
+      title height=6 {
+        field expr="'AT a%d pn %d' % (a, PAGE_NUMBER)" left=0 top=0 height=6
+      }
+      group "B" expr="b" {
+        title height=6 {
+          field expr="'  BT b%d' % b" left=0 top=0 height=6
+        }
+        summary height=6 {
+          field expr="'  BS b%d' % b" left=0 top=0 height=6
+        }
+        detail height=6 {
+          field expr="'    r%d a%d b%d' % (ITEM_NUMBER, a, b)" left=0 top=0 height=6
+        }
+      }
+    }
+  }
+}

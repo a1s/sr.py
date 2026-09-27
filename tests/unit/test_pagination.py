@@ -19,7 +19,8 @@ import pytest
 from sr.api import Options, build
 from sr.errors import BuildError
 from sr.layout.frame import Frame
-from sr.layout.measure import Extent, Measurement
+from sr.layout.loop import Keys
+from sr.layout.measure import Extent, Measurement, Measurer
 from sr.layout.place import choose, is_cut, is_legal, split
 from sr.printout.model import Box, Page, Printout, Rectangle, Text
 
@@ -40,12 +41,19 @@ BANDS
 }
 """
 
-# The group the group tests use, keyed on `a`, and a total it resets.
-GROUP = """  records {
+# The records the group tests read: one member, `a`, the group's key.
+KEYED = """  records {
     member "a" type="int"
   }
+"""
+
+# The group the group tests use, keyed on `a`, and a total it resets.
+GROUP = (
+    KEYED
+    + """\
   variable "total" expr="1" calc="sum" reset="group" resetgrp="A"
 """
+)
 
 
 def built(
@@ -258,6 +266,61 @@ def test_an_allowed_overflow_starts_a_frame_and_names_record_zero(
     assert (warning.kind, warning.record) == ("overflow", 0)
 
 
+FIRST_HEADER = band("header", shown("H"), 'height=50 printwhen="PAGE_NUMBER == 1"')
+
+
+def test_a_band_that_fits_only_a_later_page_moves_there(tmp_path: Path) -> None:
+    """doc/layout.md#placing-a-band: a band is carried once before it overflows.
+
+    The first page's header leaves 40 of its 90, and the detail needs
+    60 and cannot be cut.  The second page, with no header, holds it.
+
+    """
+    printout = built(tmp_path, FIRST_HEADER + band("detail", shown("d"), "height=60"))
+    assert pages(printout) == [["H"], ["d"]]
+
+
+def test_a_band_that_fits_only_a_later_page_moves_there_after_others(
+    tmp_path: Path,
+) -> None:
+    printout = built(
+        tmp_path,
+        FIRST_HEADER
+        + band("detail", shown("d"), "height=6")
+        + band("summary", shown("S"), "height=60"),
+    )
+    assert pages(printout) == [["H", "d"], ["S"]]
+
+
+def test_no_column_below_a_swapped_title_is_empty(tmp_path: Path) -> None:
+    """doc/layout.md#extent-and-fill: the title is in the way, like a floor.
+
+    The title takes 50 of the first page's 90.  Ten lines that may split,
+    but at no legal point, need 60: a page without the title holds them,
+    so they go to the second page whole rather than being cut on the first.
+
+    """
+    props = "split=#true orphans=11 widows=11"
+    printout = built(
+        tmp_path,
+        band("title", shown("T"), "height=50 swapheader=#true")
+        + band("detail", lines(10), props),
+    )
+    assert pages(printout) == [["T"], ["a1"]]
+    moved = printout.pages[1].marks[0]
+    assert isinstance(moved, Text) and len(moved.lines) == 10
+
+
+def test_a_band_below_a_swapped_title_is_judged_against_a_page_without_it(
+    tmp_path: Path,
+) -> None:
+    body = band("title", shown("T"), "height=50 swapheader=#true") + band(
+        "detail", shown("d"), "height=95"
+    )
+    with pytest.raises(BuildError, match="the largest frame offers 90 pt"):
+        built(tmp_path, body)
+
+
 # -- eject nodes ------------------------------------------------------
 
 
@@ -278,6 +341,23 @@ def test_an_eject_node_with_require_ejects_only_when_short(
 def test_a_report_title_tests_its_ejects_after_it(tmp_path: Path) -> None:
     printout = built(tmp_path, band("title", "eject; " + shown("T")) + ROW)
     assert pages(printout) == [["T"], ["r1"]]
+
+
+def test_eject_require_does_not_eject_from_an_empty_column(
+    tmp_path: Path,
+) -> None:
+    """doc/layout.md#group-minrows-and-mintailrows: no eject gives more room.
+
+    The first row asks for more than any page has, at the top of one.
+    The second asks for it below the first, and gets the next page.
+
+    """
+    body = "eject require=200; " + shown("d")
+    printout = built(tmp_path, band("detail", body, "height=10"), rows_of(2))
+    assert pages(printout) == [["d"], ["d"]]
+
+
+HIDDEN = 'printwhen="False"'
 
 
 # -- columns ----------------------------------------------------------
@@ -411,6 +491,49 @@ def test_an_empty_frame_is_measured_below_the_column_headers(
     assert at(second, "S").y == 15
 
 
+def test_an_empty_frame_begins_below_the_headers_as_drawn(
+    tmp_path: Path,
+) -> None:
+    """doc/layout.md#extent-and-fill: a header can draw more than it reserved.
+
+    The column header is reserved against the whole column, where
+    it does not print, and built against the column less its footer,
+    where it does: it reserves nothing and draws 20.  A summary across
+    the columns goes below it, and has 60 between it and the footer.
+    Measured from the reservation, an 80pt summary would fit an empty page,
+    and would be ejected from page to page for ever.
+
+    """
+    header = band("header", shown("CH"), 'height=20 printwhen="VERTICAL_SPACE < 85"')
+    footer = band("footer", shown("CF"), "height=10")
+    columns = "    columns count=2 gap=10 {\n  " + header + "  " + footer + "    }\n"
+    quiet = band("detail", shown("d"), "height=6 " + HIDDEN)
+    printout = built(
+        tmp_path, columns + quiet + band("summary", shown("S"), "height=60")
+    )
+    assert at(printout.pages[0], "S").y == 25
+    with pytest.raises(BuildError, match="the largest frame offers 60 pt"):
+        built(tmp_path, columns + quiet + band("summary", shown("S"), "height=80"))
+
+
+def test_a_band_across_columns_stops_above_their_footers(tmp_path: Path) -> None:
+    """doc/layout.md#extent-and-fill: the footers are drawn under it.
+
+    Seven rows fill the column to 75, and its footer takes the last 10.
+    The summary needs 15, which the page frame has below the rows but not
+    above the footer, so it starts the next page, and `VERTICAL_SPACE`
+    there is measured to the footer.
+
+    """
+    footer = band("footer", shown("CF"), "height=10")
+    columns = "    columns count=2 gap=10 {\n  " + footer + "    }\n"
+    summary = band("summary", said("'S %s' % VERTICAL_SPACE"), "height=15")
+    detail = band("detail", said("'r%d' % ITEM_NUMBER"), "height=10")
+    first, second = pages(built(tmp_path, columns + detail + summary, rows_of(7)))
+    assert first[-2:] == ["r7", "CF"]
+    assert second == ["S 80.0", "CF"]
+
+
 def test_column_counters_reset_at_each_column(tmp_path: Path) -> None:
     footer = band("footer", said("'CF %d %d' % (COLUMN_NUMBER, COLUMN_COUNT)"))
     columns = "    columns count=2 gap=10 {\n  " + footer + "    }\n"
@@ -495,6 +618,25 @@ def group(*bands: str, props: str = "") -> str:
 def keyed(*keys: int) -> list[dict[str, Any]]:
     """Return one record per key."""
     return [{"a": key} for key in keys]
+
+
+@pytest.mark.parametrize(
+    "bands",
+    [
+        band("title", "eject; " + shown("T"), "swapheader=#true " + HIDDEN) + ROW,
+        band("title", "eject; " + shown("T"), HIDDEN) + ROW,
+        group(band("title", "eject; " + shown("T"), HIDDEN), ROW),
+        band("title", shown("T")) + band("detail", "eject; " + shown("d"), HIDDEN),
+        ROW + band("summary", "eject; " + shown("S"), HIDDEN),
+    ],
+    ids=["swapped-title", "title", "group-title", "detail", "summary"],
+)
+def test_a_band_that_does_not_print_tests_no_eject_nodes(
+    tmp_path: Path, bands: str
+) -> None:
+    """doc/layout.md#eject-nodes: `printwhen` suppresses them with the band."""
+    printout = built(tmp_path, bands, keyed(1), members=KEYED)
+    assert len(printout.pages) == 1
 
 
 def test_a_group_summary_is_built_against_the_previous_record(
@@ -827,6 +969,82 @@ def test_mintailrows_moves_rows_onto_the_summarys_frame(tmp_path: Path) -> None:
     ]
 
 
+def two_levels(props: str) -> str:
+    """Return group A, with a title and these properties, around group B.
+
+    B has a title, a summary, and the detail, and A a summary.
+    Every band is one line and says what it is.
+
+    """
+    inner = (
+        '      group "B" expr="b" {\n'
+        + "    "
+        + band("title", said("'BT%d' % b"), "height=6")
+        + "    "
+        + band("summary", said("'BS%d' % b"), "height=6")
+        + "    "
+        + band("detail", said("'d%d' % ITEM_NUMBER"), "height=6")
+        + "      }\n"
+    )
+    return group(
+        band("title", said("'AT%d' % a"), "height=6"),
+        band("summary", said("'AS%d' % a"), "height=6"),
+        inner,
+        props=props,
+    )
+
+
+def test_keeptogether_counts_the_groups_inside_it(tmp_path: Path) -> None:
+    """doc/layout.md#group-keeptogether: nested titles and summaries count.
+
+    The second run of A holds three runs of B, 66 points with its own
+    summary, and 42 are left.  Measured without B's breaks, it would be
+    42 and would stay.
+
+    """
+    rows = [{"a": 1, "b": 1}, {"a": 2, "b": 1}, {"a": 2, "b": 2}, {"a": 2, "b": 3}]
+    printout = built(
+        tmp_path,
+        title(18) + two_levels("keeptogether=#true"),
+        rows,
+        members=NESTED,
+    )
+    first, second = pages(printout)
+    assert first == ["AT1", "BT1", "d1", "BS1", "AS1"]
+    assert second[:2] == ["AT2", "BT1"] and second[-2:] == ["BS3", "AS2"]
+
+
+def test_minrows_counts_the_groups_inside_it(tmp_path: Path) -> None:
+    """doc/layout.md#group-minrows-and-mintailrows: nested bands count.
+
+    The title and the first two rows, with B's summary and title between
+    the rows, need 36 points, and 30 are left.
+
+    """
+    rows = [{"a": 1, "b": 1}, {"a": 1, "b": 2}]
+    printout = built(
+        tmp_path, title(60) + two_levels("minrows=2"), rows, members=NESTED
+    )
+    assert pages(printout)[1][:3] == ["AT1", "BT1", "d1"]
+
+
+def test_mintailrows_counts_the_groups_inside_it(tmp_path: Path) -> None:
+    """doc/layout.md#group-minrows-and-mintailrows: nested bands count.
+
+    The last two rows fall in two runs of B.  With B's summaries and its
+    title between them, and A's summary after, they need 36 points, and
+    30 are left when the first of them comes.
+
+    """
+    rows = [{"a": 1, "b": 1}] * 4 + [{"a": 1, "b": 2}]
+    printout = built(
+        tmp_path, title(30) + two_levels("mintailrows=2"), rows, members=NESTED
+    )
+    first, second = pages(printout)
+    assert first == ["AT1", "BT1", "d1", "d2", "d3"]
+    assert second == ["d4", "BS1", "BT2", "d5", "BS2", "AS1"]
+
+
 def test_an_item_variable_folds_after_the_titles(tmp_path: Path) -> None:
     seen = '  variable "seen" expr="ITEM_NUMBER" calc="list" iter="item"\n'
     printout = built(
@@ -860,6 +1078,54 @@ def test_swapped_bands_sit_outside_the_page_header_and_footer(
     assert tops == [5, 11, 17, 89, 83]
 
 
+def test_a_swapped_summary_needs_room_above_the_column_footers(
+    tmp_path: Path,
+) -> None:
+    """doc/layout.md#swapheader-and-swapfooter: the footers move up with it.
+
+    Eight rows fill the column to its footer.  The summary would push
+    the footer up onto the last row, so it starts the next page.
+
+    """
+    footer = band("footer", shown("CF"), "height=10")
+    columns = "    columns count=2 gap=10 {\n  " + footer + "    }\n"
+    printout = built(
+        tmp_path,
+        columns
+        + band("detail", said("'r%d' % ITEM_NUMBER"), "height=10")
+        + band("summary", shown("S"), "height=10 swapfooter=#true"),
+        rows_of(8),
+    )
+    first, second = printout.pages
+    assert texts(first)[-2:] == ["r8", "CF"]
+    assert (at(second, "S").y, at(second, "CF").y) == (85, 75)
+
+
+@pytest.mark.parametrize(
+    "bands",
+    [
+        band("title", shown("X"), "height=120 swapheader=#true") + ROW,
+        ROW + band("summary", shown("X"), "height=120 swapfooter=#true"),
+    ],
+    ids=["title", "summary"],
+)
+def test_a_swapped_band_taller_than_the_page_overflows(
+    tmp_path: Path, bands: str
+) -> None:
+    """doc/layout.md#swapheader-and-swapfooter: and goes where it would unswapped.
+
+    Allowed, it is placed at the top of the page frame, and nothing is
+    drawn above the top margin.
+
+    """
+    with pytest.raises(BuildError, match="measures 120 pt and the largest frame"):
+        built(tmp_path, bands)
+    printout = built(tmp_path, bands, allow_overflow=True)
+    assert [warning.kind for warning in printout.warnings] == ["overflow"]
+    placed = [page for page in printout.pages if "X" in texts(page)]
+    assert [at(page, "X").y for page in placed] == [5]
+
+
 # -- the pieces -------------------------------------------------------
 
 
@@ -871,6 +1137,54 @@ def test_a_band_in_a_column_brings_its_parents_fill_down() -> None:
     assert (page.fill, column.fill) == (40.0, 40.0)
     page.advance(50.0)
     assert (column.fill, column.floor) == (50.0, 50.0)
+
+
+def test_frames_are_equal_only_to_themselves() -> None:
+    one, other = Frame(), Frame()
+    assert one == one and one != other
+    assert len({one, other}) == 2
+
+
+def test_keys_are_counted_once_and_taken_back_in_order() -> None:
+    keys = Keys()
+    for key in (1, [2], 1.0, [2], "x"):
+        keys.add(key)
+    mark = keys.mark()
+    for key in ([3], "y", "x", 1):
+        keys.add(key)
+    assert len(keys) == 5
+    keys.rewind(mark)
+    assert len(keys) == 3
+    keys.add("y")
+    assert len(keys) == 4
+
+
+def test_mintailrows_measures_only_the_tail(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """doc/layout.md#group-minrows-and-mintailrows: the rows left are counted.
+
+    Every row but the last is too far from the summary for the test to
+    apply, and finding that out measures nothing: each row is measured
+    once, where it is placed, and the tail and the ejects add a few more.
+
+    """
+    measured = 0
+    original = Measurer.band
+
+    def counting(self: Measurer, *args: Any, **kwargs: Any) -> Measurement | None:
+        nonlocal measured
+        measured += 1
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Measurer, "band", counting)
+    built(
+        tmp_path,
+        group(band("summary", shown("S"), "height=6"), band("detail", shown("d"))),
+        keyed(*[1] * 40),
+        members=GROUP,
+    )
+    assert measured < 50
 
 
 def spans(*extents: Extent) -> Measurement:

@@ -19,10 +19,10 @@
 # the reference, one is a grammar that had been left to the host, one
 # is a clause doc/ was missing, and one -- `time-before-year-one` --
 # is a difference this engine chose and will keep.  M7 added a further
-# defect in the reference, `zero-height-float-gap`, and M8 nine more.
-# From `column-floor` on, seven are defects in the reference's pagination;
-# the last two, `footer-at-a-group-break` and `first-page-init`, are
-# decisions.
+# defect in the reference, `zero-height-float-gap`, and M8 fifteen more.
+# From `column-floor` on, eleven are defects in the reference's pagination,
+# and four are decisions: `footer-at-a-group-break`, `first-page-init`,
+# `carried-once`, and `suppressed-band-ejects`.
 #
 # The milestone numbers:
 #   M0: Scaffold and oracle
@@ -518,3 +518,117 @@ is the side that changes.\
 ticket = "M8: variable scopes, expressions.md#iter-and-reset"
 since = "2026-09-27"
 affects = ["probe/pagination/first-page-init"]
+
+[[divergence]]
+id = "keep-rules-see-nested-groups"
+summary = "keeptogether measures the groups inside a group here; the reference leaves their breaks out"
+reason = """\
+doc/layout.md#group-keeptogether measures a group's whole extent with the \
+titles and summaries of the groups inside it, and `minrows` and \
+`mintailrows` measure what the record loop would place, nested titles and \
+summaries among it.  The reference measures a run of the outer group as if \
+the inner group never broke inside it: one inner title, the rows, and one \
+inner summary.  A run that holds several inner runs is measured short, kept \
+on a page it does not fit, and split across two.  doc/ now says that \
+`minrows` counts nested summaries as well as titles.  The reference is the \
+side that changes.\
+"""
+ticket = "M8: keeping content together, layout.md#group-keeptogether; filed against the Go engine"
+since = "2026-09-27"
+affects = ["probe/pagination/keeptogether-nested"]
+
+[[divergence]]
+id = "carried-once"
+summary = "a band that fits no column on its page is tried on the next page here before it overflows; the reference refuses it"
+reason = """\
+doc/layout.md#placing-a-band measured the room an empty column offers on \
+the page the band was tried on, and a page's headers are measured when it \
+opens, so a first page with a taller header offers less than every later \
+one.  A band that cannot be cut and fits only a later page was then an \
+overflow.  The reference refuses such a band, and moves it on only where \
+nothing is above it on its page.  doc/ now carries it to the next page \
+once, by one eject, before judging it, so it lands where there is room, \
+and a band that fits no page still overflows, one page on.  It is a \
+decision rather than a defect, and the reference is the side that \
+changes.\
+"""
+ticket = "M8: placing a band, layout.md#placing-a-band"
+since = "2026-09-27"
+affects = ["probe/pagination/carried-once"]
+
+[[divergence]]
+id = "suppressed-band-ejects"
+summary = "a band that does not print tests no eject nodes here; the reference tests them all the same"
+reason = """\
+doc/ did not say whether a band that `printwhen` suppresses tests its \
+`eject` nodes.  The reference does, for a title, a detail, and a summary \
+alike, so a band that is not there can still end a page, and one at the \
+start or the end of a report leaves a blank page.  doc/layout.md#eject-\
+nodes and doc/template.md#printwhen now say that it tests none: \
+`printwhen` suppresses the band with what it would have asked of the page, \
+as a suppressed host band runs none of its subreports.  This engine had \
+done so for every band but a `swapheader` title, which now does too.  It \
+is a decision rather than a defect, and the reference is the side that \
+changes.\
+"""
+ticket = "M8: eject nodes, layout.md#eject-nodes"
+since = "2026-09-27"
+affects = ["probe/pagination/suppressed-ejects"]
+
+[[divergence]]
+id = "require-in-an-empty-column"
+summary = "eject require never ejects from an empty column here; the reference ejects and leaves a blank page"
+reason = """\
+doc/layout.md#group-minrows-and-mintailrows rules out a keep-together \
+rule ejecting from an empty column, which could offer no more room and \
+would leave a blank page behind, and `eject require` is one of the three.  \
+The reference ejects wherever less than `require` remains, empty column \
+or not, on a detail and on a group title alike, so a `require` taller than \
+any page leaves the first page blank.  doc/ now says that the rule holds \
+for `eject require` on any band.  The reference is the side that changes.\
+"""
+ticket = "M8: keeping content together, layout.md#eject-require; filed against the Go engine"
+since = "2026-09-27"
+affects = ["probe/pagination/require-empty-column"]
+
+[[divergence]]
+id = "column-footer-strip"
+summary = "a band across columns stops above their footers here; the reference places it over them"
+reason = """\
+A column's footer is drawn when the column ends, flush with the bottom, \
+and a band placed across the columns before then -- a report summary under \
+the report's columns, a group summary under its group's -- lies across \
+the strip that footer is drawn in.  The reference places such a band down \
+to the page frame's bottom, and a swapped summary against the page footer \
+alone, so the column footer is drawn over the band, or the swapped summary \
+over the column footer.  doc/layout.md#extent-and-fill now stops a band in \
+a frame with columns inside it above their footers, as it already began it \
+below their headers, and measures its `VERTICAL_SPACE` to there, and \
+doc/layout.md#swapheader-and-swapfooter asks a swapped summary for room \
+above them.  The reference is the side that changes.\
+"""
+ticket = "M8: frames, layout.md#extent-and-fill; filed against the Go engine"
+since = "2026-09-27"
+affects = [
+  "probe/pagination/summary-above-column-footers",
+  "probe/pagination/swapfooter-column-footers",
+  "probe/pagination/column-footer-full",
+]
+
+[[divergence]]
+id = "swapfooter-overflow"
+summary = "a swapped summary taller than a page is an overflow here; the reference draws it above the paper"
+reason = """\
+doc/layout.md#errors makes a band taller than an empty frame an overflow, \
+and a swapped summary is no exception: it takes its room out of the page's \
+content.  The reference places one against the bottom margin whatever its \
+height, so a summary taller than the page frame begins above the top of \
+the paper, and no warning says so.  doc/layout.md#swapheader-and-swapfooter \
+now makes it an overflow, placed where it would go unswapped.  A \
+`swapheader` title taller than the page frame the reference refuses, with \
+the error for reservations that exceed the frame, and this engine as an \
+overflow.  The reference is the side that changes.\
+"""
+ticket = "M8: swapped bands, layout.md#swapheader-and-swapfooter; filed against the Go engine"
+since = "2026-09-27"
+affects = ["probe/pagination/swapfooter-overflow"]

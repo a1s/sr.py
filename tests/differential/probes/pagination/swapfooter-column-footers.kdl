@@ -1,0 +1,31 @@
+// probes/pagination/swapfooter-column-footers.kdl -- a swapped summary, and the column footers.
+//
+// Two columns with a 10pt footer.  Eight rows fill the first column
+// to its footer, at 85, and the `swapfooter` summary needs 10.
+//
+// doc/layout.md#swapheader-and-swapfooter moves every footer up by the
+// summary's height, the columns' too, so what the summary needs is room
+// above them: the column footer would come down on the last row.
+// So the summary starts the next page, with the column footer above it.
+// The reference places the summary at the bottom of the first page,
+// from 85, and leaves the column footer where it was, on top of it.
+//
+// Registered as the divergence `column-footer-strip`.
+
+report name="pagination/swapfooter-column-footers" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    columns count=2 gap=10 {
+      footer height=10 {
+        field expr="'CF cn %d pn %d' % (COLUMN_NUMBER, PAGE_NUMBER)" left=0 top=0 height=6
+      }
+    }
+    detail height=10 {
+      field expr="'r%d cn %d' % (ITEM_NUMBER, COLUMN_NUMBER)" left=0 top=0 height=6
+    }
+    summary height=10 swapfooter=#true {
+      field expr="'S pn %d' % PAGE_NUMBER" left=0 top=0 height=6
+    }
+  }
+}

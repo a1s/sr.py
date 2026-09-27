@@ -31,12 +31,12 @@ the context the summaries were built in, and its headers against
 the new record, per doc/layout.md#what-a-header-or-footer-sees.
 
 Every band goes through doc/layout.md#measure-decide-commit, and deciding
-is the four branches of doc/layout.md#placing-a-band: commit it, split it
+is the five branches of doc/layout.md#placing-a-band: commit it, split it
 at a legal split point, eject and measure it again, or -- for a band too
-tall for any frame -- cut it wherever it can be cut at all.  An eject
-the band causes is a column eject, and doc/layout.md#sequence is what
-one does: footers innermost first, the scopes that ended, the advance,
-then headers outermost first.
+tall for any frame -- cut it wherever it can be cut at all, and failing
+that try the next page once.  An eject the band causes is a column eject,
+and doc/layout.md#sequence is what one does: footers innermost first,
+the scopes that ended, the advance, then headers outermost first.
 
 A band that ejects has its fold rolled back first and applied again
 after, so that no value is counted twice and none is lost to a reset
@@ -148,6 +148,63 @@ class Level:
 
 
 @dataclass
+class Keys:
+    """The distinct keys a group has seen, in the order it saw them.
+
+    A key that hashes is looked up rather than compared with every one
+    seen, which keeps a group of many runs linear.  The hashable ones
+    are a dict's keys rather than a set's, since a lookahead takes back
+    what it added and needs to know which came last.  A key that does
+    not hash, a list say, is compared with every one.
+
+    Attributes:
+        hashed: The ones that hash.
+        unhashed: The ones that do not.
+
+    """
+
+    hashed: dict[Any, None] = field(default_factory=dict)
+    unhashed: list[Any] = field(default_factory=list)
+
+    def __len__(self) -> int:
+        """Return how many distinct keys there are."""
+        return len(self.hashed) + len(self.unhashed)
+
+    def add(self, key: Any) -> None:
+        """Note a key, unless one equal to it has been seen.
+
+        Args:
+            key: The key.
+
+        """
+        try:
+            hash(key)
+        except TypeError:
+            seen = (*self.hashed, *self.unhashed)
+            if not any(one == key for one in seen):
+                self.unhashed.append(key)
+            return
+        if key not in self.hashed and not any(one == key for one in self.unhashed):
+            self.hashed[key] = None
+
+    def mark(self) -> tuple[int, int]:
+        """Return where the keys stand, for :meth:`rewind`."""
+        return len(self.hashed), len(self.unhashed)
+
+    def rewind(self, mark: tuple[int, int]) -> None:
+        """Forget every key added since :meth:`mark` returned ``mark``.
+
+        Args:
+            mark: What it returned.
+
+        """
+        hashed, unhashed = mark
+        while len(self.hashed) > hashed:
+            self.hashed.popitem()
+        del self.unhashed[unhashed:]
+
+
+@dataclass
 class Run:
     """A group as the record loop stands: its key and its counts.
 
@@ -169,7 +226,7 @@ class Run:
     opening: bool = False
     tailed: bool = False
     runs: int = 0
-    keys: list[Any] = field(default_factory=list)
+    keys: Keys = field(default_factory=Keys)
 
 
 @dataclass
@@ -199,6 +256,8 @@ class Ahead:
         cap: Where it stops adding up: an empty frame's height.
         rows: How many printed detail rows it counted.
         wanted: The rows after which it stops, where it counts rows.
+        measuring: Whether it measures the bands,
+            rather than only counting the rows.
 
     """
 
@@ -206,6 +265,7 @@ class Ahead:
     cap: float = 0.0
     rows: int = 0
     wanted: int | None = None
+    measuring: bool = True
 
     def add(self, height: float) -> None:
         """Add one band, stopping once the total passes the cap.
@@ -291,7 +351,7 @@ class Builder:
         self.warnings: list[BuildWarning] = []
         self.previous: tuple[Record, int] | None = None
         self.ahead: Ahead | None = None
-        self.fragments: dict[int, Fragment] = {}
+        self.fragments: dict[Frame, Fragment] = {}
         # What a footer at a group break is built against, until a band
         # of the new record is committed, and the runs such a band begins.
         self.outgoing: tuple[Any, ...] | None = None
@@ -385,12 +445,10 @@ class Builder:
         root = self.levels[0]
         if title is not None and title.swapheader:
             self.swapped_title(title)
-            self.open_frames()
-            self.ejects(title, self.page)
             return
         self.open_frames()
         if title is not None:
-            self.place(title, root.outer, (title.styles, *root.outer_walk), last=True)
+            self.place(title, root.outer, self.walk(title, root), last=True)
 
     def end(self) -> None:
         """Close the open groups, place the summary, and finish the page."""
@@ -402,23 +460,32 @@ class Builder:
             if summary.swapfooter:
                 self.swapped_summary(summary)
             else:
-                self.place(summary, root.outer, (summary.styles, *root.outer_walk))
+                self.place(summary, root.outer, self.walk(summary, root))
         self.footers(self.frames())
         self.pages.append(Page(self.context.page_number, tuple(self.marks)))
 
     # -- the record loop --------------------------------------------------
 
-    def row(self, index: int, record: Record) -> None:
+    def row(
+        self,
+        index: int,
+        record: Record,
+        keyed: tuple[int | None, list[Any]] | None = None,
+    ) -> None:
         """Format one record.
 
         Args:
             index: Its 0-based position in the data.
             record: The record.
+            keyed: What :meth:`breaks` returned for it,
+                where the caller has asked already.
 
         """
-        breaking = self.breaks(index, record)
+        breaking, keys = self.breaks(index, record) if keyed is None else keyed
         if breaking is not None and self.previous is not None:
             self.close(breaking)
+        for run, key in zip(self.runs, keys, strict=True):
+            run.key = key
         if breaking is not None and self.ahead is None:
             self.outgoing = self.state()
         self.context.record = record
@@ -434,15 +501,15 @@ class Builder:
             self.begun(self.runs)
         self.previous = (record, index + 1)
 
-    def breaks(self, index: int, record: Record) -> int | None:
-        """Return the outermost group the record breaks, or ``None``.
+    def breaks(self, index: int, record: Record) -> tuple[int | None, list[Any]]:
+        """Return the outermost group the record breaks, and every group's key.
 
-        Every group's key is evaluated against the new record,
-        outermost first, and the outermost that changed breaks
-        every group inside it. The first record breaks them all.
-        The keys are kept for the next comparison as they are
-        evaluated, since a group nested in one that broke has
-        its key taken all the same.
+        Every group's key is evaluated against the new record, outermost
+        first, and the outermost that changed breaks every group inside it.
+        The first record breaks them all, and ``None`` is no break at all.
+        Nothing is kept: :meth:`row` keeps every key for the next
+        comparison, since a group nested in one that broke has its key
+        taken all the same, and a lookahead asks first where a run ends.
 
         Args:
             index: The record's 0-based position.
@@ -450,21 +517,22 @@ class Builder:
 
         """
         if not self.runs:
-            return None
+            return None, []
         kept = (self.context.record, self.context.item_number)
         self.context.record = record
         self.context.item_number = index + 1
         names = self.context.environment(0.0, 0.0)
         breaking: int | None = None
+        keys: list[Any] = []
         for position, run in enumerate(self.runs):
             group = run.level.group
             assert group is not None and group.expr is not None
             key = evaluate(group.expr, names, group.path, self.context, "expr")
             if breaking is None and (self.previous is None or key != run.key):
                 breaking = position
-            run.key = key
+            keys.append(key)
         self.context.record, self.context.item_number = kept
-        return breaking
+        return breaking, keys
 
     def close(self, level: int) -> None:
         """Place the summaries of the groups from ``level`` in, innermost first.
@@ -498,8 +566,7 @@ class Builder:
         run.opening = True
         run.tailed = False
         run.runs += 1
-        if not any(seen == run.key for seen in run.keys):
-            run.keys.append(run.key)
+        run.keys.add(run.key)
         self.context.group_counts[name] = 0
         self.context.group_pages[name] = 1
 
@@ -713,12 +780,15 @@ class Builder:
     def keep_tail(self, index: int) -> None:
         """Eject before a detail where it and the rest would leave a summary short.
 
-        doc/layout.md#group-minrows-and-mintailrows: once no more
-        than ``mintailrows`` printed rows are left in a group, they
-        are measured with everything that follows them up to the
-        group's summary, and if that does not fit, the eject happens
-        before the first of them. Each run of a group is tested once,
-        at the first row it applies to.
+        doc/layout.md#group-minrows-and-mintailrows: once no more than
+        ``mintailrows`` printed rows are left in a group, they are measured
+        with everything that follows them up to the group's summary, and
+        if that does not fit, the eject happens before the first of them.
+        Each run of a group is tested once, at the first row it applies to.
+
+        The rows left are counted first, without measuring a band: until
+        the tail is reached, which is every row but the last few, that is
+        all the test needs to know.
 
         Args:
             index: The current record's 0-based position.
@@ -732,12 +802,17 @@ class Builder:
             frame = self.levels[-1].inner
             # Uncapped: what decides whether the test applies is how many rows
             # are left, and the row count bounds how far it looks.
-            with self.lookahead(math.inf, group.mintailrows + 1) as ahead:
+            with self.lookahead(
+                math.inf, group.mintailrows + 1, measuring=False
+            ) as ahead:
                 self.detail(index)
                 self.run_ahead(index, position)
             if ahead.rows > group.mintailrows:
                 continue
             run.tailed = True
+            with self.lookahead(frame.height, None) as ahead:
+                self.detail(index)
+                self.run_ahead(index, position)
             wanted = min(ahead.total, frame.height)
             if not frame.empty and not fits(wanted, frame.available):
                 self.eject(frame, "column", None, deliberate=True)
@@ -746,8 +821,10 @@ class Builder:
     def run_ahead(self, index: int, position: int, summary: bool = True) -> None:
         """Carry a lookahead on to the end of a group's run.
 
-        The keys the lookahead evaluates on the way overwrite the groups'
-        own, which is harmless: :meth:`lookahead` puts them back.
+        Each record goes through the record loop as it would, the breaks
+        of the groups inside this one included.  The keys the lookahead
+        keeps on the way overwrite the groups' own, which is harmless:
+        :meth:`lookahead` puts them back.
 
         Args:
             index: The record the lookahead has reached.
@@ -759,15 +836,18 @@ class Builder:
         assert self.context.record is not None
         self.previous = (self.context.record, self.context.item_number)
         for later in range(index + 1, len(records)):
-            breaking = self.breaks(later, records[later])
+            keyed = self.breaks(later, records[later])
+            breaking = keyed[0]
             if breaking is not None and breaking <= position:
                 break
-            self.row(later, records[later])
+            self.row(later, records[later], keyed)
         if summary:
             self.close(position)
 
     @contextmanager
-    def lookahead(self, cap: float, rows: int | None) -> Iterator[Ahead]:
+    def lookahead(
+        self, cap: float, rows: int | None, *, measuring: bool = True
+    ) -> Iterator[Ahead]:
         """Measure what the record loop would place, and then forget it.
 
         Everything a band's measurement reads is put back afterwards --
@@ -778,10 +858,12 @@ class Builder:
         Args:
             cap: The height it stops at.
             rows: The printed rows it stops after, where it counts rows.
+            measuring: Whether it measures the bands,
+                or only counts the rows that print.
 
         """
         kept = self.capture()
-        ahead = Ahead(cap=cap, wanted=rows)
+        ahead = Ahead(cap=cap, wanted=rows, measuring=measuring)
         outer = self.ahead
         self.ahead = ahead
         try:
@@ -803,7 +885,7 @@ class Builder:
                 group_pages=dict(context.group_pages),
             ),
             [
-                (run.key, run.opening, run.tailed, run.runs, list(run.keys))
+                (run.key, run.opening, run.tailed, run.runs, run.keys.mark())
                 for run in self.runs
             ],
             self.previous,
@@ -830,16 +912,11 @@ class Builder:
         ):
             setattr(self.context, name, getattr(context, name))
         self.variables.restore(accumulators)
-        for run, (key, opening, tailed, count, keys) in zip(
+        for run, (key, opening, tailed, count, mark) in zip(
             self.runs, runs, strict=True
         ):
-            run.key, run.opening, run.tailed, run.runs, run.keys = (
-                key,
-                opening,
-                tailed,
-                count,
-                keys,
-            )
+            run.key, run.opening, run.tailed, run.runs = key, opening, tailed, count
+            run.keys.rewind(mark)
         self.previous = previous
 
     # -- placing a band ---------------------------------------------------
@@ -877,8 +954,9 @@ class Builder:
         if not printing:
             return False
         if self.ahead is not None:
-            measured = self.measure(section, frame, walk)
-            self.ahead.add(measured.height)
+            if self.ahead.measuring:
+                measured = self.measure(section, frame, walk)
+                self.ahead.add(measured.height)
             return True
         if eject and not last:
             self.ejects(section, frame, fold)
@@ -907,7 +985,7 @@ class Builder:
     ) -> None:
         """Decide where a measured band goes, and commit it.
 
-        The four branches of doc/layout.md#placing-a-band, in their order:
+        The five branches of doc/layout.md#placing-a-band, in their order:
 
         1. It fits what is left: commit it.
         2. It may split and a legal split point fits: commit the head,
@@ -915,6 +993,9 @@ class Builder:
         3. It fits an empty frame: eject, and measure it again there.
         4. It may split and some cut point fits: cut it there, having given
            up every split preference, because progress beats preference.
+        5. No eject has moved it yet: eject, and try it again from the
+           first branch, since a later page may offer more room than
+           this one where its headers take less.
 
         Anything else overflows, and is placed at the top of an empty column.
         That may take more than one eject, since a column that begins at
@@ -932,6 +1013,7 @@ class Builder:
         """
         measured = self.measure(section, frame, walk)
         whole = True
+        carried = False
         while True:
             if frame.accepts(measured.height):
                 self.commit(measured, frame)
@@ -941,9 +1023,11 @@ class Builder:
                 if cut is not None:
                     measured = self.cut(measured, cut, frame)
                     whole = False
+                    carried = True
                     continue
             if fits(measured.height, frame.height):
                 self.eject(frame, "column", fold if whole else None)
+                carried = True
                 if whole:
                     measured = self.measure(section, frame, walk)
                 continue
@@ -952,8 +1036,15 @@ class Builder:
                 if cut is not None:
                     measured = self.cut(measured, cut, frame)
                     whole = False
+                    carried = True
                     continue
-            self.overflow(section, measured, frame)
+            if not carried:
+                self.eject(frame, "column", fold if whole else None)
+                carried = True
+                if whole:
+                    measured = self.measure(section, frame, walk)
+                continue
+            self.overflow(section, measured, frame.height)
             while not frame.empty:
                 self.eject(frame, "column", fold if whole else None)
                 if whole:
@@ -980,7 +1071,7 @@ class Builder:
         self.eject(frame, "column", None)
         return tail
 
-    def overflow(self, section: Section, measured: Measurement, frame: Frame) -> None:
+    def overflow(self, section: Section, measured: Measurement, room: float) -> None:
         """Report a band that fits no frame and cannot be cut into one.
 
         The `overflow` of doc/layout.md#errors, which ``--allow-overflow``
@@ -991,7 +1082,7 @@ class Builder:
         Args:
             section: The band.
             measured: What measuring it produced.
-            frame: The frame it belongs to.
+            room: The most any frame offers it.
 
         Raises:
             BuildError: Nothing allowed it.
@@ -999,7 +1090,7 @@ class Builder:
         """
         said = (
             f"the band measures {number(measured.height)} pt and the largest"
-            f" frame offers {number(frame.height)} pt, and it cannot be cut"
+            f" frame offers {number(room)} pt, and it cannot be cut"
         )
         if not self.build.allow_overflow:
             raise BuildError(
@@ -1045,7 +1136,8 @@ class Builder:
 
         doc/template.md#eject: the first node whose ``when`` holds is
         selected and the search stops there.  Without a ``require``
-        it ejects; with one, only where less than that remains.
+        it ejects; with one, only where less than that remains, and not
+        from an empty column, to which no eject could give more room.
 
         Args:
             section: The band.
@@ -1058,7 +1150,7 @@ class Builder:
             return
         if chosen.require is None:
             self.eject(frame, chosen.kind, fold, deliberate=True, room=False)
-        elif not fits(chosen.require, frame.available):
+        elif not frame.empty and not fits(chosen.require, frame.available):
             self.eject(frame, chosen.kind, fold, deliberate=True)
 
     def selected(self, section: Section, frame: Frame) -> Eject | None:
@@ -1084,6 +1176,14 @@ class Builder:
 
         doc/layout.md#swapheader-and-swapfooter: it goes at the top
         of the page frame, and that page's header is reserved below it.
+        Every frame on the page begins that much lower than it will on
+        the next, which is what keeps the columns below it from counting
+        as empty.  The page's frames are opened here, below it, and its
+        `eject` nodes are tested after it, where it prints.
+
+        A title taller than the page frame is an overflow, and where
+        that is allowed it is placed at the top of the page frame instead,
+        below the page's header, as a title that is not swapped would be.
 
         Args:
             section: The title.
@@ -1093,13 +1193,23 @@ class Builder:
         page = self.page
         window = Window(page.x, page.width, paper.top, page.outer_bottom)
         if not self.measurer.prints(section, window, self.context):
+            self.open_frames()
             return
         measured = self.measurer.band(
-            section, window, self.context, (section.styles, *self.levels[0].outer_walk)
+            section, window, self.context, self.walk(section, self.levels[0])
         )
         assert measured is not None
-        self.marks.extend(mark.moved(page.x, paper.top) for mark in measured.marks)
-        page.outer_top = round_points(paper.top + measured.height)
+        if fits(measured.height, window.height):
+            self.marks.extend(mark.moved(page.x, paper.top) for mark in measured.marks)
+            page.outer_top = round_points(paper.top + measured.height)
+            for frame in self.frames():
+                frame.lead = measured.height
+            self.open_frames()
+        else:
+            self.overflow(section, measured, window.height)
+            self.open_frames()
+            self.commit(measured, page)
+        self.ejects(section, page)
 
     def swapped_summary(self, section: Section) -> None:
         """Place a ``swapfooter`` summary below the last page's footer.
@@ -1107,21 +1217,30 @@ class Builder:
         It is placed like any other band -- a page eject first where what
         remains above the enlarged bottom reservation is already filled --
         but at the bottom of the page frame, and the page's footer and
-        every column footer go immediately above it.
+        every column footer go immediately above it.  So what it needs
+        is room above the columns' footers as well as the page's.
+
+        A summary that fits no page is an overflow, and where that is
+        allowed it is placed at the top of the page frame instead,
+        as a summary that is not swapped would be.
 
         Args:
             section: The summary.
 
         """
         page = self.page
-        walk = (section.styles, *self.levels[0].outer_walk)
+        walk = self.walk(section, self.levels[0])
         if not self.measurer.prints(section, page.window(), self.context):
             return
         self.ejects(section, page)
         measured = self.measure(section, page, walk)
-        if not page.accepts(measured.height) and not page.empty:
+        if not page.accepts(measured.height):
             self.eject(page, "page", None)
             measured = self.measure(section, page, walk)
+        if not page.accepts(measured.height):
+            self.overflow(section, measured, page.height)
+            self.commit(measured, page)
+            return
         down = round_points(page.outer_bottom - measured.height)
         self.marks.extend(mark.moved(page.x, down) for mark in measured.marks)
         page.advance(page.outer_bottom)
@@ -1145,11 +1264,12 @@ class Builder:
     ) -> None:
         """End the current column or page, rolling a band's fold back around it.
 
-        doc/layout.md#which-frames-participate: a column eject goes to
-        the nearest frame with a column left, and one looking for room
-        passes over a frame whose next column would offer the band none.
-        That column begins at the frame's floor at the highest, so it
-        offers no more to a band whose column is filled no lower than that.
+        doc/layout.md#which-frames-participate: a column eject goes to the
+        nearest frame with a column left, and one looking for room passes
+        over a frame whose next column would offer the band none.  In that
+        column the band begins at the frame's floor, or where it began in
+        this one, whichever is lower, so it gains nothing where its column
+        is filled no lower than that.
 
         Args:
             frame: The frame of the band that triggered it.
@@ -1166,7 +1286,8 @@ class Builder:
         ejecting: Frame | None = frame
         if kind == "column":
             while ejecting is not None and not (
-                ejecting.spare and (not room or frame.fill > ejecting.floor)
+                ejecting.spare
+                and (not room or frame.fill > max(ejecting.floor, frame.start))
             ):
                 ejecting = ejecting.parent
         if kind == "page" or ejecting is None:
@@ -1201,8 +1322,7 @@ class Builder:
             frame.column = 0
             frame.floor = ejecting.floor
         self.set_column_number()
-        for frame in participants:
-            self.open_column(frame)
+        self.open_columns(participants)
 
     def page_eject(self) -> None:
         """End the page and start the next.
@@ -1210,7 +1330,7 @@ class Builder:
         doc/layout.md#sequence: a page eject ends a column as well,
         so the column's scopes end first, then the page's.  A group
         that is still opening does not count the page it is leaving:
-        it begins on the page its title lands on.
+        its run begins on the page its first band lands on.
 
         """
         self.settle_columns()
@@ -1242,14 +1362,30 @@ class Builder:
         for frame in self.frames():
             frame.column = 0
             frame.floor = 0.0
+            frame.lead = 0.0
         self.set_column_number()
 
     def open_frames(self) -> None:
         """Open every frame's first column, outermost first."""
-        for frame in self.frames():
-            self.open_column(frame)
+        self.open_columns(self.frames())
 
-    def open_column(self, frame: Frame) -> None:
+    def open_columns(self, frames: list[Frame]) -> None:
+        """Open these frames' next columns, and note where each begins.
+
+        A band in an empty column of one of them begins below the headers
+        the columns inside it drew, which is lower than their reservations
+        where a header measured taller when it was built than when it was
+        reserved: doc/layout.md#extent-and-fill.
+
+        Args:
+            frames: A frame and every frame inside it, outermost first.
+
+        """
+        drawn = [self.open_column(frame) for frame in frames]
+        for position, frame in enumerate(frames):
+            frame.start = max([frame.top, *drawn[position + 1 :]])
+
+    def open_column(self, frame: Frame) -> float:
         """Reserve a column's header and footer, and place its header.
 
         doc/layout.md#headerfooter-reservation measures both bands against
@@ -1258,6 +1394,10 @@ class Builder:
 
         Args:
             frame: The frame whose current column opens.
+
+        Returns:
+            How far down the header was drawn: its bottom edge,
+            or the column's top edge where it drew nothing.
 
         Raises:
             BuildError: The two reservations together exceed the column.
@@ -1278,17 +1418,19 @@ class Builder:
             )
         frame.settle(header, footer)
         if frame.header is None:
-            return
+            return frame.outer_top
         above = Window(frame.x, frame.width, frame.outer_top, frame.bottom)
         measured = self.measurer.band(
             frame.header, above, self.context, (frame.header.styles, *walk)
         )
         if measured is None:
-            return
+            return frame.outer_top
         self.marks.extend(
             mark.moved(frame.x, frame.outer_top) for mark in measured.marks
         )
-        frame.reach(round_points(frame.outer_top + measured.height))
+        drawn = round_points(frame.outer_top + measured.height)
+        frame.reach(drawn)
+        return drawn
 
     def reserve(self, section: Section | None, window: Window, walk: Walk) -> float:
         """Return the height a header or footer reserves.
@@ -1432,7 +1574,7 @@ class Builder:
         for balanced in self.frames():
             if not (balanced.balance and balanced.count > 1):
                 continue
-            fragment = self.fragments.setdefault(id(balanced), Fragment(balanced))
+            fragment = self.fragments.setdefault(balanced, Fragment(balanced))
             if frame is balanced or balanced in frame.ancestors():
                 if any(between.count > 1 for between in frame_path(balanced, frame)):
                     fragment.alone = True
@@ -1453,11 +1595,11 @@ class Builder:
 
         """
         for balanced in (frame, *frame.ancestors()):
-            fragment = self.fragments.get(id(balanced))
+            fragment = self.fragments.get(balanced)
             if fragment is not None:
                 fragment.alone = True
             elif balanced.balance and balanced.count > 1:
-                self.fragments[id(balanced)] = Fragment(balanced, alone=True)
+                self.fragments[balanced] = Fragment(balanced, alone=True)
 
     def settle_columns(self) -> None:
         """Balance every balanced frame's fragment on the page as it ends.
@@ -1469,7 +1611,7 @@ class Builder:
 
         """
         for frame in reversed(self.frames()):
-            fragment = self.fragments.get(id(frame))
+            fragment = self.fragments.get(frame)
             if fragment is None or fragment.alone or not fragment.bands:
                 continue
             opened = not any(

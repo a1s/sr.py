@@ -25,6 +25,11 @@ Two things are separate here, and the separation is the point.
   below keep that as their ``floor``, which is where a column they open
   later on the same page begins: below what their parent put across it.
 
+A band placed across columns goes between their headers and their
+footers: no lower than the headers were drawn to, which is the frame's
+``start``, and no further than the innermost column's ``bottom``,
+which is its ``end``.
+
 :class:`Window` is the view a band is measured against: an extent
 and a fill, and nothing about the tree.
 
@@ -89,9 +94,12 @@ class Window:
         return fits(height, self.available)
 
 
-@dataclass
+@dataclass(eq=False)
 class Frame:
     """One region of the frame tree, as it stands on the current page.
+
+    Two frames are the same frame only when they are one object: a frame
+    and its child refer to each other, and what they hold changes.
 
     Attributes:
         count: How many columns; 1 for the page frame.
@@ -116,6 +124,12 @@ class Frame:
             this page, which is where a column opened later begins.
         reserved_header: What the header reserved in this column.
         reserved_footer: What the footer reserved in this column.
+        start: Where a band begins in an empty column of this frame on
+            this page: its ``top``, or lower where the headers of the
+            columns inside it were drawn lower.  Every column this one
+            opens draws them again, and a band across them goes below.
+        lead: How much lower than on a later page the content of this
+            page begins: the height of a swapped title, on the first.
 
     """
 
@@ -139,6 +153,8 @@ class Frame:
     floor: float = 0.0
     reserved_header: float = 0.0
     reserved_footer: float = 0.0
+    start: float = 0.0
+    lead: float = 0.0
 
     # -- the tree ---------------------------------------------------------
 
@@ -196,30 +212,36 @@ class Frame:
         self.top = round_points(self.outer_top + header)
         self.bottom = round_points(self.outer_bottom - footer)
         self.fill = max(self.top, self.floor)
+        self.start = self.top
 
     @property
-    def start(self) -> float:
-        """Return where a band begins in an empty column of this frame.
+    def end(self) -> float:
+        """Return where a band in this frame must stop.
 
-        The frame's ``top``, or the innermost frame's inside it:
-        every column this one opens draws their headers again,
-        and a band placed across them goes below.
+        The frame's ``bottom``, or the innermost frame's inside it:
+        the footers of the columns inside it are drawn when their
+        columns end, below everything placed across them.
 
         """
         innermost = self
         for down in self.descendants():
             innermost = down
-        return innermost.top
+        return innermost.bottom
 
     @property
     def height(self) -> float:
-        """Return the most a band could get, which is an empty column."""
-        return round_points(self.bottom - self.start)
+        """Return the most a band could get, which is an empty column.
+
+        Taken on a page without a swapped title: the first page's
+        content begins that much lower, and the next page's does not.
+
+        """
+        return round_points(self.end - self.start + self.lead)
 
     @property
     def available(self) -> float:
         """Return the space left below what has been placed."""
-        return round_points(self.bottom - self.fill)
+        return round_points(self.end - self.fill)
 
     def accepts(self, height: float) -> bool:
         """Report whether a band of this height fits what is left.
@@ -234,17 +256,17 @@ class Frame:
     def empty(self) -> bool:
         """Report whether the column offers what an empty one would.
 
-        No eject could give a band more room than that.  A column
-        that begins at its floor, below a band an ancestor placed
-        across it, is not empty although nothing has been placed
-        in it: the next page offers more.
+        No eject could give a band more room than that.  A column that
+        begins at its floor, below a band an ancestor placed across it,
+        is not empty although nothing has been placed in it, and nor
+        is one below a swapped title: the next page offers more.
 
         """
-        return self.fill <= self.start
+        return self.fill <= round_points(self.start - self.lead)
 
     def window(self) -> Window:
         """Return the view a band in this frame is measured against."""
-        view = Window(self.x, self.width, self.top, self.bottom)
+        view = Window(self.x, self.width, self.top, self.end)
         view.fill = self.fill
         return view
 

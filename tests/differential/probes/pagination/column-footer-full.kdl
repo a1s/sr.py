@@ -11,7 +11,12 @@
 // and the footer's VERTICAL_POSITION counts the summary above it: a band
 // in the page frame comes down across the columns inside it.
 //
-// doc/layout.md#extent-and-fill is what this became.
+// doc/layout.md#extent-and-fill is what this became.  It also stops a band
+// across the columns above their footers, so the summary's VERTICAL_SPACE
+// is 134, what the rows' is, where the reference counts it to the page
+// frame's bottom, 140, under the footer.
+//
+// Registered, for that, as the divergence `column-footer-strip`.
 
 report name="pagination/column-footer-full" {
   font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5

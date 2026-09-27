@@ -1,0 +1,30 @@
+// probes/pagination/carried-once.kdl -- a band that fits only a later page.
+//
+// The first page's header is 50pt and later pages have none, so the first
+// page leaves 40 of the 90 and the second all of it.  A row takes 6 of the
+// 40, and the summary, which cannot split, needs 60.
+//
+// doc/layout.md#placing-a-band carries a band that fits no column on its
+// page to the next one once, before it is judged an overflow, since the
+// room a page offers depends on its headers.  So the summary goes to the
+// second page.  The reference judges it against the first page's room,
+// and refuses the report: the band measures 60 and "the largest frame
+// offers 40".  With nothing above it on the first page, it moves it on.
+//
+// Registered as the divergence `carried-once`.
+
+report name="pagination/carried-once" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    header height=50 printwhen="PAGE_NUMBER == 1" {
+      field expr="'H pn %d' % PAGE_NUMBER" left=0 top=0 height=6
+    }
+    detail height=6 {
+      field expr="'r%d pn %d' % (ITEM_NUMBER, PAGE_NUMBER)" left=0 top=0 height=6
+    }
+    summary height=60 {
+      field expr="'S pn %d vp %s' % (PAGE_NUMBER, VERTICAL_POSITION)" left=0 top=0 height=6
+    }
+  }
+}

@@ -1146,7 +1146,9 @@ def test_allow_overflow_makes_that_a_warning_and_places_the_band(
 
     The warning travels in the printout, which is what makes
     an overflowing document identifiable from the artifact
-    rather than from whoever watched the build.
+    rather than from whoever watched the build.  The band is tried
+    on the next page before it overflows, since that page may offer
+    more, so the first is left empty.
 
     """
     printout = built(
@@ -1154,7 +1156,8 @@ def test_allow_overflow_makes_that_a_warning_and_places_the_band(
         '    detail height=900 { field text="A" left=0 top=0 width=5 }',
         allow_overflow=True,
     )
-    assert len(marks(printout)) == 1
+    first, second = printout.pages
+    assert (len(first.marks), len(second.marks)) == (0, 1)
     kinds = [one.kind for one in printout.warnings]
     assert kinds == ["overflow"]
     assert printout.warnings[0].record == 0

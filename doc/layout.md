@@ -364,12 +364,21 @@ bottom: a band placed across the columns after that one has ended needs
 the next page.
 
 A column is **empty** when its fill is as high as a column of its frame
-can begin. That is the frame's `top`, or, in a frame with columns inside
-it, the `top` of the innermost of them: every column it opens draws their
-headers again, and a band placed across them goes below. No column of the
-frame gives a band more room. A column that begins at its floor is not
-empty, even with nothing placed in it: the next column on the page
-begins as low, but the next page begins at the top.
+can begin. That is the frame's `top`, or, in a frame with columns inside it,
+the lowest edge their headers were drawn to: every column it opens draws
+them again, and a band placed across them goes below. Where each header
+took what it reserved, that edge is the `top` of the innermost of them.
+No column of the frame gives a band more room. A column that begins at its
+floor is not empty, even with nothing placed in it: the next column on the
+page begins as low, but the next page begins at the top. Nor is a column
+below a [swapped title](#swapheader-and-swapfooter) on the first page,
+ since the next page's content begins higher by the title's height.
+
+A band in a frame with columns inside it stops above their footers,
+at the innermost column's `bottom` rather than the frame's own.
+Those footers are drawn when their columns end, flush with the bottom,
+and a band placed across the columns before then would be under them.
+`VERTICAL_SPACE` for such a band is measured to there.
 
 A column eject resets the frames inside the ejecting one to their
 first column; a page eject resets every frame, and every floor.
@@ -483,16 +492,25 @@ field expr="region" printwhen="THIS != None"
 frame, outside the page header and footer. The space comes out of the page it
 lands on:
 
-- The `title` is placed at the top of the page frame on the first page, and that
-  page's header is reserved below it. Content on page 1 starts that much lower.
-- The `summary` is placed in the page frame's reserved bottom band on the last
-  page, and that page's footer is placed immediately above it. The last page's
-  content space is that much shorter.
+- The `title` is placed at the top of the page frame on the first page,
+  and that page's header is reserved below it. Content on page 1 starts
+  that much lower, so no column below it is [empty](#extent-and-fill):
+  a band that fits a page without the title goes to page 2 rather than
+  overflowing on page 1.
+- The `summary` is placed in the page frame's reserved bottom band on
+  the last page, and that page's footer is placed immediately above it.
+  The last page's content space is that much shorter.
 
 Since the last page is only known when the record loop ends, the summary is
 placed like any other band: if what remains above the enlarged bottom
 reservation is already filled, a page eject happens first, and the summary gets a
-fresh page carrying that page's header and footer.
+fresh page carrying that page's header and footer. What remains is measured
+above the column footers as well, since they move up with the page footer.
+
+A swapped title taller than the page frame, or a swapped summary taller
+than an empty page offers, is an [overflow](#errors). Where that is allowed,
+it is placed where it would go unswapped, at the top of the page frame,
+and the summary after one page eject, as any band that fits nowhere is.
 
 Where it fits, the page frame's bottom moves up by the summary's height before
 the last page's footers are placed, so the page footer and every column footer
@@ -741,15 +759,24 @@ else if band splits and any cut point fits `available`:
     # taller than an empty frame: every split preference is given up
     split at the last such cut point, commit the head, column eject, continue
 
+else if no eject has moved the band yet:
+    # a later page may offer more: its headers may take less
+    column eject, re-measure, start again from the top
+
 else:
     band cannot fit any frame → see Errors
 ```
 
-Each branch is tried against the frame **as it stands**, and the fourth
-is no exception: a band too tall for any frame is cut here, at the last
-cut point that fits what this column has left, and not after an eject
-has found it an emptier one. A band is only ever moved whole when
-it would fit an empty column, or when it overflows.
+`frame.bottom` is where a band in the frame must stop, which in
+a frame with columns inside it is above their footers: see
+[extent and fill](#extent-and-fill).
+
+Each branch is tried against the frame **as it stands**, and
+the fourth is no exception: a band too tall for any frame is cut here,
+at the last cut point that fits what this column has left, and not after
+an eject has found it an emptier one. A band is only ever moved whole
+when it would fit an empty column, when it fits nowhere and has not been
+moved yet, or when it overflows.
 
 A **cut point** is an offset no mark's span falls through; a **legal split point**
 is a cut point that also divides content and satisfies `orphans` and `widows`.
@@ -764,29 +791,38 @@ Branch order matters. A cut that leaves one side blank is excluded by requiremen
 precisely so that branch 2 declines it and branch 3 ejects the band whole, which is
 the better outcome. Without that, branch 2 would win by being tried first.
 
-`frame.height(empty)` is the room an [empty](#extent-and-fill) column offers,
-from where it begins down to `bottom`: the most a band could ever get.
+`frame.height(empty)` is the room an [empty](#extent-and-fill) column
+offers, from where it begins down to `bottom`: the most a band could get.
+It is taken on the page the band is tried on, since a page's headers are
+measured when it opens and a later page's may take more or less. The one
+difference known in advance is a swapped title, which only the first page
+has, and on that page the height is taken as if the title were not there.
 
-No branch moves a band whole out of an empty column, and none has to say so.
-A band that fails the first branch there is taller than `frame.height(empty)`,
-so the third does not take it; the fourth cuts it where it is, and an overflow
-is placed where it is. A column that is not empty, including one that begins
-at its floor, ejects under the third branch until the band fits or the column
-is empty, which is on the next page at the latest.
+Only the fifth branch moves a band whole out of an empty column. A band
+that fails the first branch there is taller than `frame.height(empty)`,
+so the third does not take it, and the fourth cuts it where it is.
+One that cannot be cut is carried to the next page once, where the headers
+may leave it more room: an eject from an empty column looks for room, and
+the next column on the same page offers none. Where it still fits nowhere,
+it overflows. A column that is not empty, including one that begins
+at its floor, ejects under the third branch until the band fits or
+the column is empty, which is on the next page at the latest.
 
 That is why the empty height is measured below the headers of the columns
-inside the frame. Measured from the frame's own `top`, it would count room
-that no page offers a band across the columns. A band in the page frame
-that fits the frame, but not the room below the column headers, would then
-be ejected from page to page for ever.
+inside the frame, as they were drawn, and above their footers. Measured
+from the frame's own `top`, it would count room that no page offers a
+band across the columns, and so would a header that was drawn taller than
+it reserved, measured from its reservation. A band in the page frame that
+fits the frame, but not the room below the column headers, would then be
+ejected from page to page for ever.
 
 An eject a band triggers by not fitting is always a **column** eject.
 In a single-column frame that is the same thing as a page eject, and
-in a multi-column one it advances to the next column, escalating to
-a page eject only when no column remains, or none that would offer the band
+in a multi-column one it advances to the next column, escalating to a
+page eject only when no column remains, or none that would offer the band
 more room -- see [which frames participate](#which-frames-participate).
-A band that overflows its column should move to the next column, not
-skip the rest of the page.
+A band that overflows its column should move to the next column, not skip
+the rest of the page.
 
 An [`eject` node](template.md#eject) is the only way to force a page eject,
 via `type="page"`.
@@ -894,23 +930,22 @@ the **ejecting frame**:
   column eject becomes a page eject.
 
 A column eject that is looking for room also walks past a frame whose next
-column would offer the band no more than it has. That column begins at the
-frame's floor at the highest, so it gains nothing for a band whose column
-is filled no lower than that floor: a column that opened below a band
-placed across it, and has had nothing placed in it since. Every eject
-looks for room except one an [`eject` node](#eject-nodes) without `require`
-asks for, which is an instruction and goes to the next column whatever that
-offers. A band that does not fit, a keep-together rule, and a `require`
-that is not met all want the room, and a column that begins no higher would
-not give it.
+column would offer the band no more than it has. In that column the band
+begins at the frame's floor, or where it began in this one, whichever is
+lower, so it gains nothing where its column is filled no lower than that:
+a column that opened below a band placed across it, and has had nothing
+placed in it since, or an empty one. Every eject looks for room
+except one an [`eject` node](#eject-nodes) without `require` asks for,
+which is an instruction and goes to the next column whatever that offers.
+A band that does not fit, a keep-together rule, and a `require` that is not
+met all want the room, and a column that begins no higher would not give it.
 
 The ejecting frame participates, and so does **every frame inside it**,
 since the columns they are filling end with it. For a band in the innermost
-frame that is the same set as the walk passed through; for a band in an
-outer frame -- a group summary placed across the columns of its group --
-it includes the columns below the band as well, so each of them has its
-footer placed before the page ends and its header placed when the next one
-begins.
+frame that is the same set as the walk passed through; for a band in an outer
+frame -- a group summary placed across the columns of its group -- it includes
+the columns below the band as well, so each of them has its footer placed
+before the page ends and its header placed when the next one begins.
 
 ### Sequence
 
@@ -952,10 +987,15 @@ A band's `eject` nodes are tested in document order. The first whose `when` is t
 is selected, and the search stops there whether or not it ejects; a `when`-false
 node is skipped and the next is tried. The selected node ejects unconditionally if
 it has no `require`, and otherwise only when less than `require` remains in the
-frame. Full table in [template.md](template.md#eject). A column eject with no
-`require` goes to the next column; one with `require` is looking for room,
-and passes over a column that would offer none, as
+frame and the column is not [empty](#extent-and-fill), since no eject could
+give it more room. Full table in [template.md](template.md#eject). A column
+eject with no `require` goes to the next column; one with `require` is
+looking for room, and passes over a column that would offer none, as
 [which frames participate](#which-frames-participate) says.
+
+A band that does not print tests none of its `eject` nodes, whatever
+their `when`: `printwhen` suppresses the band with what it would have asked
+of the page. A group whose title does not print therefore opens without them.
 
 Ejects are evaluated **before** the band is placed, with one exception: a report's
 own `title` — the band at `layout` or `embedded` level — evaluates them **after**,
@@ -1059,9 +1099,9 @@ nothing it measures is committed, and nothing it folds is kept.
 
 `minrows` is the minimum number of detail rows that must share a frame with the
 group title. Before committing the title, it plus the next `minrows` details are
-measured, with any nested group titles among them; if the total does not fit,
-an eject happens first. Like `keeptogether`, what it asks for is capped at an
-empty frame, and a group with fewer rows asks for all of them.
+measured, with any nested group titles and summaries among them; if the total
+does not fit, an eject happens first. Like `keeptogether`, what it asks for is
+capped at an empty frame, and a group with fewer rows asks for all of them.
 
 `mintailrows` is the minimum that must share a frame with the group summary.
 When the record loop reaches the point where `mintailrows` details plus the
@@ -1077,9 +1117,10 @@ The default for both is 1, which is not a no-op: a title is never left at
 the bottom of a frame without a row after it, and a summary never starts
 a frame without a row before it.
 
-No keep-together rule ejects from an [empty](#extent-and-fill) column.
-An eject there could offer no more room, and would leave a blank page behind.
-Only an `eject require` taller than an empty frame could ask for one, since
+No keep-together rule ejects from an [empty](#extent-and-fill) column,
+and nor does an `eject require` on any band. An eject there could offer
+no more room, and would leave a blank page behind. An `eject require`
+taller than an empty frame asks for more than any eject could give, and
 what the others ask for is capped at an empty frame. A column that begins
 at its floor is not empty, and a rule it does not satisfy ejects from it as
 from any other. The columns left on that page begin below the same band and
@@ -1505,12 +1546,15 @@ The rows marked **overflow** are errors that `--allow-overflow` downgrades to a
 warning, placing the marks anyway. The warning is recorded in the printout header,
 so an overflowing document is identifiable from the artifact.
 
-An oversized band is placed at the top of an [empty](#extent-and-fill) column:
-where it was tried if that column is empty, and otherwise after as many column
-ejects as it takes to reach one, which is the next page at the latest.
-It runs past that column's bottom, and the band after it starts the next column.
-The warning is raised once for each band, before any eject, and carries the
-record that band was being placed for, the first record's 0 included.
+An oversized band is first carried by one eject, unless an eject has
+moved it already, since a later page may leave it more room: see
+[placing a band](#placing-a-band). Where it still fits nowhere, it is placed
+at the top of an [empty](#extent-and-fill) column: where it is if that column
+is empty, and otherwise after as many column ejects as it takes to reach one,
+which is the next page at the latest. It runs past that column's bottom,
+and the band after it starts the next column.
+The warning is raised once for each band, before those ejects, and carries
+the record that band was being placed for, the first record's 0 included.
 
 A mark outside the printable area is the case a negative `right` or `bottom`
 produces. Such an offset is legal in the template — it means the box reaches past

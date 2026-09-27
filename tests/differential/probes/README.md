@@ -149,6 +149,7 @@ the reference gave, and names the section of `doc/` that answer became.
 | `pagination/columns` | filling columns, and what each band sees |
 | `pagination/across-columns` | a band placed across columns |
 | `pagination/column-footer-full` | a column that has had its footer |
+| `pagination/summary-above-column-footers` | a band across columns, and their footers |
 | `pagination/column-after-title` | a column opened below a report title |
 | `pagination/column-after-group-title` | a group's columns, below its title |
 | `pagination/eject-below-title` | a band that fits a column, but not below a title |
@@ -158,9 +159,12 @@ the reference gave, and names the section of `doc/` that answer became.
 | `pagination/overflow` | where `--allow-overflow` puts a band |
 | `pagination/overflow-first-record` | the warning an overflow on record 0 carries |
 | `pagination/overflow-below-title` | an oversized band in a column below a title |
+| `pagination/carried-once` | a band that fits only a later page |
 | `pagination/eject-blank-page` | an `eject` node on an empty page |
 | `pagination/eject-require` | `require`, and a column eject in one column |
+| `pagination/require-empty-column` | `eject require` in an empty column |
 | `pagination/title-eject` | a report title's ejects, tested after it |
+| `pagination/suppressed-ejects` | the `eject` nodes of a band that does not print |
 | `pagination/groups` | the record loop around one group |
 | `pagination/nested-groups` | nested groups, and the end of the report |
 | `pagination/group-pages` | a group's page number |
@@ -169,10 +173,14 @@ the reference gave, and names the section of `doc/` that answer became.
 | `pagination/keeptogether` | keeping a group on one frame |
 | `pagination/keeptogether-capped` | a group too big to keep together |
 | `pagination/keeptogether-below-title` | keeping a group together below a title |
+| `pagination/keeptogether-nested` | keeping a group together with groups inside it |
 | `pagination/minrows` | rows that must follow a group's title |
 | `pagination/mintailrows` | rows that must precede a group's summary |
 | `pagination/swapped-bands` | where `swapheader` and `swapfooter` put a band |
 | `pagination/swapfooter-ejects` | a swapped summary that does not fit |
+| `pagination/swapfooter-column-footers` | a swapped summary, and the column footers |
+| `pagination/swapfooter-overflow` | a swapped summary taller than a page |
+| `pagination/swapped-title-floor` | the page below a swapped title |
 | `pagination/balance` | spreading a page's bands over the columns |
 | `pagination/balance-unreached` | a column the fill never reached |
 | `pagination/item-order` | when `iter="item"` folds |
@@ -234,32 +242,46 @@ The reference leaves `node` out of a `font` warning, which doc/ requires,
 and has since M5; no probe could see it until `!host-fonts` let one reach
 the substitute face.
 
-M8 added the `pagination/` group, and nine divergences with it.
-Seven are defects in the reference's pagination rather than decisions:
-`column-after-title` and `column-after-group-title`, where a column
-opened after a band across the columns is drawn over it; `cut-in-place`,
-where a band too tall for any frame is cut on a page the reference first
-ejects to; `overflow-first-record`, where an overflow warning loses its
-record 0; `nested-groups`, where the last outer group summary goes missing;
-`group-title-moves`, where a group whose title moves counts the page
-it left; `mintailrows`, which the reference does not implement; and
-`scope-resets`, where `reset="item"` and `reset="detail"` never fire.
-The other two are decisions. In `footer-at-a-break`, a page that ends
-at a group break has a footer that reads the run that ended and a header
-that reads the run that begins, where the reference gives both the new run.
+M8 added the `pagination/` group, and fifteen divergences with it.
+Eleven are defects in the reference's pagination rather than decisions:
+`column-after-title` and `column-after-group-title`, where a column opened
+after a band across the columns is drawn over it; `cut-in-place`, where
+a band too tall for any frame is cut on a page the reference first ejects
+to; `overflow-first-record`, where an overflow warning loses its record 0;
+`nested-groups`, where the last outer group summary goes missing;
+`group-title-moves`, where a group whose title moves counts the page it
+left; `mintailrows`, which the reference does not implement;
+`scope-resets`, where `reset="item"` and `reset="detail"` never fire;
+`keeptogether-nested`, where a group is kept together as if the groups
+inside it never broke; `require-empty-column`, where `eject require`
+leaves a blank page; `summary-above-column-footers`,
+`swapfooter-column-footers`, and `column-footer-full`, one divergence
+between them, where a band across the columns runs into the strip their
+footers are drawn in; and `swapfooter-overflow`, where a swapped summary
+taller than a page is drawn above the paper.
+The other four are decisions. In `footer-at-a-break`, a page that ends at
+a group break has a footer that reads the run that ended and a header that
+reads the run that begins, where the reference gives both the new run.
 In `first-page-init`, every variable is seeded from `init` at the start
 of the report, where the reference seeds only the report's and leaves
 the first page's and first column's totals without it.
+In `carried-once`, a band that fits only a later page is carried there
+before it is judged an overflow, where the reference refuses the report.
+In `suppressed-ejects`, a band that does not print tests none of its
+`eject` nodes, where the reference tests them all the same.
 
-One more defect has no probe, because it would hold the suite up
+Two more defects have no probe, because each would hold the suite up
 for the harness's build timeout. A band in the page frame that fits
 the frame's full height, but not the room below the column headers,
 is ejected by the reference from page to page for ever, since no page
-offers the height it is ejected in search of.
-doc/layout.md#placing-a-band measures an empty frame below the headers,
-and against that the band is an overflow. The test of this engine's
-answer is `test_an_empty_frame_is_measured_below_the_column_headers`
-in [test_pagination.py](../../unit/test_pagination.py).
+offers the height it is ejected in search of. So is one that fits below
+the column headers as they reserved, but not as they were drawn, where
+a header prints more when it is built than when it is reserved.
+doc/layout.md#placing-a-band measures an empty frame below the headers
+as drawn, and against that each band is an overflow. The tests of this
+engine's answer are `test_an_empty_frame_is_measured_below_the_column_headers`
+and `test_an_empty_frame_begins_below_the_headers_as_drawn` in
+[test_pagination.py](../../unit/test_pagination.py).
 
 Of the rest, every one agrees byte for byte except the three `data/`
 probes, which need an image. Those are in [pending.toml](../pending.toml)

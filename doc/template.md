@@ -868,7 +868,7 @@ still inherits a `font` from `layout`.
 Every section and every body element accepts `printwhen`, an expression that
 suppresses it when false. A suppressed element produces no marks and contributes
 no height, so a band whose `height="auto"` collapses when everything in it is
-suppressed.
+suppressed. A suppressed band tests none of its [`eject`](#eject) nodes either.
 
 ```kdl
 detail printwhen="amount > 0" {
@@ -951,7 +951,7 @@ Once a node is selected:
 | `require` | Result |
 |---|---|
 | absent | eject |
-| present | eject only if less than `require` remains in the frame |
+| present | eject only if less than `require` remains in the frame, and the column is not empty |
 
 So the two combine as a conjunction, and `require` is reachable only through a true
 `when`:
@@ -964,6 +964,12 @@ So the two combine as a conjunction, and `require` is reachable only through a t
 
 The three examples above therefore mean: eject whenever the customer has more than
 20 rows; eject whenever less than 3cm remains; and eject only when both hold.
+
+A `require` is never met by ejecting from an
+[empty](layout.md#extent-and-fill) column, which is as much room as any column
+of the frame offers, so there it does not eject. And a band that does not print
+tests none of its `eject` nodes, whatever their `when`: `printwhen` suppresses
+the band with what it would have asked of the page.
 
 Eject is evaluated at the **beginning** of the section, except in a report's own
 `title` — the band directly under `layout` or `embedded` — where it is evaluated

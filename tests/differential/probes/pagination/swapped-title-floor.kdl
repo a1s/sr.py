@@ -1,0 +1,24 @@
+// probes/pagination/swapped-title-floor.kdl -- the page below a swapped title.
+//
+// The `swapheader` title takes 50 of the first page's 90.  The detail
+// is ten lines, 60pt, and may split, but `orphans` and `widows` of 11
+// leave it no legal split point.
+//
+// doc/layout.md#extent-and-fill counts no column below a swapped title
+// as empty, since the next page's content begins that much higher, and
+// doc/layout.md#placing-a-band measures the room an empty column offers
+// as a page without the title would.  The band fits that, so it is moved
+// to the second page whole rather than cut on the first.
+
+report name="pagination/swapped-title-floor" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    title height=50 swapheader=#true {
+      field text="T" left=0 top=0 height=6
+    }
+    detail split=#true orphans=11 widows=11 {
+      field text="a1\na2\na3\na4\na5\na6\na7\na8\na9\na10" stretch=#true left=0 top=0 width=100
+    }
+  }
+}

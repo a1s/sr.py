@@ -120,7 +120,7 @@ def choose(
 ) -> float | None:
     """Return the greatest offset within ``limit`` the band may be cut at.
 
-    The candidates are every offset something in the band starts, ends
+    The candidates are every offset something in the band starts, ends,
     or breaks a line at, and ``limit`` itself, which may fall in empty
     space.  An offset of zero is never a cut, since it moves the whole
     band and takes nothing from it.
