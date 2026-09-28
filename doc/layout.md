@@ -1566,7 +1566,7 @@ unless it is on a page an eject has just begun, since a later page
 may leave it more room: see [placing a band](#placing-a-band).
 Where it still fits nowhere, it is placed at the top of an
 [empty](#extent-and-fill) column: where it is if that column is empty,
- and otherwise after as many column ejects as it takes to reach one,
+and otherwise after as many column ejects as it takes to reach one,
 which is the next page at the latest. It runs past that column's bottom,
 and the band after it starts the next column. The warning is raised once
 for each band, before those ejects, and carries the record that band was
