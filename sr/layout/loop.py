@@ -34,9 +34,10 @@ Every band goes through doc/layout.md#measure-decide-commit, and deciding
 is the five branches of doc/layout.md#placing-a-band: commit it, split it
 at a legal split point, eject and measure it again, or -- for a band too
 tall for any frame -- cut it wherever it can be cut at all, and failing
-that try the next page once.  An eject the band causes is a column eject,
-and doc/layout.md#sequence is what one does: footers innermost first,
-the scopes that ended, the advance, then headers outermost first.
+that try the next page once.  An eject the band causes is a column
+eject, but for that last one, and doc/layout.md#sequence is what one
+does: footers innermost first, the scopes that ended, the advance,
+then headers outermost first.
 
 A band that ejects has its fold rolled back first and applied again
 after, so that no value is counted twice and none is lost to a reset
@@ -993,9 +994,12 @@ class Builder:
         3. It fits an empty frame: eject, and measure it again there.
         4. It may split and some cut point fits: cut it there, having given
            up every split preference, because progress beats preference.
-        5. No eject has moved it yet: eject, and try it again from the
-           first branch, since a later page may offer more room than
-           this one where its headers take less.
+        5. No eject has moved it yet: eject to the next page, and try it
+           again from the first branch, since a later page may offer more
+           room than this one where its headers take less.  A column eject
+           would not do: from a column with bands in it, it goes to the
+           next column on this page, which offers no more than an empty
+           column here, and the band has had its one move.
 
         Anything else overflows, and is placed at the top of an empty column.
         That may take more than one eject, since a column that begins at
@@ -1039,7 +1043,9 @@ class Builder:
                     carried = True
                     continue
             if not carried:
-                self.eject(frame, "column", fold if whole else None)
+                # Only another page's headers can make more room: every
+                # column left on this one begins no higher than this one.
+                self.eject(frame, "page", fold if whole else None)
                 carried = True
                 if whole:
                     measured = self.measure(section, frame, walk)

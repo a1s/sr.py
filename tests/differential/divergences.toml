@@ -547,8 +547,9 @@ opens, so a first page with a taller header offers less than every later \
 one.  A band that cannot be cut and fits only a later page was then an \
 overflow.  The reference refuses such a band, and moves it on only where \
 nothing is above it on its page.  doc/ now carries it to the next page \
-once, by one eject, before judging it, so it lands where there is room, \
-and a band that fits no page still overflows, one page on.  It is a \
+once, by one page eject, before judging it, so it lands where there is \
+room, in a frame of one column or of several, and a band that fits no \
+page still overflows, one page on.  It is a \
 decision rather than a defect, and the reference is the side that \
 changes.\
 """

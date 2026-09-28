@@ -50,8 +50,7 @@ KEYED = """  records {
 # The group the group tests use, keyed on `a`, and a total it resets.
 GROUP = (
     KEYED
-    + """\
-  variable "total" expr="1" calc="sum" reset="group" resetgrp="A"
+    + """  variable "total" expr="1" calc="sum" reset="group" resetgrp="A"
 """
 )
 
@@ -290,6 +289,28 @@ def test_a_band_that_fits_only_a_later_page_moves_there_after_others(
         + band("summary", shown("S"), "height=60"),
     )
     assert pages(printout) == [["H", "d"], ["S"]]
+
+
+@pytest.mark.parametrize("tall", [1, 2], ids=["empty-column", "filled-column"])
+def test_a_band_that_fits_only_a_later_page_skips_the_columns_left(
+    tmp_path: Path, tall: int
+) -> None:
+    """doc/layout.md#placing-a-band: the carry is a page eject.
+
+    Two columns, 40 tall on the first page.  The tall row needs 60, and
+    the second column offers what the first does, whether or not the
+    first has a row in it: the row goes to the first column of the next
+    page, where there is room, rather than overflowing in the second.
+
+    """
+    wall = (
+        f'rectangle printwhen="ITEM_NUMBER == {tall}" left=50 top=0 width=1 height=60'
+    )
+    detail = band("detail", said("'r%d' % ITEM_NUMBER") + "; " + wall, "height=6")
+    printout = built(tmp_path, FIRST_HEADER + COLUMNS + detail, rows_of(tall))
+    moved = at(printout.pages[1], f"r{tall}")
+    assert pages(printout)[0] == ["H"] + [f"r{row}" for row in range(1, tall)]
+    assert (moved.x, moved.y) == (5, 5)
 
 
 def test_no_column_below_a_swapped_title_is_empty(tmp_path: Path) -> None:
