@@ -1,0 +1,24 @@
+// probes/pagination/scope-resets.kdl -- `reset="item"` and `reset="detail"`.
+//
+// doc/expressions.md#iter-and-reset fires `detail` once per printed
+// detail section and `item` once per record, for `reset` as for `iter`,
+// and seeds the accumulator from `init` at every reset.  So `ir` and `dv`
+// hold the current record's number alone, and `ds` is 100 plus it.
+//
+// The reference never fires either reset, and never folds the `init` in at all:
+// `ir` and `dv` accumulate every record's number, and `ds` sums them from zero.
+//
+// Registered as the divergence `detail-and-item-resets`, filed against the reference.
+
+report name="pagination/scope-resets" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  variable "ir" expr="ITEM_NUMBER" calc="list" iter="item" reset="item"
+  variable "dv" expr="ITEM_NUMBER" calc="list" iter="detail" reset="detail"
+  variable "ds" expr="ITEM_NUMBER" calc="sum" iter="detail" reset="detail" init="100"
+  layout width=200 height=90 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    detail height=5 {
+      field expr="'r it %d ir %s dv %s ds %s' % (ITEM_NUMBER, ir, dv, ds)" left=0 top=0 height=5
+    }
+  }
+}

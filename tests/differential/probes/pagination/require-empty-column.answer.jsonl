@@ -1,0 +1,4 @@
+{"sr":1,"kind":"header","report":{"name":"pagination/require-empty-column"},"built":"2026-08-04T09:12:44Z","engine":"sr 0.1.0","strictFonts":true,"pages":3,"page":{"width":200,"height":100,"leftMargin":5,"rightMargin":5,"topMargin":5,"bottomMargin":5},"fonts":[{"name":"body","size":5,"bold":false,"italic":false,"underline":false,"resolvedFile":"<resolved>","resolvedFace":"Go","resolvedBy":"explicit"}],"data":{}}
+{"kind":"page","number":1,"marks":[]}
+{"kind":"page","number":2,"marks":[{"kind":"text","box":{"x":5,"y":5,"width":190,"height":6},"font":"body","color":"#000000","align":"left","leading":6,"lines":["r1 pn 2"]}]}
+{"kind":"page","number":3,"marks":[{"kind":"text","box":{"x":5,"y":5,"width":190,"height":6},"font":"body","color":"#000000","align":"left","leading":6,"lines":["r2 pn 3"]}]}

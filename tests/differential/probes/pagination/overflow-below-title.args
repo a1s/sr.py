@@ -1,0 +1,3 @@
+# The band this probe is about is an overflow, and the question is
+# where it goes when it is allowed.
+--allow-overflow

@@ -1,0 +1,33 @@
+// probes/pagination/suppressed-ejects.kdl -- the `eject` nodes of a band that does not print.
+//
+// Three bands that do not print, each with an `eject` node:
+// a `swapheader` title, the second record's detail, and the summary.
+//
+// doc/layout.md#eject-nodes: a band that does not print tests none
+// of its `eject` nodes, since `printwhen` suppresses the band with
+// what it would have asked of the page.  So the report is one page,
+// holding the first record's row and the third's.  The reference tests
+// them all the same: the title leaves the first page blank, the second
+// record's detail puts the third record's row on a page of its own, and
+// the summary adds a last page, blank too.
+//
+// Registered as the divergence `suppressed-band-ejects`.
+
+report name="pagination/suppressed-ejects" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    title height=6 swapheader=#true printwhen="False" {
+      eject
+      field text="T" left=0 top=0 height=6
+    }
+    detail height=6 printwhen="ITEM_NUMBER != 2" {
+      eject when="ITEM_NUMBER == 2"
+      field expr="'r%d pn %d' % (ITEM_NUMBER, PAGE_NUMBER)" left=0 top=0 height=6
+    }
+    summary height=6 printwhen="False" {
+      eject
+      field text="S" left=0 top=0 height=6
+    }
+  }
+}

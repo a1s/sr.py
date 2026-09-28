@@ -1,0 +1,31 @@
+// probes/pagination/summary-above-column-footers.kdl -- a band across columns, and their footers.
+//
+// Two columns with a 10pt footer.  Seven rows fill the first column to 75,
+// and the report summary, across both columns, needs 15.  The page frame
+// has 20 below the rows, and the column footer takes the last 10 of it.
+//
+// doc/layout.md#extent-and-fill: a band in a frame with columns inside it
+// stops above their footers, which are drawn when the columns end.
+// So the summary starts the next page, and its VERTICAL_SPACE there
+// is measured to the footer.  The reference places it below the rows,
+// from 75 to 90, and draws the column footer over it, from 85.
+//
+// Registered as the divergence `column-footer-strip`.
+
+report name="pagination/summary-above-column-footers" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    columns count=2 gap=10 {
+      footer height=10 {
+        field expr="'CF cn %d pn %d' % (COLUMN_NUMBER, PAGE_NUMBER)" left=0 top=0 height=6
+      }
+    }
+    detail height=10 {
+      field expr="'r%d cn %d' % (ITEM_NUMBER, COLUMN_NUMBER)" left=0 top=0 height=6
+    }
+    summary height=15 {
+      field expr="'S pn %d vs %s' % (PAGE_NUMBER, VERTICAL_SPACE)" left=0 top=0 height=6
+    }
+  }
+}

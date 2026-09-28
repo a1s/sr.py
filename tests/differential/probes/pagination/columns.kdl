@@ -1,0 +1,49 @@
+// probes/pagination/columns.kdl -- filling columns, and what each band sees.
+//
+// Sixteen rows into two columns with a column header and footer, under
+// a page header and footer.  The first column fills, then a column eject:
+//
+//   * the column's footer is built against the outgoing context, with
+//     COLUMN_COUNT and the `reset="column"` total the column's own;
+//   * COLUMN_COUNT and the column variables reset, and `iter="column"`
+//     folds with the COLUMN_NUMBER of the column that ended;
+//   * the second column opens beside the first, its header at the
+//     same height, and COLUMN_NUMBER is 2.
+//
+// When the second column fills the page ends: both frames' footers, the
+// column's first, then the page's.  The summary belongs to the page frame
+// and does not fit what the columns leave on page 2, whose first column
+// had its footer placed when it ended, so it takes a page of its own,
+// which still carries the column header and footer: every frame opens
+// on every page.
+//
+// doc/layout.md#sequence and #which-frames-participate are what this became.
+
+report name="pagination/columns" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  variable "ct" expr="1" calc="sum" reset="column"
+  variable "cn" expr="COLUMN_NUMBER" calc="last" iter="column" reset="report"
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    header height=6 {
+      field expr="'H pn %d cn %d it %d' % (PAGE_NUMBER, COLUMN_NUMBER, ITEM_NUMBER)" left=0 top=0 height=6
+    }
+    footer height=6 {
+      field expr="'F pn %d cn %d it %d' % (PAGE_NUMBER, COLUMN_NUMBER, ITEM_NUMBER)" left=0 top=0 height=6
+    }
+    columns count=2 gap=10 {
+      header height=6 {
+        field expr="'CH cn %d cc %d it %d ct %s cnv %s' % (COLUMN_NUMBER, COLUMN_COUNT, ITEM_NUMBER, ct, cn)" left=0 top=0 height=6
+      }
+      footer height=6 {
+        field expr="'CF cn %d cc %d ct %s vp %s vs %s' % (COLUMN_NUMBER, COLUMN_COUNT, ct, VERTICAL_POSITION, VERTICAL_SPACE)" left=0 top=0 height=6
+      }
+    }
+    detail height=15 {
+      field expr="'r%d cn %d cc %d ct %s vp %s' % (ITEM_NUMBER, COLUMN_NUMBER, COLUMN_COUNT, ct, VERTICAL_POSITION)" left=0 top=0 height=6
+    }
+    summary height=6 {
+      field expr="'S vp %s cn %d' % (VERTICAL_POSITION, COLUMN_NUMBER)" left=0 top=0 height=6
+    }
+  }
+}

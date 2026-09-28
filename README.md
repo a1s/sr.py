@@ -198,12 +198,12 @@ them rather than producing something approximate. `sr.py help <command>`
 lists what a command that works does not reach yet -- today a mark that
 lands outside the printable area is not judged an
 [overflow](doc/layout.md#errors), which is the one row of that table
-neither engine checks. Today it builds a single
-page of `field`, `line`, `rectangle`, and `xref` elements, floating ones
-among them, and writes it as NDJSON; groups, columns, pagination, deferred
-values, barcodes, images, subreports, and PDF are the milestones after
-this one. The cases the differential corpus cannot yet
-compare are listed, with the milestone each waits for, in
+neither engine checks. Today it paginates reports of `field`, `line`,
+`rectangle`, and `xref` elements, with groups, columns, band splitting,
+`eject` nodes, keep-together rules, and balanced columns, and writes them
+as NDJSON. Deferred values, barcodes, images, subreports, and PDF are
+the milestones after this one. The cases the differential corpus cannot
+yet compare are listed, with the milestone each waits for, in
 [tests/differential/pending.toml](tests/differential/pending.toml).
 
 The Go implementation is the **oracle**: a reference binary whose *outputs*

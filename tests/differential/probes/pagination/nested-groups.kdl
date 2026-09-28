@@ -1,0 +1,51 @@
+// probes/pagination/nested-groups.kdl -- nested groups, and the end of the report.
+//
+// Two groups, B inside A, on one page.  A break of A breaks B too,
+// even where B's key did not change, and the summaries close innermost
+// first while the titles open outermost first.  A's title and summary
+// read nothing of B's own, and the report's summary nothing of either
+// group's: between a group's runs what its names hold is unspecified,
+// doc/expressions.md#between-a-groups-runs.  `bcnt` is B's only by
+// iteration, and counts B's runs in each run of A.
+//
+// At the end of the report every group still open is closed, innermost first:
+// doc/expressions.md#the-report-boundary builds "every remaining group summary"
+// before the report's summary.  The reference builds B's and leaves A's out, so
+// the last run of A has no summary at all, with room for it on the page.
+//
+// Registered as the divergence `last-outer-summary`, filed against the reference.
+
+report name="pagination/nested-groups" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  records {
+    member "a" type="int"
+    member "b" type="int"
+  }
+  variable "bsum" expr="b" calc="sum" reset="group" resetgrp="B"
+  variable "bcnt" expr="1" init="100" calc="sum" iter="group" itergrp="B" reset="group" resetgrp="A"
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    group "A" expr="a" {
+      title height=5 {
+        field expr="'AT a%d it %d A_C %d bcnt %s' % (a, ITEM_NUMBER, A_COUNT, bcnt)" left=0 top=0 height=5
+      }
+      summary height=5 {
+        field expr="'AS a%d it %d A_C %d bcnt %s' % (a, ITEM_NUMBER, A_COUNT, bcnt)" left=0 top=0 height=5
+      }
+      group "B" expr="b" {
+        title height=5 {
+          field expr="'  BT b%d it %d B_C %d bsum %s bcnt %s' % (b, ITEM_NUMBER, B_COUNT, bsum, bcnt)" left=0 top=0 height=5
+        }
+        summary height=5 {
+          field expr="'  BS b%d it %d B_C %d bsum %s' % (b, ITEM_NUMBER, B_COUNT, bsum)" left=0 top=0 height=5
+        }
+        detail height=5 {
+          field expr="'    r%d a%d b%d A_C %d B_C %d' % (ITEM_NUMBER, a, b, A_COUNT, B_COUNT)" left=0 top=0 height=5
+        }
+      }
+    }
+    summary height=5 {
+      field expr="'S it %d' % ITEM_NUMBER" left=0 top=0 height=5
+    }
+  }
+}

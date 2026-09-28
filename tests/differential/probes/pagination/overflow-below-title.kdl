@@ -1,0 +1,33 @@
+// probes/pagination/overflow-below-title.kdl -- an oversized band below a band.
+//
+// A group with a column frame of its own, one column wide.  The second group's
+// title does not go on page 1: the default `minrows` of 1 wants a row with it,
+// and the row it would bring asks for an empty frame.  So the title starts
+// page 2, and the column opens below it, at 40.
+//
+// The row after it is 26 lines, 156, which no frame holds and nothing can cut:
+// an overflow, which --allow-overflow turns into a warning.  The column it was
+// tried in has had nothing placed in it, and still is not empty, so the band
+// goes to the top of the next page, as doc/layout.md#errors puts an oversized
+// band, rather than below the title.  The record is 1, so the warning names it
+// in both engines.
+
+report name="pagination/overflow-below-title" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "g" type="int"
+    member "t" type="string"
+  }
+  layout width=200 height=150 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    group "grp" expr="g" {
+      title height=40 {
+        field expr="'GT g%d pn %d vp %s vs %s' % (g, PAGE_NUMBER, VERTICAL_POSITION, VERTICAL_SPACE)" left=0 top=0 height=6
+      }
+      columns count=1
+      detail height=6 {
+        field expr="t" left=0 top=0 height=6 stretch=#true
+      }
+    }
+  }
+}

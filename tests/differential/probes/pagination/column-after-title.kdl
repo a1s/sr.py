@@ -1,0 +1,34 @@
+// probes/pagination/column-after-title.kdl -- a column opened below a title.
+//
+// The report's title belongs to the page frame and spans both columns.
+// It is placed below the first column's header, which opens with the page,
+// and the rows follow it in the first column.  When that column fills,
+// where does the second begin?
+//
+// The reference begins it at the column frame's top, 11, which is where the
+// title is: its first row is drawn over the right half of the title's band.
+// doc/layout.md#extent-and-fill has a committed band push every frame inside
+// its own down to its bottom edge, and keep that as the floor a column opened
+// later on the page begins at, so here the second column begins at 17, level
+// with the first column's first row.  The column header stays where every
+// column's header goes, at the frame's top.
+//
+// Registered as the divergence `column-floor`, filed against the reference.
+
+report name="pagination/column-after-title" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    title height=6 {
+      field expr="'T vp %s vs %s cn %d' % (VERTICAL_POSITION, VERTICAL_SPACE, COLUMN_NUMBER)" left=0 top=0 height=6
+    }
+    columns count=2 gap=10 {
+      header height=6 {
+        field expr="'CH cn %d vp %s vs %s' % (COLUMN_NUMBER, VERTICAL_POSITION, VERTICAL_SPACE)" left=0 top=0 height=6
+      }
+    }
+    detail height=15 {
+      field expr="'r%d cn %d vp %s' % (ITEM_NUMBER, COLUMN_NUMBER, VERTICAL_POSITION)" left=0 top=0 height=6
+    }
+  }
+}

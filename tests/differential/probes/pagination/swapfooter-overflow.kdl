@@ -1,0 +1,27 @@
+// probes/pagination/swapfooter-overflow.kdl -- a swapped summary taller than a page.
+//
+// The `swapfooter` summary is 120pt and the page frame 90,
+// and overflow is allowed.
+//
+// doc/layout.md#swapheader-and-swapfooter: a swapped summary taller than
+// an empty page offers is an overflow, and where that is allowed it is
+// placed where it would go unswapped, at the top of the page frame, after
+// one page eject.  So it begins the second page at the top margin, running
+// past the bottom, with an overflow warning.  The reference places it with
+// its bottom edge on the bottom margin, which puts its top 25pt above the
+// paper, and warns of nothing.
+//
+// Registered as the divergence `swapfooter-overflow`.
+
+report name="pagination/swapfooter-overflow" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    detail height=6 {
+      field expr="'r%d pn %d' % (ITEM_NUMBER, PAGE_NUMBER)" left=0 top=0 height=6
+    }
+    summary height=120 swapfooter=#true {
+      field expr="'S pn %d' % PAGE_NUMBER" left=0 top=0 height=6
+    }
+  }
+}

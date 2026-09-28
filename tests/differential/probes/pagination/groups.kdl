@@ -1,0 +1,45 @@
+// probes/pagination/groups.kdl -- the record loop around one group.
+//
+// Seven records whose key runs 1 1 2 2 2 1 3, on one page.
+// What the loop does at each break is the question, and the reference
+// answers doc/layout.md's order at every step:
+//
+//   * a summary is built against the previous record: its ITEM_NUMBER is the
+//     last of its group's, and the group's own `reset="group"` total is whole;
+//   * a title reads its group's new run: A_COUNT back to 0,
+//     the `reset="group"` total cleared, `iter="group"` folded,
+//     and the new record;
+//   * A_COUNT counts printed rows, so the fourth record, whose detail
+//     is suppressed, is not counted, while ITEM_NUMBER counts it;
+//   * the key 1 comes back after 2, which is a third run of a group
+//     whose keys are only three: `groupRuns` 4 against `groupKeys` 3.
+//
+// doc/layout.md#the-record-loop is what this became.
+
+report name="pagination/groups" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  records {
+    member "a" type="int"
+    member "b" type="int"
+  }
+  variable "asum" expr="b" calc="sum" reset="group" resetgrp="A"
+  variable "acnt" expr="1" init="0" calc="sum" iter="group" itergrp="A" reset="report"
+  variable "firstb" expr="b" calc="first" reset="group" resetgrp="A"
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    group "A" expr="a" {
+      title height=5 {
+        field expr="'AT a%d it %d A_C %d asum %s acnt %s A_PN %d' % (a, ITEM_NUMBER, A_COUNT, asum, acnt, A_PAGE_NUMBER)" left=0 top=0 height=5
+      }
+      summary height=5 {
+        field expr="'AS a%d it %d A_C %d asum %s acnt %s firstb %s' % (a, ITEM_NUMBER, A_COUNT, asum, acnt, firstb)" left=0 top=0 height=5
+      }
+      detail height=5 printwhen="ITEM_NUMBER != 4" {
+        field expr="'  r%d a%d b%d A_C %d PC %d RC %d asum %s' % (ITEM_NUMBER, a, b, A_COUNT, PAGE_COUNT, REPORT_COUNT, asum)" left=0 top=0 height=5
+      }
+    }
+    summary height=5 {
+      field expr="'S it %d acnt %s' % (ITEM_NUMBER, acnt)" left=0 top=0 height=5
+    }
+  }
+}

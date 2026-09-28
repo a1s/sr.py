@@ -95,7 +95,7 @@ Nested objects come from nested JSON and are declared
 | `COLUMN_NUMBER` | int | Current column number, 1-based. |
 | *group*`_PAGE_NUMBER` | int | Page number relative to the start of the named group, 1-based. |
 | `VERTICAL_POSITION` | float, points | Distance from the top of the frame to where the section being measured begins. |
-| `VERTICAL_SPACE` | float, points | Space from there to the frame's reserved bottom — what the section has left to grow into. |
+| `VERTICAL_SPACE` | float, points | Space from there to the frame's reserved bottom — what the section has left to grow into. Across columns, that stops above their footers. |
 | `BUILD_TIME` | time | When this run started. Constant for the whole run. |
 | `FINAL` | namespace | Every name above, and every `variable`, read at the end of a scope instead of now. See [`FINAL`](#final). |
 
@@ -115,6 +115,41 @@ the whole dataset before laying anything out — the same fact that makes
 [keep-together](layout.md#keeping-content-together) lookahead possible. Totals
 about the *output* are different: nothing knows how many pages there will be
 until there are none left to make.
+
+### Between a group's runs
+
+A group's names are its `_COUNT`, its `_PAGE_NUMBER`, and every variable
+it resets, with `reset="group"` and `resetgrp` naming it. Like every name,
+they are in scope everywhere, from the start of the report to its end,
+and reading one is never an error.
+
+Before the group's first run their values are those of a run that has
+not begun: `_COUNT` is 0, `_PAGE_NUMBER` is 1, and each variable holds
+what its `init` seeded it with at the start of the report, as every
+variable does; see [`iter` and `reset`](#iter-and-reset).
+
+After that, what they hold describes the run of the group in progress,
+and between two runs there is none. From the break that ends a run,
+once the group's `summary` has been placed if it has one, until the
+group opens for its next `title`, their values are **unspecified**:
+this document deliberately does not say what they are, and a template
+that depends on one depends on the engine that built it.
+
+That time holds an outer group's `summary` and `title`, and the headers
+and footers of any eject among them. After a group's last run it lasts
+to the end of the report, so the report's `summary` and the last page's
+footers are in it for every group.
+
+The eject that ends a page or column at the break is the exception:
+its footers read the run that ended, and its headers the run that begins,
+as [what a header or footer sees](layout.md#what-a-header-or-footer-sees)
+says.
+
+A variable the group only iterates, with `iter="group"` and `itergrp`
+naming it, is not among those names: it folds once for each run, and
+an outer group's summary is where what it gathered is printed. Nor are
+the group's own [deferred values](#final), which resolve to what its
+summary read, as [when a scope ends](layout.md#when-a-scope-ends) says.
 
 ### `FINAL`
 
@@ -555,12 +590,27 @@ field expr="format('std %.2f, var %.2f', total_std, total_var)" \
 | `detail` | once per printed detail section |
 | `item` | once per data record, whether or not its detail prints |
 
+A `reset="detail"` or `reset="item"` fires at every one of those, and seeds the
+accumulator from `init` each time, so such a variable holds that one section's
+or that one record's fold and nothing before it.
+
 `detail` is the default for `iter`, `report` for `reset`.
 
 `detail` and `item` differ for records whose detail is suppressed by `printwhen`:
 `iter="detail"` skips them, `iter="item"` counts them.
 
 `init`, if given, is evaluated at each reset and folded in as the first value.
+
+The start of the report is every variable's first reset, whatever its
+scope: each is seeded from `init` before the first band is built, the
+first page's header included. That is also the reset of the first page
+and the first column, so a `reset="page"` variable starts the first page
+from `init`, as it starts every later one, and a `reset="column"` variable
+the first column: the first page's total is `init` plus its rows, as every
+later page's is. A variable that a group, a `detail`, or an `item` resets
+reads its `init` until that scope first comes round, in the report's
+`title` and the first page's headers among others, and is reset again
+when it does.
 
 ### Ordering against section printing
 
@@ -574,14 +624,17 @@ Within one record, the order is:
 4. Variables reset for the scopes that just ended.
 5. For each breaking group, outermost-first: variables iterate for that scope,
    then its `title` prints.
-6. The `detail` section's variables iterate, then the detail prints.
+6. `item`-scoped variables reset and iterate; then, if the `detail` section
+   prints, `detail`-scoped variables reset and iterate; then the detail prints.
 
 Step 3 precedes step 4, which is what lets a group summary print that group's
-own total.
+own total. Step 6 comes after every title, so a group title reads the `item`
+values of the records before it and not its own.
 
 A detail section that turns out not to fit and is deferred to the next frame has
 its variable fold rolled back and reapplied after the eject, so a value is never
-counted twice.
+counted twice. A group `title` that moves to the next frame takes its group's
+iteration with it in the same way; see [rollback](layout.md#rollback).
 
 ### The report boundary
 

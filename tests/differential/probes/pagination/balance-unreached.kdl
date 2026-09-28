@@ -1,0 +1,25 @@
+// probes/pagination/balance-unreached.kdl -- a column the fill never reached.
+//
+// Seven 12pt rows in three columns fill the first with six and put the seventh
+// in the second.  The frame has no header or footer, so the third column is
+// open to balancing although nothing was placed in it, and the shallowest
+// bottom is 36: three rows, three, and one, the last moved two columns across.
+//
+// doc/layout.md#balanced-columns is what this became.
+
+report name="pagination/balance-unreached" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "h" type="int"
+  }
+  layout width=200 height=90 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    columns count=3 gap=10 balance=#true
+    detail {
+      field expr=#"'r%d cn %d vp %s' % (ITEM_NUMBER, COLUMN_NUMBER, VERTICAL_POSITION) + '\n-' * (h - 1)"# left=0 top=0 stretch=#true
+    }
+    summary height=6 {
+      field expr="'S vp %s cn %d' % (VERTICAL_POSITION, COLUMN_NUMBER)" left=0 top=0 height=6
+    }
+  }
+}

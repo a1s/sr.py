@@ -1,0 +1,30 @@
+// probes/pagination/eject-below-title.kdl -- a column that begins below a band.
+//
+// A group with a column frame of its own, one column wide: its title
+// belongs to the page frame and goes across it, so the column opens
+// below the title, at 60, with 80 left.  Each row is 100, which fits
+// an empty column of 140 but not what this one has left.
+//
+// The column has had nothing placed in it, and it is not empty all the same:
+// the page after it begins at its top.  So the first row takes the third
+// branch of doc/layout.md#placing-a-band and ejects, rather than being
+// taken for a band too tall for any frame.  The second row goes to page 3.
+
+report name="pagination/eject-below-title" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "g" type="int"
+  }
+  layout width=200 height=150 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    group "grp" expr="g" {
+      title height=60 {
+        field expr="'GT vp %s vs %s cn %d' % (VERTICAL_POSITION, VERTICAL_SPACE, COLUMN_NUMBER)" left=0 top=0 height=6
+      }
+      columns count=1
+      detail height=100 {
+        field expr="'r%d cn %d pn %d vp %s vs %s' % (ITEM_NUMBER, COLUMN_NUMBER, PAGE_NUMBER, VERTICAL_POSITION, VERTICAL_SPACE)" left=0 top=0 height=6
+      }
+    }
+  }
+}

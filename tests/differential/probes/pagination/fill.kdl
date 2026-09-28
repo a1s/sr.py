@@ -1,0 +1,42 @@
+// probes/pagination/fill.kdl -- what a page break does to the bands around it.
+//
+// Seven 20pt rows on a page with room for two after the title and three
+// after that.  The rows are placed until one does not fit, and then:
+//
+//   * the page footer is built, against the outgoing context: `THIS` is
+//     the record that did not fit, so ITEM_NUMBER is 3 on the first footer,
+//     and PAGE_COUNT and the `reset="page"` total are the page's own, 2;
+//   * the page advances, and the next header is built against the incoming
+//     context: PAGE_NUMBER 2, PAGE_COUNT 0, the total reset to None;
+//   * the row that did not fit had its fold rolled back before the footer
+//     and applied again after the reset, so it prints a total of 1 rather
+//     than 3, and the footer before it does not count it.
+//
+// The summary goes where the last row left the fill, and the last page's
+// footer after it.  VERTICAL_POSITION counts from the frame's top on every
+// page, which the title sits below on the first.
+//
+// doc/layout.md#what-a-header-or-footer-sees and #rollback are what this became.
+
+report name="pagination/fill" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  variable "pt" expr="1" calc="sum" reset="page"
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    title height=12 {
+      field expr="'title vp %s vs %s pn %d' % (VERTICAL_POSITION, VERTICAL_SPACE, PAGE_NUMBER)" left=0 top=0 width=190 height=12
+    }
+    header height=10 {
+      field expr="'H pn %d pc %d it %d pt %s' % (PAGE_NUMBER, PAGE_COUNT, ITEM_NUMBER, pt)" left=0 top=0 width=190 height=10
+    }
+    footer height=10 {
+      field expr="'F pn %d pc %d it %d pt %s' % (PAGE_NUMBER, PAGE_COUNT, ITEM_NUMBER, pt)" left=0 top=0 width=190 height=10
+    }
+    detail height=20 {
+      field expr="'row %d rc %d pc %d vp %s pt %s' % (ITEM_NUMBER, REPORT_COUNT, PAGE_COUNT, VERTICAL_POSITION, pt)" left=0 top=0 width=190 height=12
+    }
+    summary height=15 {
+      field expr="'summary vp %s' % VERTICAL_POSITION" left=0 top=0 width=190 height=12
+    }
+  }
+}

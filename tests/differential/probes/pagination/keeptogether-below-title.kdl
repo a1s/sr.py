@@ -1,0 +1,32 @@
+// probes/pagination/keeptogether-below-title.kdl -- a keep rule below a band.
+//
+// The report's columns, one wide, open below the report title, at 60,
+// with 80 left.  The group is a title of 10 and four rows of 20,
+// 90 in all, which fits an empty column of 140 but not what this one
+// has left.
+//
+// Nothing has been placed in the column, and it is not empty: the next
+// page offers the whole 140.  So `keeptogether` ejects, and the group
+// starts page 2 whole, rather than straddling the two pages.
+
+report name="pagination/keeptogether-below-title" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "g" type="int"
+  }
+  layout width=200 height=150 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    title height=60 {
+      field expr="'RT vp %s vs %s cn %d' % (VERTICAL_POSITION, VERTICAL_SPACE, COLUMN_NUMBER)" left=0 top=0 height=6
+    }
+    columns count=1
+    group "grp" expr="g" keeptogether=#true {
+      title height=10 {
+        field expr="'GT vp %s vs %s cn %d pn %d' % (VERTICAL_POSITION, VERTICAL_SPACE, COLUMN_NUMBER, PAGE_NUMBER)" left=0 top=0 height=6
+      }
+      detail height=20 {
+        field expr="'r%d cn %d pn %d vp %s vs %s' % (ITEM_NUMBER, COLUMN_NUMBER, PAGE_NUMBER, VERTICAL_POSITION, VERTICAL_SPACE)" left=0 top=0 height=6
+      }
+    }
+  }
+}

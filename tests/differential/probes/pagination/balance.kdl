@@ -1,0 +1,28 @@
+// probes/pagination/balance.kdl -- spreading a page's bands over the columns.
+//
+// Four rows of 6, 24, 6 and 6pt all fit the first column.  Balanced,
+// the shallowest bottom the same four still reach in two columns is 30:
+// the first two in the first column, the other two in the second.
+// Nothing is measured again, so each row keeps what it read where
+// it was first placed, COLUMN_NUMBER and VERTICAL_POSITION among them,
+// and so does the summary: the frame stays in the column the fill left
+// it in, filled to the deepest balanced column.
+//
+// doc/layout.md#balanced-columns is what this became.
+
+report name="pagination/balance" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "h" type="int"
+  }
+  layout width=200 height=90 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    columns count=2 gap=10 balance=#true
+    detail {
+      field expr=#"'r%d cn %d vp %s' % (ITEM_NUMBER, COLUMN_NUMBER, VERTICAL_POSITION) + '\n-' * (h - 1)"# left=0 top=0 stretch=#true
+    }
+    summary height=6 {
+      field expr="'S vp %s cn %d' % (VERTICAL_POSITION, COLUMN_NUMBER)" left=0 top=0 height=6
+    }
+  }
+}

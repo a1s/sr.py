@@ -1,0 +1,24 @@
+// probes/pagination/require-empty-column.kdl -- `eject require` in an empty column.
+//
+// Each row asks for 200pt, more than any page has.
+//
+// doc/layout.md#group-minrows-and-mintailrows: no keep-together rule,
+// and no `eject require` on any band, ejects from an empty column,
+// since no eject could give it more room.  So the first row stays
+// at the top of the first page, and the second, below it, is short
+// of its 200 and ejects to the second.  The reference ejects before
+// the first row too, and leaves the first page blank.  It does
+// the same for a group title's `require`.
+//
+// Registered as the divergence `require-in-an-empty-column`.
+
+report name="pagination/require-empty-column" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    detail height=10 {
+      eject require=200
+      field expr="'r%d pn %d' % (ITEM_NUMBER, PAGE_NUMBER)" left=0 top=0 height=6
+    }
+  }
+}

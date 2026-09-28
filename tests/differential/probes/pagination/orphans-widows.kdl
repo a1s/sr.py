@@ -1,0 +1,27 @@
+// probes/pagination/orphans-widows.kdl -- a split preference, then giving it up.
+//
+// Eighteen lines, 108pt, in a frame of 50 with 30 left below the title.
+// `widows=16` asks for sixteen lines below any cut, so the only legal
+// split point that fits is after two lines, and the band splits there.
+//
+// The tail of sixteen lines is taller than an empty frame and has
+// no legal split point at all, since sixteen lines cannot leave sixteen
+// below a cut and some above it.  The last branch of placing a band
+// takes over: every split preference is given up, and it is cut at
+// the last cut point that fits, after eight lines.  The last eight
+// fit the third page whole.
+//
+// doc/layout.md#placing-a-band is what this became.
+
+report name="pagination/orphans-widows" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=100 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    title height=20 {
+      field text="T" left=0 top=0 height=6
+    }
+    detail split=#true orphans=1 widows=16 {
+      field text="a1\na2\na3\na4\na5\na6\na7\na8\na9\na10\na11\na12\na13\na14\na15\na16\na17\na18" stretch=#true left=0 top=0 width=40
+    }
+  }
+}

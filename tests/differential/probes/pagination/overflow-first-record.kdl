@@ -1,0 +1,33 @@
+// probes/pagination/overflow-first-record.kdl -- the warning an overflow on record 0 carries.
+//
+// Every record's band holds an 80pt rectangle in a frame of 40, so each
+// is an overflow, and --allow-overflow places each at the top of a page
+// of its own with a warning.  doc/printout.md#header-line gives a warning
+// the record that produced it, and doc/layout.md#errors says the first
+// record's 0 as well.
+//
+// The reference leaves `record` out of the first warning and writes it
+// on the second, which is what omitting a zero value does, not a rule
+// about warnings: the first record is the record this band was placed for.
+//
+// Registered as the divergence `overflow-record-zero`, filed against the reference.
+
+report name="pagination/overflow-first-record" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=100 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    header height=5 {
+      rectangle left=0 top=0 width=1 height=5
+    }
+    footer height=5 {
+      rectangle left=0 top=0 width=1 height=5
+    }
+    title height=20 {
+      field text="T" left=0 top=0 height=6
+    }
+    detail height=10 {
+      field expr="'r%d' % ITEM_NUMBER" left=0 top=0 width=40 height=6
+      rectangle printwhen="True" left=50 top=0 width=1 height=80
+    }
+  }
+}

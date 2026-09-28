@@ -57,7 +57,7 @@ from sr.errors import BuildError, BuildWarning, Location, NodePath, Unsupported
 from sr.expr import apply_format
 from sr.fonts.text import Metrics, missing_glyph, wrap
 from sr.layout.context import Context, condition, evaluate
-from sr.layout.frame import Frame
+from sr.layout.frame import Window
 from sr.printout.model import Box, Line, Mark, Rectangle, Text
 from sr.printout.model import Xref as XrefMark
 from sr.template.model import (
@@ -72,7 +72,7 @@ from sr.template.model import Line as LineElement
 from sr.template.model import Rectangle as RectangleElement
 from sr.units import fits, round_points
 
-__all__ = ["Measurement", "Measurer", "Styling", "resolve_span"]
+__all__ = ["Extent", "Measurement", "Measurer", "Styling", "resolve_span"]
 
 # The colour a mark is drawn in when no `style` in the walk set one.
 # doc/template.md leaves a text mark's `color` required and a
@@ -102,17 +102,57 @@ class Styling:
 
 
 @dataclass(frozen=True)
+class Extent:
+    """How far down one element's marks reach, which is what a cut reads.
+
+    doc/layout.md#legal-split-points makes an element's vertical span
+    the span of the marks it produced: its content box, and for an
+    `xref` everything inside it as well.  A stretch field's span may
+    be cut between its lines, so it carries how many there are and
+    how far apart; every other element's may not be cut at all.
+
+    Attributes:
+        top: The span's upper edge, band-relative.
+        bottom: Its lower edge.
+        lines: A stretch field's line count; 0 for anything else.
+        leading: The distance between those lines.
+
+    """
+
+    top: float
+    bottom: float
+    lines: int = 0
+    leading: float = 0.0
+
+    def moved(self, down: float) -> Extent:
+        """Return the span translated down.
+
+        Args:
+            down: What to add to both edges.
+
+        """
+        return Extent(
+            round_points(self.top + down),
+            round_points(self.bottom + down),
+            self.lines,
+            self.leading,
+        )
+
+
+@dataclass(frozen=True)
 class Measurement:
     """A band, measured but not committed.
 
     Attributes:
         height: What the band takes from the frame.
         marks: Its marks, at band-relative coordinates.
+        extents: Each mark's span, in the same order, for splitting.
 
     """
 
     height: float
     marks: tuple[Mark, ...] = ()
+    extents: tuple[Extent, ...] = ()
 
 
 @dataclass
@@ -285,7 +325,7 @@ class Measurer:
         self.reported: set[tuple[str, str]] = set()
         self.used: set[str] = set()
 
-    def prints(self, section: Section, frame: Frame, context: Context) -> bool:
+    def prints(self, section: Section, frame: Window, context: Context) -> bool:
         """Report whether a band's ``printwhen`` lets it print.
 
         Separate from :meth:`band` because the answer
@@ -308,7 +348,7 @@ class Measurer:
             "printwhen",
         )
 
-    def names(self, frame: Frame, context: Context) -> dict[str, Any]:
+    def names(self, frame: Window, context: Context) -> dict[str, Any]:
         """Return the environment a band's expressions are evaluated in.
 
         Args:
@@ -324,7 +364,7 @@ class Measurer:
     def band(
         self,
         section: Section,
-        frame: Frame,
+        frame: Window,
         context: Context,
         styles: tuple[tuple[Style, ...], ...],
         printing: bool | None = None,
@@ -361,7 +401,10 @@ class Measurer:
         first = self.arrange(placements, minimum=section.height or 0.0)
         marks = tuple(self.mark(placed) for placed in placements)
         height = max(first, reached(placements, marks))
-        return Measurement(round_points(height), marks)
+        extents = tuple(
+            extent(placed, mark) for placed, mark in zip(placements, marks, strict=True)
+        )
+        return Measurement(round_points(height), marks, extents)
 
     def outer(
         self,
@@ -990,19 +1033,10 @@ class Measurer:
 
         """
         where = Location(file=self.file, path=section.path)
-        if section.ejects:
-            raise Unsupported(
-                "an eject node needs pagination, which arrives in M8", where
-            )
         if section.outlines:
             raise Unsupported("an outline entry arrives in M13", where)
         if section.subreports:
             raise Unsupported("a subreport arrives in M12", where)
-        if section.swapheader or section.swapfooter:
-            raise Unsupported(
-                "swapheader and swapfooter need pagination, which arrives in M8",
-                where,
-            )
 
     def refuse_unsupported_element(self, element: Element | Xref) -> None:
         """Refuse an element of a kind a later milestone brings.
@@ -1032,3 +1066,27 @@ class Measurer:
 
 # Which milestone brings each element kind this one does not draw.
 ELEMENT_MILESTONE = {"Barcode": "M10", "Image": "M11"}
+
+
+def extent(placed: Placement, mark: Mark) -> Extent:
+    """Return how far down an element's marks reach.
+
+    Args:
+        placed: The element, settled.
+        mark: The mark it produced.
+
+    """
+    box = mark.box
+    if isinstance(mark, XrefMark):
+        tops = [box.y, *(one.box.y for one in mark.marks)]
+        return Extent(
+            round_points(min(tops)),
+            round_points(max(box.bottom, placed.top + placed.reach)),
+        )
+    if (
+        isinstance(placed.element, Field)
+        and placed.element.stretch
+        and isinstance(mark, Text)
+    ):
+        return Extent(box.y, round_points(box.bottom), len(mark.lines), mark.leading)
+    return Extent(box.y, round_points(box.bottom))

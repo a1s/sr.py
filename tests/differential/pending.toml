@@ -20,19 +20,6 @@
 #   M10: Barcodes            M14: PDF renderer
 
 [[pending]]
-id = "page-ejects"
-summary = "a band that does not fit needs a page eject"
-reason = """
-M6 lays out one frame that never ejects, so a band taller than what is \
-left of it has nowhere to go and the build fails naming the milestone. \
-This probe is one thousandth over a remaining 1.001pt and is meant to \
-eject; the reference paginates it onto a second page.\
-"""
-ticket = "M8: pagination, layout.md#placing-a-band"
-since = "2026-09-20"
-affects = ["probe/rounding/tolerance-refuses"]
-
-[[pending]]
 id = "images"
 summary = "an image element, and the data table that carries its bytes"
 reason = """
@@ -59,7 +46,7 @@ cross-reference, conditional outline entries and a deferred page count. \
 It is the broadest single comparison the corpus has and it starts \
 passing when the last of those is built, not before.\
 """
-ticket = "M8 pagination, M9 deferred, M10 barcodes, M11 images, M13 the rest"
+ticket = "M9 deferred, M10 barcodes, M11 images, M13 the rest"
 since = "2026-09-20"
 affects = ["example/sakila", "example/sakila-june"]
 

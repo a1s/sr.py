@@ -1,0 +1,38 @@
+// probes/pagination/column-footer-full.kdl -- a column that has had its footer.
+//
+// Two rows in the first column, an `eject` node moves the third to the
+// second, and the summary follows.  There is room for it below both
+// columns' rows, but the first column's footer was placed when that
+// column ended, flush at the bottom of the frame, and a footer is
+// in the way of the frame above it like any band.  So the first column is
+// filled to its bottom and the summary, which spans it, needs the next page.
+//
+// On that page the column frame opens again and gets its footer at the end,
+// and the footer's VERTICAL_POSITION counts the summary above it: a band
+// in the page frame comes down across the columns inside it.
+//
+// doc/layout.md#extent-and-fill is what this became.  It also stops a band
+// across the columns above their footers, so the summary's VERTICAL_SPACE
+// is 134, what the rows' is, where the reference counts it to the page
+// frame's bottom, 140, under the footer.
+//
+// Registered, for that, as the divergence `column-footer-strip`.
+
+report name="pagination/column-footer-full" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=200 height=150 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    columns count=2 gap=10 {
+      footer height=6 {
+        field expr="'CF cn %d vp %s vs %s' % (COLUMN_NUMBER, VERTICAL_POSITION, VERTICAL_SPACE)" left=0 top=0 height=6
+      }
+    }
+    detail height=10 {
+      eject type="column" when="ITEM_NUMBER == 3"
+      field expr="'r%d cn %d vp %s vs %s' % (ITEM_NUMBER, COLUMN_NUMBER, VERTICAL_POSITION, VERTICAL_SPACE)" left=0 top=0 height=6
+    }
+    summary height=6 {
+      field expr="'S vp %s vs %s cn %d' % (VERTICAL_POSITION, VERTICAL_SPACE, COLUMN_NUMBER)" left=0 top=0 height=6
+    }
+  }
+}
