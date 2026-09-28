@@ -357,6 +357,9 @@ class Builder:
         # of the new record is committed, and the runs such a band begins.
         self.outgoing: tuple[Any, ...] | None = None
         self.beginning: list[Run] = []
+        # The page the last band was committed to, the first before any
+        # has been: a band that fits nowhere is carried from it once.
+        self.placed_on = 1
 
     # -- the tree ---------------------------------------------------------
 
@@ -994,12 +997,15 @@ class Builder:
         3. It fits an empty frame: eject, and measure it again there.
         4. It may split and some cut point fits: cut it there, having given
            up every split preference, because progress beats preference.
-        5. No eject has moved it yet: eject to the next page, and try it
-           again from the first branch, since a later page may offer more
-           room than this one where its headers take less.  A column eject
-           would not do: from a column with bands in it, it goes to the
-           next column on this page, which offers no more than an empty
-           column here, and the band has had its one move.
+        5. A band has been placed on this page, or it is the first:
+           eject to the next page, and try it again from the first
+           branch, since a later page may offer more room than this
+           one where its headers take less.  A column eject would not do:
+           from a column with bands in it, it goes to the next column
+           on this page, which offers no more than an empty column here.
+           A page an eject has begun, with nothing on it yet, has been
+           tried already, and would be left blank: whatever made that
+           eject, the band is judged there.
 
         Anything else overflows, and is placed at the top of an empty column.
         That may take more than one eject, since a column that begins at
@@ -1017,7 +1023,6 @@ class Builder:
         """
         measured = self.measure(section, frame, walk)
         whole = True
-        carried = False
         while True:
             if frame.accepts(measured.height):
                 self.commit(measured, frame)
@@ -1027,11 +1032,9 @@ class Builder:
                 if cut is not None:
                     measured = self.cut(measured, cut, frame)
                     whole = False
-                    carried = True
                     continue
             if fits(measured.height, frame.height):
                 self.eject(frame, "column", fold if whole else None)
-                carried = True
                 if whole:
                     measured = self.measure(section, frame, walk)
                 continue
@@ -1040,13 +1043,11 @@ class Builder:
                 if cut is not None:
                     measured = self.cut(measured, cut, frame)
                     whole = False
-                    carried = True
                     continue
-            if not carried:
+            if self.context.page_number == self.placed_on:
                 # Only another page's headers can make more room: every
                 # column left on this one begins no higher than this one.
                 self.eject(frame, "page", fold if whole else None)
-                carried = True
                 if whole:
                     measured = self.measure(section, frame, walk)
                 continue
@@ -1135,6 +1136,7 @@ class Builder:
         self.marks.extend(mark.moved(frame.x, down) for mark in measured.marks)
         self.record(frame, start, down, measured.height)
         frame.advance(round_points(down + measured.height))
+        self.placed_on = self.context.page_number
         self.begun(self.beginning)
 
     def ejects(self, section: Section, frame: Frame, fold: Fold | None = None) -> None:
@@ -1227,8 +1229,11 @@ class Builder:
         is room above the columns' footers as well as the page's.
 
         A summary that fits no page is an overflow, and where that is
-        allowed it is placed at the top of the page frame instead,
-        as a summary that is not swapped would be.
+        allowed it is placed at the top of the page frame instead, as
+        a summary that is not swapped would be.  Its own page eject is
+        the one carry a band that fits nowhere gets, so it is not made
+        from a page an eject has begun with nothing on it yet, as a page
+        the summary's `eject` nodes have taken it to is.
 
         Args:
             section: The summary.
@@ -1240,7 +1245,8 @@ class Builder:
             return
         self.ejects(section, page)
         measured = self.measure(section, page, walk)
-        if not page.accepts(measured.height):
+        placed = self.context.page_number == self.placed_on
+        if not page.accepts(measured.height) and placed:
             self.eject(page, "page", None)
             measured = self.measure(section, page, walk)
         if not page.accepts(measured.height):

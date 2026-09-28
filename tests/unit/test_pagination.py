@@ -313,6 +313,72 @@ def test_a_band_that_fits_only_a_later_page_skips_the_columns_left(
     assert (moved.x, moved.y) == (5, 5)
 
 
+def taller(when: str) -> str:
+    """Return a rectangle taller than any page, drawn where ``when`` holds."""
+    return f'rectangle printwhen="{when}" left=50 top=0 width=1 height=120'
+
+
+@pytest.mark.parametrize(
+    ("case", "count"),
+    [("eject-node", 2), ("group-title", 3), ("mintailrows", 3), ("swapped", 2)],
+)
+def test_a_band_an_eject_took_to_a_new_page_is_not_carried_again(
+    tmp_path: Path, case: str, count: int
+) -> None:
+    """doc/layout.md#placing-a-band: the carry is from the page it began on.
+
+    Each oversized band is taken to a new page before it is fitted:
+    by its own `eject` node, by a group title's, by `mintailrows`,
+    and, for a swapped summary, by its node before its own page eject.
+    It is judged there, and overflows there, and no page is left blank.
+
+    """
+    row = said("'r%d' % ITEM_NUMBER") + "; " + taller("ITEM_NUMBER == 2")
+    heading = said("'T%d' % a") + "; " + taller("a == 2")
+    reports = {
+        "eject-node": band("detail", 'eject when="ITEM_NUMBER == 2"; ' + row),
+        "group-title": group(
+            band("title", 'eject when="a == 2"; ' + heading),
+            band("detail", shown("d"), "height=6"),
+        ),
+        "mintailrows": group(
+            band("summary", shown("S"), "height=6"), band("detail", row)
+        ),
+        "swapped": ROW
+        + band("summary", "eject; " + shown("X"), "height=120 swapfooter=#true"),
+    }
+    printout = built(
+        tmp_path, reports[case], keyed(1, 2), members=KEYED, allow_overflow=True
+    )
+    assert [warning.kind for warning in printout.warnings] == ["overflow"]
+    assert all(page.marks for page in printout.pages)
+    assert len(printout.pages) == count
+
+
+def test_an_eject_that_keeps_a_band_on_its_page_leaves_it_the_carry(
+    tmp_path: Path,
+) -> None:
+    """doc/layout.md#placing-a-band: another column is not another page.
+
+    `mintailrows` moves the last row to the second column of the first
+    page, which offers 40 as the first did.  The row needs 60, and the
+    next page, with no header, holds it.
+
+    """
+    wall = 'rectangle printwhen="ITEM_NUMBER == 2" left=50 top=0 width=1 height=60'
+    detail = band("detail", said("'r%d' % ITEM_NUMBER") + "; " + wall, "height=6")
+    printout = built(
+        tmp_path,
+        FIRST_HEADER + COLUMNS + group(band("summary", shown("S"), "height=6"), detail),
+        keyed(1, 1),
+        members=KEYED,
+    )
+    first, second = pages(printout)
+    assert (first, second) == (["H", "r1"], ["r2", "S"])
+    assert (at(printout.pages[1], "r2").x, at(printout.pages[1], "r2").y) == (5, 5)
+    assert not printout.warnings
+
+
 def test_no_column_below_a_swapped_title_is_empty(tmp_path: Path) -> None:
     """doc/layout.md#extent-and-fill: the title is in the way, like a floor.
 

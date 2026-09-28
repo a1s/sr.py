@@ -508,9 +508,11 @@ fresh page carrying that page's header and footer. What remains is measured
 above the column footers as well, since they move up with the page footer.
 
 A swapped title taller than the page frame, or a swapped summary taller
-than an empty page offers, is an [overflow](#errors). Where that is allowed,
-it is placed where it would go unswapped, at the top of the page frame,
-and the summary after one page eject, as any band that fits nowhere is.
+than an empty page offers, is an [overflow](#errors). Where that is
+allowed, it is placed where it would go unswapped, at the top of the
+page frame, and the summary after one page eject, as any band that fits
+nowhere is. That eject is not made from a page an eject has just begun,
+as a page the summary's own `eject` nodes have taken it to is.
 
 Where it fits, the page frame's bottom moves up by the summary's height before
 the last page's footers are placed, so the page footer and every column footer
@@ -759,7 +761,7 @@ else if band splits and any cut point fits `available`:
     # taller than an empty frame: every split preference is given up
     split at the last such cut point, commit the head, column eject, continue
 
-else if no eject has moved the band yet:
+else if a band has been placed on this page, or it is the first:
     # a later page may offer more: its headers may take less
     page eject, re-measure, start again from the top
 
@@ -771,12 +773,12 @@ else:
 a frame with columns inside it is above their footers: see
 [extent and fill](#extent-and-fill).
 
-Each branch is tried against the frame **as it stands**, and
-the fourth is no exception: a band too tall for any frame is cut here,
-at the last cut point that fits what this column has left, and not after
-an eject has found it an emptier one. A band is only ever moved whole
-when it would fit an empty column, when it fits nowhere and has not been
-moved yet, or when it overflows.
+Each branch is tried against the frame **as it stands**, and the
+fourth is no exception: a band too tall for any frame is cut here,
+at the last cut point that fits what this column has left, and not
+after an eject has found it an emptier one. A band is only ever moved
+whole when it would fit an empty column, when it fits nowhere on a page
+that is not one an eject has just begun, or when it overflows.
 
 A **cut point** is an offset no mark's span falls through; a **legal split point**
 is a cut point that also divides content and satisfies `orphans` and `widows`.
@@ -809,6 +811,16 @@ Where it still fits nowhere, it overflows. A column that is not empty,
 including one that begins at its floor, ejects under the third branch
 until the band fits or the column is empty, which is on the next page
 at the latest.
+
+The carry is made from a page a band has been placed on, or from the
+first page. It is not made from a page an eject has begun with nothing
+placed on it yet, since that page would be left blank, and its headers
+have been tried already. So a band that is taken to a new page before
+it fits anywhere is judged there, whatever made the eject: its own `eject`
+nodes, a [keep-together](#keeping-content-together) rule, the `minrows`
+of a group whose title does not print, or the third branch. An eject
+that keeps the band on its page, to the next column, leaves the carry
+to be made.
 
 That is why the empty height is measured below the headers of the columns
 inside the frame, as they were drawn, and above their footers. Measured
@@ -1550,14 +1562,15 @@ warning, placing the marks anyway. The warning is recorded in the printout heade
 so an overflowing document is identifiable from the artifact.
 
 An oversized band is first carried to the next page by one page eject,
-unless an eject has moved it already, since a later page may leave it
-more room: see [placing a band](#placing-a-band). Where it still fits nowhere,
-it is placed at the top of an [empty](#extent-and-fill) column: where it is
-if that column is empty, and otherwise after as many column ejects as it
-takes to reach one, which is the next page at the latest. It runs past that
-column's bottom, and the band after it starts the next column.
-The warning is raised once for each band, before those ejects, and carries
-the record that band was being placed for, the first record's 0 included.
+unless it is on a page an eject has just begun, since a later page
+may leave it more room: see [placing a band](#placing-a-band).
+Where it still fits nowhere, it is placed at the top of an
+[empty](#extent-and-fill) column: where it is if that column is empty,
+ and otherwise after as many column ejects as it takes to reach one,
+which is the next page at the latest. It runs past that column's bottom,
+and the band after it starts the next column. The warning is raised once
+for each band, before those ejects, and carries the record that band was
+being placed for, the first record's 0 included.
 
 A mark outside the printable area is the case a negative `right` or `bottom`
 produces. Such an offset is legal in the template — it means the box reaches past
