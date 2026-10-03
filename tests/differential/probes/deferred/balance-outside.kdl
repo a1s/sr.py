@@ -1,0 +1,38 @@
+// probes/deferred/balance-outside.kdl -- a column deferral outside the frame.
+//
+// Eight rows in two balanced columns, as in
+// probes/deferred/balance-column-footer.kdl, with the `column` deferral
+// moved to the page header.  Two answers:
+//
+//   * the page balances, four and four: the deferral is in the page frame,
+//     which has no columns to keep, and not in the frame that balances;
+//   * it resolves at the first column eject on the page, in whichever frame
+//     that is.  An eject of any frame ends a column, and the page header
+//     reads 6, the rows the fill put in the first column before it was
+//     balanced.
+//
+// doc/layout.md#when-a-scope-ends is what this became.
+
+report name="deferred/balance-outside" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  records {
+    member "b" type="int"
+  }
+  layout width=200 height=55 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    header height=5 {
+      field expr="'PH rows %d' % FINAL.COLUMN_COUNT" evaltime="column" left=0 top=0 width=90 height=5
+    }
+    columns count=2 gap=10 balance=#true {
+      header height=5 {
+        field expr="'CH col %d' % COLUMN_NUMBER" left=0 top=0 width=90 height=5
+      }
+      footer height=5 {
+        field expr="'CF col %d' % COLUMN_NUMBER" left=0 top=0 width=90 height=5
+      }
+    }
+    detail height=5 {
+      field expr="'r%d' % b" left=0 top=0 width=90 height=5
+    }
+  }
+}

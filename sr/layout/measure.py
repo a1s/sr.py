@@ -45,21 +45,37 @@ place among the band's elements.  A glyph warning names the first element
 that needed the character and an error is the first one the document reaches,
 which is only true if nothing is evaluated out of turn.
 
+A deferred `field` is the one element whose ``expr`` is not evaluated
+here at all.  It is measured from its placeholder, and what it reads
+where it sits is kept with it, per doc/layout.md#deferred-evaluation;
+:meth:`Measurer.resolve` sets the value in the placeholder's room
+when the scope ends.
+
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass, field
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass, field, replace
 from typing import Any
 
-from sr.errors import BuildError, BuildWarning, Location, NodePath, Unsupported
-from sr.expr import apply_format
+from sr.errors import (
+    BuildError,
+    BuildWarning,
+    ExpressionError,
+    Location,
+    NodePath,
+    Unsupported,
+)
+from sr.expr import Namespace, apply_format
+from sr.expr.values import quote
 from sr.fonts.text import Metrics, missing_glyph, wrap
 from sr.layout.context import Context, condition, evaluate
+from sr.layout.defer import Deferral, scope_of, snapshot
 from sr.layout.frame import Window
 from sr.printout.model import Box, Line, Mark, Rectangle, Text
 from sr.printout.model import Xref as XrefMark
+from sr.printout.write import number
 from sr.template.model import (
     Element,
     Field,
@@ -147,12 +163,15 @@ class Measurement:
         height: What the band takes from the frame.
         marks: Its marks, at band-relative coordinates.
         extents: Each mark's span, in the same order, for splitting.
+        deferred: Its deferred elements, in document order,
+            each with the path of its placeholder's mark among ``marks``.
 
     """
 
     height: float
     marks: tuple[Mark, ...] = ()
     extents: tuple[Extent, ...] = ()
+    deferred: tuple[Deferral, ...] = ()
 
 
 @dataclass
@@ -178,6 +197,7 @@ class Placement:
         marks: An `xref`'s children's marks, relative to its box.
         reach: How far down an `xref`'s contents reach, relative to
             its top, which is what it gives the band's second maximum.
+        deferral: What a deferred `field` waits for its scope with.
 
     """
 
@@ -197,6 +217,7 @@ class Placement:
     children: list[Placement] = field(default_factory=list)
     marks: tuple[Mark, ...] = ()
     reach: float = 0.0
+    deferral: Deferral | None = None
 
     @property
     def floating(self) -> bool:
@@ -404,7 +425,12 @@ class Measurer:
         extents = tuple(
             extent(placed, mark) for placed, mark in zip(placements, marks, strict=True)
         )
-        return Measurement(round_points(height), marks, extents)
+        return Measurement(
+            round_points(height),
+            marks,
+            extents,
+            tuple(deferrals(placements)),
+        )
 
     def outer(
         self,
@@ -772,6 +798,11 @@ class Measurer:
     ) -> None:
         """Resolve a `field`'s text and wrap it to the box's width.
 
+        A deferred field is wrapped from its placeholder instead, and
+        keeps what its ``expr`` reads where it sits.  The placeholder
+        is measured and never drawn, so a character its font lacks raises
+        no warning: the resolved value raises its own when it is set.
+
         Args:
             placed: The element being placed.
             context: The report as it stands.
@@ -781,10 +812,21 @@ class Measurer:
         field = placed.element
         assert isinstance(field, Field)
         metrics = self.metrics(placed, context)
-        text = self.content(field, context, names)
+        if field.evaltime is None:
+            text = self.content(field, context, names)
+        else:
+            assert field.expr is not None
+            text = self.placeholder(field)
+            placed.deferral = Deferral(
+                field,
+                scope_of(field.evaltime),
+                snapshot(field.expr, names),
+                context.record_index,
+            )
         wrapped = wrap(text, placed.width, metrics)
-        for character in wrapped.missing:
-            self.missing(placed.style.font or "", character, field.path)
+        if placed.deferral is None:
+            for character in wrapped.missing:
+                self.missing(placed.style.font or "", character, field.path)
         placed.lines = tuple(wrapped.lines)
         if field.stretch:
             placed.content_height = round_points(len(wrapped.lines) * metrics.leading)
@@ -807,33 +849,63 @@ class Measurer:
                 or the `data` node it names holds no text.
 
         """
-        if field.evaltime is not None:
-            raise Unsupported(
-                "a field with evaltime is deferred, which arrives in M9",
-                Location(file=self.file, path=field.path, prop="evaltime"),
-            )
+        record = context.record_index
         if field.expr is not None:
             value = evaluate(field.expr, names, field.path, context, "expr")
-            return self.formatted(field, value, context)
+            return self.formatted(field, value, record)
         if field.text is not None:
-            return self.formatted(field, field.text, context)
+            return self.formatted(field, field.text, record)
         if field.data is not None:
-            content = self.blobs.get(field.data)
-            if content is None:
-                raise BuildError(
-                    f"the data node {field.data!r} holds no text",
-                    Location(file=self.file, path=field.path, prop="data"),
-                )
-            return self.formatted(field, content, context)
+            return self.formatted(field, self.blob(field), record)
         return ""
 
-    def formatted(self, field: Field, value: Any, context: Context) -> str:
+    def placeholder(self, field: Field) -> str:
+        """Return the string a deferred `field` is measured from.
+
+        Its ``text``, or the content of its ``data`` node, as written.
+        ``format`` is applied to what ``expr`` resolves to, and the
+        placeholder stands in for that result rather than feeding it.
+        A field with neither is measured as empty text, one empty line.
+
+        Args:
+            field: The node.
+
+        Raises:
+            BuildError: The `data` node it names holds no text.
+
+        """
+        if field.text is not None:
+            return field.text
+        if field.data is not None:
+            return self.blob(field)
+        return ""
+
+    def blob(self, field: Field) -> str:
+        """Return the text of the `data` node a field names.
+
+        Args:
+            field: The node, which names one.
+
+        Raises:
+            BuildError: The node holds no text.
+
+        """
+        assert field.data is not None
+        content = self.blobs.get(field.data)
+        if content is None:
+            raise BuildError(
+                f"the data node {field.data!r} holds no text",
+                Location(file=self.file, path=field.path, prop="data"),
+            )
+        return content
+
+    def formatted(self, field: Field, value: Any, record: int | None) -> str:
         """Return a value with the field's ``format`` applied.
 
         Args:
             field: The node.
             value: What its content resolved to.
-            context: The report as it stands, for a diagnostic.
+            record: The record it was built for, for a diagnostic.
 
         Raises:
             BuildError: The format does not take that value.
@@ -844,13 +916,66 @@ class Measurer:
         except Exception as refused:
             raise BuildError(
                 str(refused),
-                Location(
-                    file=self.file,
-                    path=field.path,
-                    prop="format",
-                    record=context.record_index,
-                ),
+                Location(file=self.file, path=field.path, prop="format", record=record),
             ) from None
+
+    # -- deferred values --------------------------------------------------
+
+    def resolve(self, deferral: Deferral, final: Namespace, mark: Text) -> Text:
+        """Return a deferred field's mark, with its value set in it.
+
+        doc/layout.md#re-measurement.  The expression is called with its
+        snapshot and ``FINAL``, formatted, and wrapped to the box's width,
+        and the lines are set in the room the placeholder reserved, which
+        is the placeholder's own mark: wherever the band was committed,
+        split or balanced, that mark went with it.
+
+        A field that does not stretch drops the lines beyond the room,
+        as it drops lines beyond its box, and keeps one at least.
+        One that stretches drops none, so a value that needs more room
+        than the placeholder reserved is an error, whether or not a
+        ``maxheight`` clamps the field.  What is left sits in the room
+        by ``valign``, measured from the room's top edge.
+
+        Args:
+            deferral: The element, and what it read where it sat.
+            final: The ``FINAL`` of the scope that ended.
+            mark: The placeholder's mark, where it is now.
+
+        Raises:
+            BuildError: The expression would not evaluate,
+                the format does not take its value, or the value needs
+                more room than a stretch field's placeholder reserved.
+
+        """
+        field = deferral.element
+        assert field.expr is not None
+        where = Location(file=self.file, path=field.path, record=deferral.record)
+        try:
+            value = field.expr.evaluate({**deferral.names, "FINAL": final})
+        except ExpressionError as failed:
+            raise BuildError(str(failed), replace(where, prop="expr")) from None
+        text = self.formatted(field, value, deferral.record)
+        metrics = self.fonts[mark.font]
+        wrapped = wrap(text, mark.box.width, metrics)
+        for character in wrapped.missing:
+            self.missing(mark.font, character, field.path)
+        lines = tuple(wrapped.lines)
+        room = mark.box.height
+        if not field.stretch:
+            lines = lines[: fitting_lines(lines, room, metrics.leading)]
+        height = round_points(len(lines) * metrics.leading)
+        if not fits(height, room):
+            raise BuildError(
+                f"the deferred value {quote(text)} needs {number(height)} pt"
+                f" and its placeholder{described(field)} reserved"
+                f" {number(room)} pt; size the placeholder for the worst case",
+                where,
+            )
+        down = round_points(mark.box.y + VALIGN[field.valign] * (room - height))
+        return replace(
+            mark, box=Box(mark.box.x, down, mark.box.width, height), lines=lines
+        )
 
     def metrics(self, placed: Placement, context: Context) -> Metrics:
         """Return the face and size a field is set in.
@@ -1068,6 +1193,42 @@ class Measurer:
 ELEMENT_MILESTONE = {"Barcode": "M10", "Image": "M11"}
 
 
+def deferrals(
+    placements: list[Placement], within: tuple[int, ...] = ()
+) -> Iterator[Deferral]:
+    """Yield the deferred elements among these, in document order.
+
+    Each carries the path of its mark: its index among the container's
+    marks, after the path of an `xref` that holds it.  A container's marks
+    are its placements', one for one, so the indices are the same.
+
+    Args:
+        placements: A container's elements, settled.
+        within: The path of the container's own mark, for an xref's.
+
+    """
+    for index, placed in enumerate(placements):
+        path = (*within, index)
+        if placed.deferral is not None:
+            yield placed.deferral.at(path)
+        if isinstance(placed.element, Xref):
+            yield from deferrals(placed.children, path)
+
+
+def described(field: Field) -> str:
+    """Return how an error names a deferred field's placeholder.
+
+    Args:
+        field: The node.
+
+    """
+    if field.text is not None:
+        return f" {quote(field.text)}"
+    if field.data is not None:
+        return f", the data node {quote(field.data)},"
+    return ", which is empty,"
+
+
 def extent(placed: Placement, mark: Mark) -> Extent:
     """Return how far down an element's marks reach.
 
@@ -1083,9 +1244,13 @@ def extent(placed: Placement, mark: Mark) -> Extent:
             round_points(min(tops)),
             round_points(max(box.bottom, placed.top + placed.reach)),
         )
+    # A deferred field's lines are its placeholder's, replaced when its
+    # scope ends, so a cut between them would divide lines that are not the
+    # ones printed.  It blocks a cut as an element that cannot split does.
     if (
         isinstance(placed.element, Field)
         and placed.element.stretch
+        and placed.deferral is None
         and isinstance(mark, Text)
     ):
         return Extent(box.y, round_points(box.bottom), len(mark.lines), mark.leading)

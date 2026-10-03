@@ -46,7 +46,7 @@ cross-reference, conditional outline entries and a deferred page count. \
 It is the broadest single comparison the corpus has and it starts \
 passing when the last of those is built, not before.\
 """
-ticket = "M9 deferred, M10 barcodes, M11 images, M13 the rest"
+ticket = "M10 barcodes, M11 images, M13 the rest"
 since = "2026-09-20"
 affects = ["example/sakila", "example/sakila-june"]
 

@@ -888,6 +888,8 @@ detail printwhen="amount > 0" {
 **With `evaltime`**, `expr` is the content and is required — it is what gets
 deferred. `text` or `data` may accompany it as a **placeholder**: the value the
 element is measured from before the real one is known. At most one placeholder.
+It is measured as written, since `format` applies to what `expr` resolves to,
+which is what the placeholder stands in for.
 
 ```kdl
 // immediate — one source
@@ -1763,6 +1765,10 @@ glyph, which is visible as an empty box, and records a warning in the printout
 header naming the character, the font, and the node. Text keeps its metrics, so
 nothing shifts.
 
+The warning is about what is drawn. A deferred field's placeholder is measured
+and never drawn, so it raises none; the value that replaces it raises its own
+when it is set. See [placeholders](layout.md#placeholders).
+
 Under `--strict-fonts` the pinned file is the only one considered, which makes this
 the likelier failure — a template using `…` or `—` needs a font that has them.
 
@@ -1798,7 +1804,9 @@ Validation runs once, at load, before any data is read. It checks:
   is measured, which is before the scope ends, so there would be nothing for `FINAL`
   to bind to.
 - Every name used as `FINAL.`*name* is a predefined variable or a declared
-  `variable`. Parameters and bare record fields are not in `FINAL`.
+  `variable`. Parameters and bare record fields are not in `FINAL`, and
+  nor are `VERTICAL_POSITION`, `VERTICAL_SPACE`, and `FINAL` itself;
+  see [`FINAL`](expressions.md#final).
 - Every `xref type="outline"` has a reachable target `outline name=`.
 - No `width`, `height`, `maxwidth`, or `maxheight` is negative, on an element,
   an `xref`, or a section, and no stroke `width` on a `line` or a `rectangle`.

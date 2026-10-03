@@ -1,0 +1,39 @@
+// probes/deferred/columns.kdl -- the column scope, and a column's own bands.
+//
+// Eleven rows in two columns, a column header and footer, and a `column`
+// deferral in each of the three bands.  The reference resolves them as
+// doc/layout.md's eject sequence says:
+//
+//   * at the column eject, after the column's footer has been placed,
+//     so the footer's own deferral is resolved with the rest;
+//   * before the advance, so `FINAL.COLUMN_COUNT` is the column's rows and
+//     `FINAL.csum` its `reset="column"` total, not the next column's start;
+//   * and the last column's at the end of the report.
+//
+// A deferral of another scope reads what that scope has reached by then:
+// `FINAL.PAGE_COUNT` in a row of the first column is the page's count
+// when the column ends, 6, and not the page's final 11.
+//
+// doc/layout.md#sequence is what this became.
+
+report name="deferred/columns" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  records {
+    member "b" type="int"
+  }
+  variable "csum" expr="b" calc="sum" reset="column"
+  layout width=200 height=50 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    columns count=2 gap=10 {
+      header height=5 {
+        field expr="'CH col %d cc %d/%d csum %s/%s' % (COLUMN_NUMBER, COLUMN_COUNT, FINAL.COLUMN_COUNT, csum, FINAL.csum)" evaltime="column" left=0 top=0 width=90 height=5
+      }
+      footer height=5 {
+        field expr="'CF col %d/%d cc %d/%d' % (COLUMN_NUMBER, FINAL.COLUMN_NUMBER, COLUMN_COUNT, FINAL.COLUMN_COUNT)" evaltime="column" left=0 top=0 width=90 height=5
+      }
+    }
+    detail height=5 {
+      field expr="'r%d col %d cc %d/%d pc %d' % (b, COLUMN_NUMBER, COLUMN_COUNT, FINAL.COLUMN_COUNT, FINAL.PAGE_COUNT)" evaltime="column" left=0 top=0 width=90 height=5
+    }
+  }
+}

@@ -22,7 +22,9 @@
 # defect in the reference, `zero-height-float-gap`, and M8 fifteen more.
 # From `column-floor` on, eleven are defects in the reference's pagination,
 # and four are decisions: `footer-at-a-group-break`, `first-page-init`,
-# `carried-once`, and `suppressed-band-ejects`.
+# `carried-once`, and `suppressed-band-ejects`.  M9 added three about
+# deferred values: one defect, `deferred-glyph-warnings`, and two
+# decisions, `final-vertical` and `final-at-a-group-break`.
 #
 # The milestone numbers:
 #   M0: Scaffold and oracle
@@ -633,3 +635,55 @@ overflow.  The reference is the side that changes.\
 ticket = "M8: swapped bands, layout.md#swapheader-and-swapfooter; filed against the Go engine"
 since = "2026-09-27"
 affects = ["probe/pagination/swapfooter-overflow"]
+
+[[divergence]]
+id = "deferred-glyph-warnings"
+summary = "a deferred field's glyph warning is about its value here; the reference warns about its placeholder"
+reason = """\
+doc/template.md#missing-glyphs records a warning for a character the \
+document draws as the font's `.notdef`.  A deferred field's placeholder is \
+measured and never drawn, and its value is drawn when the scope ends.  The \
+reference warns about a character the placeholder lacks, which no page \
+shows, and not about one the value lacks, which is the empty box the page \
+does show.  doc/layout.md#placeholders now says the placeholder raises no \
+glyph warning and the value raises its own when it is set.  The reference \
+is the side that changes.\
+"""
+ticket = "M9: placeholders, layout.md#placeholders; filed against the Go engine"
+since = "2026-10-03"
+affects = ["probe/deferred/glyphs"]
+
+[[divergence]]
+id = "final-vertical"
+summary = "FINAL.VERTICAL_POSITION and FINAL.VERTICAL_SPACE are refused here; the reference answers with the band it measured last"
+reason = """\
+doc/expressions.md#final held every predefined variable, and two of them \
+describe a band being measured: where it begins in its frame and what it \
+has left.  When a scope ends no band is being measured.  The reference \
+answers with the last band it happened to measure, which depends on \
+lookaheads and reservations a template cannot see.  doc/ now leaves both \
+out of FINAL, and FINAL itself, and validation refuses them.  It is a \
+decision rather than a defect, and the reference is the side that changes.\
+"""
+ticket = "M9: FINAL, expressions.md#final"
+since = "2026-10-03"
+affects = ["probe/deferred/final-vertical"]
+
+[[divergence]]
+id = "final-at-a-group-break"
+summary = "a page that ends at a group break resolves its deferrals against the run that ended here; the reference against the run that begins"
+reason = """\
+The same question as `footer-at-a-group-break`, asked of FINAL.  A page \
+that ends at a group break, with nothing of the new record on it, holds \
+the runs that ended, and doc/layout.md#what-a-header-or-footer-sees \
+builds its footers against the context the break's summaries were built \
+in.  The page's deferrals resolve after those footers, and \
+doc/layout.md#when-a-scope-ends now resolves them against the same \
+context, so FINAL.THIS is the page's last record.  The reference resolves \
+them against the new record and the run that begins, which is none of \
+that page.  It is a decision rather than a defect, and the reference is \
+the side that changes.\
+"""
+ticket = "M9: when a scope ends, layout.md#when-a-scope-ends"
+since = "2026-10-03"
+affects = ["probe/deferred/at-a-break"]

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from sr.layout.defer import Deferral
 from sr.layout.measure import Extent, Measurement
 from sr.printout.model import Box, Mark, Text
 from sr.units import fits, round_points
@@ -157,6 +158,9 @@ def split(measured: Measurement, cut: float) -> tuple[Measurement, Measurement]:
     cut falls inside is divided at the line boundary: its leading lines
     stay, marked as not ending a paragraph, and the rest start the tail.
 
+    A deferred element goes with its mark, which a cut never divides,
+    and takes the index that mark has in its half.
+
     Args:
         measured: The band.
         cut: A cut point, band-relative.
@@ -164,25 +168,37 @@ def split(measured: Measurement, cut: float) -> tuple[Measurement, Measurement]:
     """
     head: list[tuple[Mark, Extent]] = []
     tail: list[tuple[Mark, Extent]] = []
+    # Where each mark went: whether to the head, and its index there.
+    went: list[tuple[bool, int]] = []
     for mark, extent in zip(measured.marks, measured.extents, strict=True):
         if extent.bottom <= cut:
+            went.append((True, len(head)))
             head.append((mark, extent))
         elif extent.top >= cut:
+            went.append((False, len(tail)))
             tail.append((mark.moved(0.0, -cut), extent.moved(-cut)))
         else:
             above, below = divide(mark, extent, cut)
+            went.append((True, len(head)))
             head.append(above)
             tail.append(below)
+    deferred: tuple[list[Deferral], list[Deferral]] = ([], [])
+    for one in measured.deferred:
+        first, *rest = one.path
+        upper, index = went[first]
+        deferred[0 if upper else 1].append(one.at((index, *rest)))
     return (
         Measurement(
             cut,
             tuple(mark for mark, _ in head),
             tuple(extent for _, extent in head),
+            tuple(deferred[0]),
         ),
         Measurement(
             round_points(measured.height - cut),
             tuple(mark for mark, _ in tail),
             tuple(extent for _, extent in tail),
+            tuple(deferred[1]),
         ),
     )
 

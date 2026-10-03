@@ -1,0 +1,50 @@
+// probes/deferred/nested-groups.kdl -- a group's deferrals, among groups.
+//
+// Two levels, A outside B, over seven records.  Where several groups break
+// at once their summaries are placed innermost first, and the reference
+// resolves each group's deferrals straight after its own summary:
+//
+//   * B's deferrals resolve before A's summary is placed, so a deferral
+//     A's summary registers for B is registered after B has resolved,
+//     and waits for B's next break: the summary of run a1 reads B's next
+//     run, three rows and `ITEM_NUMBER` 6, not the run that has just ended;
+//   * B's title reads A's final count at B's break, which A's run either
+//     still has or has just ended with, and in both cases is A's run's;
+//   * a deferral in the report's title waits for B's first break.
+//
+// Nothing reads B's names in A's bands: between B's runs they
+// are unspecified, per doc/expressions.md#between-a-groups-runs.
+// A's last summary does not print, because the reference drops it,
+// which is registered as `last-outer-summary`.
+//
+// doc/layout.md#when-a-scope-ends is what this became.
+
+report name="deferred/nested-groups" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  records {
+    member "a" type="int"
+    member "b" type="int"
+  }
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    title height=5 {
+      field expr="'T B %d' % FINAL.B_COUNT" evaltime="B" left=0 top=0 width=190 height=5
+    }
+    group "A" expr="a" {
+      title height=5 {
+        field expr="'AT a%d A %d/%d' % (a, A_COUNT, FINAL.A_COUNT)" evaltime="A" left=0 top=0 width=190 height=5
+      }
+      summary height=5 printwhen="ITEM_NUMBER < DATA_COUNT" {
+        field expr="'AS a%d next B %d it %d/%d' % (a, FINAL.B_COUNT, ITEM_NUMBER, FINAL.ITEM_NUMBER)" evaltime="B" left=0 top=0 width=190 height=5
+      }
+      group "B" expr="b" {
+        title height=5 {
+          field expr="' BT b%d B %d/%d A %d/%d' % (b, B_COUNT, FINAL.B_COUNT, A_COUNT, FINAL.A_COUNT)" evaltime="B" left=0 top=0 width=190 height=5
+        }
+        detail height=5 {
+          field expr="'   r%d' % ITEM_NUMBER" left=0 top=0 width=190 height=5
+        }
+      }
+    }
+  }
+}

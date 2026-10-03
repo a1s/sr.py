@@ -1,0 +1,17 @@
+// broken/final-vertical.kdl -- the predefined names FINAL does not hold.
+//
+// expect: FINAL holds no VERTICAL_POSITION: it describes a band being measured
+// expect: FINAL holds no VERTICAL_SPACE: it describes a band being measured
+// expect: FINAL holds no FINAL
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=20 {
+      field expr="FINAL.VERTICAL_POSITION" evaltime="page" width=50
+      field expr="FINAL.VERTICAL_SPACE" evaltime="page" width=50
+      field expr="FINAL.FINAL" evaltime="page" width=50
+    }
+  }
+}

@@ -1,0 +1,42 @@
+// probes/deferred/at-a-break.kdl -- FINAL where a page ends at a group break.
+//
+// probes/pagination/footer-at-a-break.kdl with a `page` deferral in the
+// header.  The second group does not fit what the first leaves on page 1,
+// and `keeptogether` moves it to page 2, so page 1 ends where one run ends
+// and the next begins, with nothing of the sixth record on it.
+//
+// doc/layout.md#what-a-header-or-footer-sees builds such a page's footers
+// against the context the break's summaries were built in, and the page's
+// deferrals resolve against the same one: page 1 reads the fifth record,
+// the first run's count and its total, which are what the page holds.
+//
+// The reference resolves them against the sixth record and the run that
+// begins, which is none of page 1, as it builds that page's footers.
+//
+// Registered as the divergence `final-at-a-group-break`.
+// doc/layout.md#when-a-scope-ends is what this became.
+
+report name="deferred/at-a-break" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  records {
+    member "a" type="int"
+  }
+  variable "total" expr="1" calc="sum" reset="group" resetgrp="A"
+  layout width=200 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    header height=5 {
+      field expr="'H pn %d last it %d a %d A_C %d total %s' % (PAGE_NUMBER, FINAL.ITEM_NUMBER, FINAL.THIS.a, FINAL.A_COUNT, FINAL.total)" evaltime="page" left=0 top=0 width=190 height=5
+    }
+    group "A" expr="a" keeptogether=#true {
+      title height=5 {
+        field expr="'AT a%d' % a" left=0 top=0 height=5
+      }
+      summary height=5 {
+        field expr="'AS a%d total %s' % (a, total)" left=0 top=0 height=5
+      }
+      detail height=5 {
+        field expr="'r%d' % ITEM_NUMBER" left=0 top=0 height=5
+      }
+    }
+  }
+}

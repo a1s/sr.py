@@ -45,6 +45,13 @@ the eject fired: doc/layout.md#rollback.  A group title's fold is a band's
 fold like a detail's, which is why a group opening at the top of a page
 it was pushed onto counts its variables on that page and not the one before.
 
+A deferred field reaches the page as its placeholder, and is registered
+as its band is placed: committed, or drawn as a header, a footer
+or a swapped band.  doc/layout.md#when-a-scope-ends resolves it:
+and a column's a page's after the eject's footers and against the context
+they were built in, a group's after its summary, and whatever is still
+waiting after the last page's footers.
+
 Three orders are settled here and each was read off the reference.
 
 * **The marks of a page come out in the order their bands were built.**
@@ -74,11 +81,12 @@ from sr.fonts.resolve import Resolution
 from sr.fonts.text import Metrics
 from sr.layout.columns import Fragment, balance
 from sr.layout.context import Context, condition, evaluate
+from sr.layout.defer import COLUMN, PAGE, Register, Scope, final, find, swap
 from sr.layout.frame import Frame, Window
 from sr.layout.measure import Measurement, Measurer
 from sr.layout.place import choose, split
 from sr.layout.variables import Variables
-from sr.printout.model import FontEntry, Mark, Page, Paper, Printout
+from sr.printout.model import FontEntry, Mark, Page, Paper, Printout, Text
 from sr.printout.model import Report as ReportMeta
 from sr.printout.write import number
 from sr.template.model import Eject, Group, Layout, Nesting, Report, Section, Style
@@ -349,6 +357,7 @@ class Builder:
             self.context.group_pages[name] = 1
         self.pages: list[Page] = []
         self.marks: list[Mark] = []
+        self.deferred = Register()
         self.warnings: list[BuildWarning] = []
         self.previous: tuple[Record, int] | None = None
         self.ahead: Ahead | None = None
@@ -455,7 +464,14 @@ class Builder:
             self.place(title, root.outer, self.walk(title, root), last=True)
 
     def end(self) -> None:
-        """Close the open groups, place the summary, and finish the page."""
+        """Close the open groups, place the summary, and finish the page.
+
+        Every deferral still waiting resolves after the last page's
+        footers, whatever its scope: the last page, the last column and
+        the last run of each group end here without an eject or a break,
+        and the report ends with them.
+
+        """
         self.close(0)
         self.settle_columns()
         summary = self.layout.summary
@@ -465,7 +481,7 @@ class Builder:
                 self.swapped_summary(summary)
             else:
                 self.place(summary, root.outer, self.walk(summary, root))
-        self.footers(self.frames())
+        self.footers(self.frames(), None)
         self.pages.append(Page(self.context.page_number, tuple(self.marks)))
 
     # -- the record loop --------------------------------------------------
@@ -544,6 +560,10 @@ class Builder:
         Each is built against the previous record's context, which is
         the one still in place: the record loop advances ``THIS`` after.
 
+        A group's deferrals resolve once its summary is committed, so
+        both read the same final group totals.  A lookahead resolves
+        nothing, since what it reaches is not where the report stands.
+
         Args:
             level: The position, among the groups, of the outermost to close.
 
@@ -557,6 +577,8 @@ class Builder:
             summary = run.level.nesting.summary
             if summary is not None:
                 self.place(summary, run.level.outer, self.walk(summary, run.level))
+            if self.ahead is None:
+                self.resolve([("group", self.name(run))])
         self.context.record, self.context.item_number = kept
 
     def start(self, run: Run) -> None:
@@ -1132,12 +1154,78 @@ class Builder:
 
         """
         down = frame.fill
-        start = len(self.marks)
-        self.marks.extend(mark.moved(frame.x, down) for mark in measured.marks)
+        start = self.emit(measured, frame, frame.x, down)
         self.record(frame, start, down, measured.height)
         frame.advance(round_points(down + measured.height))
         self.placed_on = self.context.page_number
         self.begun(self.beginning)
+
+    def emit(
+        self, measured: Measurement, frame: Frame, across: float, down: float
+    ) -> int:
+        """Put a measured band's marks on the page, and register its deferrals.
+
+        Every band that reaches the page comes through here: a
+        committed one, a header, a footer, and a swapped title or summary.
+        A band that is only measured -- a reservation, a lookahead,
+        a measurement an eject throws away -- never does, so
+        it registers nothing.
+
+        A `column` deferral leaves the page's columns as the fill
+        put them, in the frame it was placed in and every frame
+        around it: it is resolved as its column ends, against that
+        column, and balancing would move what it counted.
+
+        Args:
+            measured: The band.
+            frame: The frame it belongs to.
+            across: Where its left edge goes.
+            down: Where its top edge goes.
+
+        Returns:
+            Where its first mark is among the page's.
+
+        """
+        start = len(self.marks)
+        self.marks.extend(mark.moved(across, down) for mark in measured.marks)
+        for deferral in measured.deferred:
+            self.deferred.add(deferral, len(self.pages), start)
+            if deferral.scope == COLUMN:
+                self.left_alone(frame)
+        return start
+
+    def resolve(self, scopes: list[Scope] | None) -> None:
+        """Set the values of the deferrals whose scopes have just ended.
+
+        ``FINAL`` is bound once, to the report as it stands,
+        and each deferral is resolved in the order it was placed.
+        Its placeholder's mark is wherever the page now has it,
+        on the page being built or on one already made, and
+        the resolved mark takes its place.
+
+        Args:
+            scopes: The scopes that ended, or ``None`` for every scope,
+                at the end of the report.
+
+        """
+        due = self.deferred.due(scopes)
+        if not due:
+            return
+        ending = final(self.context)
+        made: dict[int, list[Mark]] = {}
+        for waiting in due:
+            if waiting.page == len(self.pages):
+                marks = self.marks
+            else:
+                marks = made.setdefault(
+                    waiting.page, list(self.pages[waiting.page].marks)
+                )
+            placeholder = find(marks, waiting.path)
+            assert isinstance(placeholder, Text)
+            resolved = self.measurer.resolve(waiting.deferral, ending, placeholder)
+            swap(marks, waiting.path, resolved)
+        for index, marks in made.items():
+            self.pages[index] = replace(self.pages[index], marks=tuple(marks))
 
     def ejects(self, section: Section, frame: Frame, fold: Fold | None = None) -> None:
         """Test a band's `eject` nodes, and eject where the selected one says.
@@ -1208,7 +1296,7 @@ class Builder:
         )
         assert measured is not None
         if fits(measured.height, window.height):
-            self.marks.extend(mark.moved(page.x, paper.top) for mark in measured.marks)
+            self.emit(measured, page, page.x, paper.top)
             page.outer_top = round_points(paper.top + measured.height)
             for frame in self.frames():
                 frame.lead = measured.height
@@ -1254,7 +1342,7 @@ class Builder:
             self.commit(measured, page)
             return
         down = round_points(page.outer_bottom - measured.height)
-        self.marks.extend(mark.moved(page.x, down) for mark in measured.marks)
+        self.emit(measured, page, page.x, down)
         page.advance(page.outer_bottom)
         page.outer_bottom = down
         page.bottom = round_points(down - page.reserved_footer)
@@ -1325,7 +1413,7 @@ class Builder:
 
         """
         participants = [ejecting, *ejecting.descendants()]
-        self.footers(participants)
+        self.footers(participants, [COLUMN])
         self.context.column_count = 0
         self.variables.clear("column")
         self.variables.iterate("column")
@@ -1346,7 +1434,7 @@ class Builder:
 
         """
         self.settle_columns()
-        self.footers(self.frames())
+        self.footers(self.frames(), [COLUMN, PAGE])
         self.context.column_count = 0
         self.variables.clear("column")
         self.variables.iterate("column")
@@ -1437,9 +1525,7 @@ class Builder:
         )
         if measured is None:
             return frame.outer_top
-        self.marks.extend(
-            mark.moved(frame.x, frame.outer_top) for mark in measured.marks
-        )
+        self.emit(measured, frame, frame.x, frame.outer_top)
         drawn = round_points(frame.outer_top + measured.height)
         frame.reach(drawn)
         return drawn
@@ -1460,7 +1546,7 @@ class Builder:
         )
         return 0.0 if measured is None else measured.height
 
-    def footers(self, frames: list[Frame]) -> None:
+    def footers(self, frames: list[Frame], ended: list[Scope] | None) -> None:
         """Build the footers of these frames and place them, innermost first.
 
         A footer's space is settled when its column opens and its content
@@ -1478,12 +1564,20 @@ class Builder:
         the outgoing context is the one the break's summaries were built
         in: the page ends the runs that ended.
 
+        The scopes the eject ends resolve after the footers,
+        since each footer is placed in the scope it closes,
+        and against the same context: ``FINAL`` reads
+        what the footers read.
+
         Args:
             frames: The participating frames, outermost first.
+            ended: The scopes the eject ends, or ``None`` for every
+                scope, at the end of the report.
 
         """
         with self.before_the_break():
             self.build_footers(frames)
+            self.resolve(ended)
 
     def build_footers(self, frames: list[Frame]) -> None:
         """Build the footers of these frames and place them, innermost first.
@@ -1512,7 +1606,7 @@ class Builder:
             if measured is None:
                 continue
             down = round_points(frame.outer_bottom - measured.height)
-            self.marks.extend(mark.moved(frame.x, down) for mark in measured.marks)
+            self.emit(measured, frame, frame.x, down)
             frame.reach(frame.outer_bottom)
 
     def state(self) -> tuple[Any, ...]:

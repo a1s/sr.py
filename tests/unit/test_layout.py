@@ -950,11 +950,6 @@ def test_a_variable_folds_per_record_and_the_summary_reads_the_total(
     [
         ('    detail height=10 { barcode type="Code128" text="1" }', "M10"),
         ('    detail height=10 { image file="x.png" }', "M11"),
-        (
-            "    detail height=10 {"
-            ' field expr="FINAL.PAGE_NUMBER" evaltime="report" left=0 top=0 }',
-            "M9",
-        ),
     ],
 )
 def test_what_a_later_milestone_brings_says_so(

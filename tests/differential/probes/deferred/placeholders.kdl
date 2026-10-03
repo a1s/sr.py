@@ -1,0 +1,39 @@
+// probes/deferred/placeholders.kdl -- what a placeholder reserves, and where.
+//
+// A page header holding deferred fields, and a detail band holding one
+// inside an `xref`, over eight records and three pages.  The reference:
+//
+//   * reserves the header from its placeholders, a two-line `text` and
+//     a three-line `data` node, so the content starts 14.4 pt down on
+//     every page, and sets each resolved value in its placeholder's room;
+//   * resolves a field inside an xref inside the xref, its mark moving
+//     within the link region's marks;
+//   * reads every other name where the element sits: `VERTICAL_POSITION`
+//     and `VERTICAL_SPACE` are the row's own, on every row.
+//
+// The header is measured twice per page, once to reserve it
+// and once to place it, and only the one placed registers a
+// deferral: a report-scoped one resolves once per page, not twice.
+//
+// doc/layout.md#placeholders is what this became.
+
+report name="deferred/placeholders" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  data "blob" { content "data\nplace\nholder"; }
+  records {
+    member "b" type="int"
+  }
+  layout width=200 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    header {
+      field expr="'H%d' % FINAL.PAGE_NUMBER" evaltime="report" stretch=#true text="1\n2" left=0 top=0 width=40 valign="bottom"
+      field expr="'D%d' % FINAL.PAGE_NUMBER" evaltime="report" stretch=#true data="blob" left=100 top=0 width=40 valign="center"
+    }
+    detail height=6 {
+      xref type="url" target="'https://example.com/'" left=0 top=0 width=60 height=6 {
+        field expr="'X%d/%d' % (b, FINAL.PAGE_COUNT)" evaltime="page" stretch=#true text="1\n2" left=10 top=0 width=40 valign="bottom"
+      }
+      field expr="'V %s/%s %d' % (VERTICAL_POSITION, VERTICAL_SPACE, FINAL.PAGE_COUNT)" evaltime="page" left=100 top=0 width=60 height=5
+    }
+  }
+}

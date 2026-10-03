@@ -74,6 +74,15 @@ __all__ = ["Space", "Visit", "final_names", "literal", "validate"]
 # takes frame space of its own, so the two cannot both be true.
 SUBREPORT_BANDS = {"detail": None, "title": "swapheader", "summary": "swapfooter"}
 
+# The predefined names `FINAL` does not hold, and why: doc/expressions.md#final.
+NOT_FINAL = {
+    "VERTICAL_POSITION": "it describes a band being measured,"
+    " and none is when a scope ends",
+    "VERTICAL_SPACE": "it describes a band being measured,"
+    " and none is when a scope ends",
+    "FINAL": "FINAL is the names a scope ends with, and is not one of them",
+}
+
 
 @dataclass(frozen=True)
 class Space:
@@ -110,12 +119,15 @@ class Space:
         is built: the predefined variables, the names a group derives
         from its own, and the accumulators.  A parameter is constant
         and a record field belongs to a record, so neither is in it.
+        Nor are the three predefined names :data:`NOT_FINAL` gives
+        a reason for.
 
         """
         derived = {
             name + suffix for name in self.group_names for suffix in GROUP_SUFFIXES
         }
-        return frozenset(PREDEFINED) | derived | {one.name for one in self.variables}
+        predefined = frozenset(PREDEFINED) - frozenset(NOT_FINAL)
+        return predefined | derived | {one.name for one in self.variables}
 
 
 @dataclass
@@ -758,7 +770,13 @@ def final_scope(visit: Visit, space: Space, element: Field | Barcode) -> None:
     if element.expr is None:
         return
     for name in final_names(element.expr.source):
-        if name not in space.final_scope:
+        if name in NOT_FINAL:
+            visit.diagnostics.error(
+                f"FINAL holds no {name}: {NOT_FINAL[name]}",
+                path=element.path,
+                prop="expr",
+            )
+        elif name not in space.final_scope:
             visit.diagnostics.error(
                 "FINAL holds the predefined variables and the"
                 f" declared variables, and {name!r} is neither",

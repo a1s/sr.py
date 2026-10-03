@@ -1,0 +1,46 @@
+// probes/deferred/room.kdl -- where a resolved value is set.
+//
+// Every field here resolves to fewer lines than its placeholder,
+// or to more where it does not stretch, and the question is where
+// the value goes.  The reference sets it in the room the placeholder
+// reserved, which is the placeholder's own text box, not the field's box:
+//
+//   * one that does not stretch keeps the lines that fit the room and
+//     drops the rest, one at least, so a value of four lines in a box 20 pt
+//     tall prints one line where the placeholder was one line, and a field
+//     with no placeholder at all has a room of one empty line;
+//   * what is left sits in the room by `valign`, from the room's top edge:
+//     a value of one line where three were reserved is at the top, the middle
+//     or the bottom of the three, whatever the box around them;
+//   * a placeholder taller than a box that does not stretch keeps the lines
+//     the box holds, so the room is that, and is centred where they were;
+//   * a stretch field anchored to the band's bottom keeps the band's box and
+//     overflows it, and its room is where its placeholder's lines went;
+//   * a `maxheight` that clamps a stretch field clamps its placeholder,
+//     and the room is what the clamp left.
+//
+// A stretch field whose value needs more room than that is an error;
+// the probe cannot show one, since it would not build.
+//
+// doc/layout.md#re-measurement is what this became.
+
+report name="deferred/room" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    detail height=30 {
+      field expr="'x%d' % FINAL.PAGE_NUMBER" evaltime="report" stretch=#true text="a\nb\nc" left=0 top=0 width=30
+      field expr="'x%d' % FINAL.PAGE_NUMBER" evaltime="report" stretch=#true text="a\nb\nc" left=40 top=0 width=30 valign="center" align="right"
+      field expr="'x%d' % FINAL.PAGE_NUMBER" evaltime="report" stretch=#true text="a\nb\nc" left=80 top=0 width=30 valign="bottom" align="center"
+      field expr="'x%d' % FINAL.PAGE_NUMBER" evaltime="report" text="a\nb\nc" left=120 top=0 width=30 height=20 valign="bottom"
+      field expr="'x%d\\ny\\nz\\nw' % FINAL.PAGE_NUMBER" evaltime="report" left=160 top=0 width=30 height=20
+      field expr="'x%d\\ny\\nz' % FINAL.PAGE_NUMBER" evaltime="report" left=160 top=30 width=30 height=20 valign="center"
+      field expr="'x%d' % FINAL.PAGE_NUMBER" evaltime="report" stretch=#true text="a\nb\nc" left=0 top=30 width=30 height=30 valign="bottom"
+      field expr="'x%d' % FINAL.PAGE_NUMBER" evaltime="report" text="a\nb\nc" left=120 top=30 width=30 height=5 valign="center"
+      field expr="'x%d\\ny\\nz' % FINAL.PAGE_NUMBER" evaltime="report" text="a\nb\nc" left=120 top=40 width=30 height=5 valign="bottom"
+      field expr="'x%d' % FINAL.PAGE_NUMBER" evaltime="report" stretch=#true text="a\nb" left=40 top=30 width=30 bottom=0 valign="bottom"
+      field expr="'x%d' % FINAL.PAGE_NUMBER" evaltime="report" stretch=#true text="a\nb" left=80 bottom=0 width=30 height=3 valign="center"
+      field expr="'x%d' % FINAL.PAGE_NUMBER" evaltime="report" stretch=#true text="a\nb\nc" left=80 top=50 width=30 maxheight=10 valign="bottom"
+    }
+  }
+}

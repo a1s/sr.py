@@ -1,0 +1,32 @@
+// probes/deferred/final-vertical.kdl -- the vertical names, through FINAL.
+//
+// Both describe a band being measured: where it begins in its frame,
+// and what it has left to grow into.  When a scope ends no band is, so
+// neither has a value there, and doc/ refuses them in FINAL at validation.
+//
+// The reference accepts them and answers with whatever band it measured last.
+// Here a deferral in the report's title waits for the first break
+// of group A, and reads the position of the second row, 9.6 pt down,
+// because that row was measured last; the break itself is lower,
+// 14.4 pt down, below the second row.
+//
+// Registered as the divergence `final-vertical`.
+// doc/expressions.md#final is what this became.
+
+report name="deferred/final-vertical" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  records {
+    member "a" type="int"
+  }
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    title height=4.8 {
+      field expr="'T at %s with %s left' % (FINAL.VERTICAL_POSITION, FINAL.VERTICAL_SPACE)" evaltime="A" left=0 top=0 width=190 height=4.8
+    }
+    group "A" expr="a" {
+      detail height=4.8 {
+        field expr="'r%d' % ITEM_NUMBER" left=0 top=0 width=190 height=4.8
+      }
+    }
+  }
+}

@@ -1,0 +1,46 @@
+// probes/deferred/swapped.kdl -- deferrals in swapped bands and a lookahead.
+//
+// A `swapheader` title and a `swapfooter` summary, each sized by a two-line
+// placeholder, and a group kept together, over seven records and three pages.
+// The reference:
+//
+//   * places the swapped title at the top of the paper and the swapped
+//     summary at the bottom, by the heights their placeholders measured,
+//     and sets each value in that room by its `valign`;
+//   * resolves the title's `page` deferral with the first page,
+//     and the summary's `report` one with the report;
+//   * registers nothing while `keeptogether` measures a group ahead:
+//     every title and row is placed once and resolved once.
+//
+// doc/layout.md#placeholders is what this became.
+
+report name="deferred/swapped" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  records {
+    member "a" type="int"
+    member "b" type="int"
+  }
+  layout width=200 height=50 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    title swapheader=#true {
+      field expr="'T %d/%d pc %d' % (PAGE_NUMBER, FINAL.PAGE_NUMBER, FINAL.PAGE_COUNT)" evaltime="page" stretch=#true text="1\n2" left=0 top=0 width=90 valign="center"
+    }
+    header height=5 {
+      field text="H" left=0 top=0 width=90 height=5
+    }
+    footer height=5 {
+      field expr="'F %d/%d' % (PAGE_NUMBER, FINAL.PAGE_COUNT)" evaltime="page" left=0 top=0 width=90 height=5
+    }
+    group "A" expr="a" keeptogether=#true {
+      title height=5 {
+        field expr="'AT a%d %d' % (a, FINAL.A_COUNT)" evaltime="A" left=0 top=0 width=90 height=5
+      }
+      detail height=5 {
+        field expr="'r%d pc %d/%d' % (b, PAGE_COUNT, FINAL.PAGE_COUNT)" evaltime="page" left=0 top=0 width=90 height=5
+      }
+    }
+    summary swapfooter=#true {
+      field expr="'S %d/%d pc %d' % (PAGE_NUMBER, FINAL.PAGE_NUMBER, FINAL.PAGE_COUNT)" evaltime="report" stretch=#true text="1\n2" left=0 top=0 width=90 valign="bottom"
+    }
+  }
+}

@@ -187,6 +187,22 @@ the reference gave, and names the section of `doc/` that answer became.
 | `pagination/scope-resets` | `reset="item"` and `reset="detail"` |
 | `pagination/first-page-init` | `init` from the start of the report, in every scope |
 | `pagination/group-tables-empty` | the group tables over no records |
+| `deferred/page-count` | a page count, and what a deferral reads |
+| `deferred/scopes` | when each scope ends, and what `FINAL` holds |
+| `deferred/nested-groups` | a group's deferrals, among groups |
+| `deferred/columns` | the column scope, and a column's own bands |
+| `deferred/balance-column` | a column deferral in a balanced frame |
+| `deferred/balance-page` | a page deferral in a balanced frame |
+| `deferred/balance-column-footer` | a column deferral in a footer |
+| `deferred/balance-outside` | a column deferral outside the frame |
+| `deferred/room` | where a resolved value is set |
+| `deferred/centred` | the arithmetic that centres a resolved value |
+| `deferred/placeholders` | what a placeholder reserves, and where |
+| `deferred/swapped` | deferrals in swapped bands and a lookahead |
+| `deferred/split` | a deferred stretch field in a band that splits |
+| `deferred/at-a-break` | `FINAL` where a page ends at a group break |
+| `deferred/glyphs` | the glyph warnings of a deferred field |
+| `deferred/final-vertical` | the vertical names, through `FINAL` |
 | `data/blob-names` | the name an embedded image gets |
 | `data/blob-collision` | a generated name that is already taken |
 | `data/key-order` | the order of the header's `data` object |
