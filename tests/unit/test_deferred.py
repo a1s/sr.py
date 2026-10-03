@@ -23,7 +23,7 @@ from sr.layout.context import Context
 from sr.layout.defer import Deferral, Register, final, find, scope_of, snapshot, swap
 from sr.layout.measure import Extent, Measurement
 from sr.layout.place import split
-from sr.printout.model import Box, Page, Printout, Rectangle, Text
+from sr.printout.model import Box, Mark, Page, Printout, Rectangle, Text
 from sr.printout.model import Xref as XrefMark
 from sr.template.load import load_text
 from sr.template.model import Field
@@ -90,9 +90,15 @@ def band(kind: str, body: str, props: str = "") -> str:
     return f"    {kind} {props} {{\n      {body}\n    }}\n"
 
 
-def said(expr: str) -> str:
-    """Return a one-line field that shows an expression right away."""
-    return f'field expr="{expr}" left=0 top=0 width=100 height=6'
+def said(expr: str, rest: str = "left=0 top=0 width=100 height=6") -> str:
+    """Return a one-line field that shows an expression right away.
+
+    Args:
+        expr: The expression, with no double quotes in it.
+        rest: Its geometry.
+
+    """
+    return f'field expr="{expr}" {rest}'
 
 
 def deferred(
@@ -120,6 +126,15 @@ def texts(page: Page) -> list[str]:
 def pages(printout: Printout) -> list[list[str]]:
     """Return every page's text, a list per page."""
     return [texts(page) for page in printout.pages]
+
+
+def linked(mark: Mark) -> list[str]:
+    """Return the lines of every text mark in an xref, at any depth."""
+    if isinstance(mark, Text):
+        return ["|".join(mark.lines)]
+    if isinstance(mark, XrefMark):
+        return [lines for one in mark.marks for lines in linked(one)]
+    return []
 
 
 def at(page: Page, first: str) -> Box:
@@ -352,6 +367,56 @@ def test_only_a_column_deferral_leaves_a_balanced_page_alone(
     assert [mark.box.x for mark in marks] == left
 
 
+@pytest.mark.parametrize(
+    ("printwhen", "last"),
+    [("COLUMN_NUMBER == 2", "CF 2 rows 2"), ("False", "r15")],
+    ids=["last-column", "never"],
+)
+def test_a_column_deferral_in_a_footer_leaves_every_page_alone(
+    tmp_path: Path, printwhen: str, last: str
+) -> None:
+    """The footer is judged from the template, whatever it prints."""
+    header = said("'CH %d' % COLUMN_NUMBER", "left=0 top=0 width=90 height=6")
+    footer = deferred(
+        "'CF %d rows %d' % (COLUMN_NUMBER, FINAL.COLUMN_COUNT)",
+        "column",
+        f'printwhen="{printwhen}" left=0 top=0 width=90 height=6',
+    )
+    columns = (
+        "    columns count=2 gap=10 balance=#true {\n"
+        + band("header", header, "height=6")
+        + band("footer", footer, "height=6")
+        + "    }\n"
+    )
+    row = said("'r%d' % ITEM_NUMBER", "left=0 top=0 width=90 height=6")
+    printout = built(tmp_path, columns + band("detail", row), rows_of(15))
+    page = printout.pages[0]
+    rows = [mark for mark in page.marks if isinstance(mark, Text)]
+    rows = [mark for mark in rows if mark.lines[0].startswith("r")]
+    assert [mark.box.x for mark in rows] == [5] * 13 + [105] * 2
+    assert texts(page)[-1] == last
+
+
+def test_a_column_deferral_in_a_header_leaves_the_balance_to_the_page(
+    tmp_path: Path,
+) -> None:
+    """A header is placed before the page balances, and judged as placed."""
+    header = deferred(
+        "'CH %d' % FINAL.COLUMN_COUNT",
+        "column",
+        'printwhen="False" left=0 top=0 width=90 height=6',
+    )
+    columns = (
+        "    columns count=2 gap=10 balance=#true {\n"
+        + band("header", header, "height=6")
+        + "    }\n"
+    )
+    row = said("'r%d' % ITEM_NUMBER", "left=0 top=0 width=90 height=6")
+    printout = built(tmp_path, columns + band("detail", row), rows_of(15))
+    marks = [mark for mark in printout.pages[0].marks if isinstance(mark, Text)]
+    assert [mark.box.x for mark in marks] == [5] * 8 + [105] * 7
+
+
 def test_a_deferred_stretch_field_is_not_cut_between_its_lines(
     tmp_path: Path,
 ) -> None:
@@ -363,6 +428,30 @@ def test_a_deferred_stretch_field_is_not_cut_between_its_lines(
     detail = band("detail", f"{row}\n      {other}", "split=#true orphans=1 widows=1")
     printout = built(tmp_path, title + detail)
     assert pages(printout) == [[], ["x2", "a|b|c|d"]]
+
+
+def test_a_deferral_beside_a_split_field_is_set_in_its_own_half(
+    tmp_path: Path,
+) -> None:
+    """The cut moves one deferral to the next page and leaves the other."""
+    title = band("title", "rectangle left=0 top=0 width=1 height=1", "height=78")
+    after = deferred(
+        "'t%d/%d' % (PAGE_NUMBER, FINAL.PAGE_NUMBER)",
+        "report",
+        'text="t0/0" left=100 top=24 width=40 height=6',
+    )
+    lines = 'field text="a\\nb\\nc\\nd" stretch=#true left=0 top=0 width=40'
+    beside = deferred(
+        "'h%d/%d' % (PAGE_NUMBER, FINAL.PAGE_NUMBER)",
+        "report",
+        'text="h0/0" left=50 top=0 width=40 height=6',
+    )
+    body = f"{after}\n      {lines}\n      {beside}"
+    detail = band("detail", body, "split=#true orphans=1 widows=1")
+    printout = built(tmp_path, title + detail)
+    assert pages(printout) == [["a|b", "h1/2"], ["t1/2", "c|d"]]
+    assert at(printout.pages[0], "h1/2") == Box(55, 83, 40, 6)
+    assert at(printout.pages[1], "t1/2") == Box(105, 17, 40, 6)
 
 
 def test_the_value_raises_a_glyph_warning_and_the_placeholder_none(
@@ -389,6 +478,30 @@ def test_a_header_reservation_registers_nothing(tmp_path: Path) -> None:
     printout = built(tmp_path, band("header", header) + ROW, rows_of(5))
     assert [texts(page)[0] for page in printout.pages] == ["H1 of 2", "H2 of 2"]
     assert at(printout.pages[0], "r1").y == 17
+
+
+def test_a_deferral_inside_nested_xrefs_is_set_in_place(
+    tmp_path: Path,
+) -> None:
+    """Each row's value replaces its placeholder two xrefs down."""
+    first = said("'r%d' % ITEM_NUMBER", "left=0 top=0 width=40 height=6")
+    inner = deferred(
+        "'n%d/%d' % (ITEM_NUMBER, FINAL.REPORT_COUNT)",
+        "report",
+        'text="n0/0" left=0 top=0 width=50 height=6',
+    )
+    body = f"""{first}
+      xref type="url" target="'u'" left=50 top=0 width=100 height=6 {{
+        field text="before" left=0 top=0 width=40 height=6
+        xref type="url" target="'v'" left=50 top=0 width=50 height=6 {{
+          {inner}
+        }}
+      }}"""
+    printout = built(tmp_path, band("detail", body, "height=6"), rows_of(3))
+    page = printout.pages[0]
+    assert texts(page) == ["r1", "r2", "r3"]
+    held = [linked(mark) for mark in page.marks if isinstance(mark, XrefMark)]
+    assert held == [["before", "n1/3"], ["before", "n2/3"], ["before", "n3/3"]]
 
 
 # -- the parts --------------------------------------------------------
@@ -442,6 +555,28 @@ def test_the_register_hands_a_scope_back_in_the_order_placed() -> None:
     assert len(register) == 1
     assert [one.deferral for one in register.due(None)] == [group]
     assert len(register) == 0
+
+
+def test_scopes_that_end_together_come_back_in_the_order_placed() -> None:
+    field = node()
+    register = Register()
+    column = Deferral(field, ("column", None), {}, 0, (0,))
+    page = Deferral(field, ("page", None), {}, 0, (0,))
+    group = Deferral(field, ("group", "A"), {}, 0, (0,))
+    placed = [page, column, group, column.at((1,)), page.at((1,))]
+    for start, deferral in enumerate(placed):
+        register.add(deferral, 0, start)
+    taken = register.due([("column", None), ("page", None)])
+    assert [one.path for one in taken] == [(0,), (1,), (4,), (5,)]
+    assert [one.deferral for one in register.due(None)] == [group]
+
+
+def test_two_placements_of_one_element_are_two_deferrals() -> None:
+    field = node()
+    first = Deferral(field, ("page", None), {"n": 1}, 0)
+    second = Deferral(field, ("page", None), {"n": 1}, 0)
+    assert first != second
+    assert len({first, second}) == 2
 
 
 def test_a_mark_inside_an_xref_is_found_and_replaced() -> None:

@@ -45,12 +45,14 @@ the eject fired: doc/layout.md#rollback.  A group title's fold is a band's
 fold like a detail's, which is why a group opening at the top of a page
 it was pushed onto counts its variables on that page and not the one before.
 
-A deferred field reaches the page as its placeholder, and is registered
-as its band is placed: committed, or drawn as a header, a footer
-or a swapped band.  doc/layout.md#when-a-scope-ends resolves it:
-and a column's a page's after the eject's footers and against the context
-they were built in, a group's after its summary, and whatever is still
-waiting after the last page's footers.
+A deferred field reaches the page as its placeholder, and is
+registered as its band is placed: committed, or drawn as a header,
+a footer, or a swapped band.  doc/layout.md#when-a-scope-ends says
+when its value is set.  A column or page deferral resolves after
+the footers of the eject that ends its scope, against the context
+those footers were built in.  A group deferral resolves after the
+group's summary.  Whatever is still waiting resolves after the
+last page's footers.
 
 Three orders are settled here and each was read off the reference.
 
@@ -81,7 +83,16 @@ from sr.fonts.resolve import Resolution
 from sr.fonts.text import Metrics
 from sr.layout.columns import Fragment, balance
 from sr.layout.context import Context, condition, evaluate
-from sr.layout.defer import COLUMN, PAGE, Register, Scope, final, find, swap
+from sr.layout.defer import (
+    COLUMN,
+    PAGE,
+    Register,
+    Scope,
+    final,
+    find,
+    swap,
+    waits_for,
+)
 from sr.layout.frame import Frame, Window
 from sr.layout.measure import Measurement, Measurer
 from sr.layout.place import choose, split
@@ -1715,10 +1726,17 @@ class Builder:
         it leaves is not balanced a second time: the fragment's record of
         where its bands went is the fill's, and they are no longer there.
 
+        A frame whose columns' footers hold a `column` deferral is
+        never balanced.  The last column's footer is placed after
+        the pass, so its deferral would count the rows the fill put
+        in that column and sit under the rows the pass put there.
+
         """
         for frame in reversed(self.frames()):
             fragment = self.fragments.get(frame)
             if fragment is None or fragment.alone or not fragment.bands:
+                continue
+            if footer_waits_for_column(frame):
                 continue
             opened = not any(
                 one.header is not None or one.footer is not None
@@ -1790,6 +1808,21 @@ class Builder:
             group_runs={name: by_name[name].runs for name in names},
             group_keys={name: len(by_name[name].keys) for name in names},
         )
+
+
+def footer_waits_for_column(frame: Frame) -> bool:
+    """Return whether a footer of a frame's columns holds a `column` deferral.
+
+    The footers of the frames inside it are its columns' footers too.
+
+    Args:
+        frame: The frame.
+
+    """
+    return any(
+        one.footer is not None and waits_for(one.footer.elements, COLUMN)
+        for one in (frame, *frame.descendants())
+    )
 
 
 def frame_path(top: Frame, bottom: Frame) -> list[Frame]:

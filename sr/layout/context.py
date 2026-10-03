@@ -25,7 +25,7 @@ from typing import Any
 from sr.errors import BuildError, ExpressionError, Location, NodePath
 from sr.expr import Expression, Record, Time, truthy
 
-__all__ = ["Context", "condition", "evaluate"]
+__all__ = ["Context", "condition", "evaluate", "evaluate_at"]
 
 
 @dataclass
@@ -146,17 +146,43 @@ def evaluate(
         BuildError: The expression would not evaluate.
 
     """
+    return evaluate_at(
+        expression, names, context.file, path, prop, context.record_index
+    )
+
+
+def evaluate_at(
+    expression: Expression,
+    names: dict[str, Any],
+    file: str | None,
+    path: NodePath,
+    prop: str | None,
+    record: int | None,
+) -> Any:
+    """Evaluate one expression, naming where it was written if it fails.
+
+    :func:`evaluate` names the record the report stands at.
+    A deferred expression is evaluated when its scope ends,
+    and names the record its band was built for instead.
+
+    Args:
+        expression: The compiled expression.
+        names: The environment to evaluate against.
+        file: The template, as the caller named it.
+        path: The node the expression was written on.
+        prop: The property it was written in.
+        record: The record the diagnostic names.
+
+    Raises:
+        BuildError: The expression would not evaluate.
+
+    """
     try:
         return expression.evaluate(names)
     except ExpressionError as failed:
         raise BuildError(
             str(failed),
-            Location(
-                file=context.file,
-                path=path,
-                prop=prop,
-                record=context.record_index,
-            ),
+            Location(file=file, path=path, prop=prop, record=record),
         ) from None
 
 

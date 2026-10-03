@@ -16,19 +16,20 @@ Three things carry it from one moment to the other.
   is per element rather than per band: two fields in one footer may sit
   at the same place and name different things.
 * **The placeholder's mark.**  It is on the page, translated wherever
-  the band was committed, split or balanced, and its box is the room
+  the band was committed, split, or balanced, and its box is the room
   the placeholder reserved.  The resolved text is set inside that box,
   so the translations a mark went through never have to be replayed.
 * **The register.**  A deferral is registered when its band is placed,
-  not when it is measured, so a measurement that is thrown away --
-  a header's reservation, a keep-together lookahead, a band measured
-  again after an eject -- leaves nothing behind.  It is kept in the order
-  it was placed, and a scope's end resolves its own in that order.
+  not when it is measured.  A measurement that is thrown away leaves
+  nothing behind: a header's reservation, a keep-together lookahead,
+  and a band measured again after an eject are all thrown away.
+  A scope's end resolves its own deferrals in the order they were placed.
 
 """
 
 from __future__ import annotations
 
+import heapq
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Any
@@ -37,7 +38,7 @@ from sr.expr import Expression, Namespace
 from sr.layout.context import Context
 from sr.printout.model import Mark
 from sr.printout.model import Xref as XrefMark
-from sr.template.model import EVALTIME_SCOPES, Field
+from sr.template.model import EVALTIME_SCOPES, Barcode, Element, Field, Xref
 
 __all__ = [
     "COLUMN",
@@ -51,9 +52,10 @@ __all__ = [
     "scope_of",
     "snapshot",
     "swap",
+    "waits_for",
 ]
 
-# A scope a deferral waits for: ``report``, ``page`` or ``column`` with
+# A scope a deferral waits for: ``report``, ``page``, or ``column`` with
 # no name, or ``group`` with the group's.  A group may be called `page`,
 # and `evaltime="page"` still means the page, so the two are kept apart.
 Scope = tuple[str, str | None]
@@ -73,6 +75,29 @@ def scope_of(evaltime: str) -> Scope:
     if evaltime in EVALTIME_SCOPES:
         return (evaltime, None)
     return ("group", evaltime)
+
+
+def waits_for(elements: Sequence[Element | Xref], scope: Scope) -> bool:
+    """Return whether an element among these waits for a scope.
+
+    This reads the template, not a band that was built,
+    so an element counts whether or not its band would print it.
+    The children of an `xref` are among the elements.
+
+    Args:
+        elements: A band's elements, in paint order.
+        scope: The scope.
+
+    """
+    for element in elements:
+        if isinstance(element, Xref):
+            if waits_for(element.elements, scope):
+                return True
+        elif isinstance(element, Field | Barcode):
+            evaltime = element.evaltime
+            if evaltime is not None and scope_of(evaltime) == scope:
+                return True
+    return False
 
 
 def snapshot(expression: Expression, names: dict[str, Any]) -> dict[str, Any]:
@@ -109,9 +134,13 @@ def final(context: Context) -> Namespace:
     return Namespace("FINAL", {**context.variables, **context.predefined()})
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Deferral:
     """A deferred element, measured from its placeholder.
+
+    Each is one placement of the element, so two are equal only
+    when they are the same object, and hashing one never looks
+    at its snapshot, which is a dict.
 
     Attributes:
         element: The node.
@@ -148,24 +177,34 @@ class Waiting:
         deferral: The element.
         page: The page it is on, from 0, in the order the pages were made.
         path: Where its mark is among that page's marks.
+        order: How many deferrals were placed before it.
 
     """
 
     deferral: Deferral
     page: int
     path: tuple[int, ...]
+    order: int
 
 
 class Register:
-    """The deferrals placed and not resolved yet, in the order placed."""
+    """The deferrals placed and not resolved yet.
+
+    They are kept apart by scope, so that a scope's end looks only
+    at its own.  A ``report`` deferral waits for the whole report,
+    and a report with a group break on every record would otherwise
+    pass over all of them at every break.
+
+    """
 
     def __init__(self) -> None:
         """Start with nothing waiting."""
-        self.waiting: list[Waiting] = []
+        self.waiting: dict[Scope, list[Waiting]] = {}
+        self.placed = 0
 
     def __len__(self) -> int:
         """Return how many deferrals are waiting."""
-        return len(self.waiting)
+        return sum(len(waiting) for waiting in self.waiting.values())
 
     def add(self, deferral: Deferral, page: int, start: int) -> None:
         """Register a deferral its band has just placed.
@@ -177,23 +216,25 @@ class Register:
 
         """
         first, *rest = deferral.path
-        self.waiting.append(Waiting(deferral, page, (start + first, *rest)))
+        path = (start + first, *rest)
+        waiting = Waiting(deferral, page, path, self.placed)
+        self.waiting.setdefault(deferral.scope, []).append(waiting)
+        self.placed += 1
 
     def due(self, scopes: Sequence[Scope] | None) -> list[Waiting]:
         """Take every deferral waiting for one of these scopes.
+
+        They come back in the order they were placed, across scopes as
+        well as within each.
 
         Args:
             scopes: The scopes that have ended, or ``None`` for all
                 of them, which is the end of the report.
 
         """
-        taken: list[Waiting] = []
-        kept: list[Waiting] = []
-        for one in self.waiting:
-            ended = scopes is None or one.deferral.scope in scopes
-            (taken if ended else kept).append(one)
-        self.waiting = kept
-        return taken
+        ended = list(self.waiting) if scopes is None else scopes
+        taken = [self.waiting.pop(scope, []) for scope in ended]
+        return list(heapq.merge(*taken, key=lambda one: one.order))
 
 
 def find(marks: Sequence[Mark], path: tuple[int, ...]) -> Mark:

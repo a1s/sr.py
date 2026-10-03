@@ -22,9 +22,10 @@
 # defect in the reference, `zero-height-float-gap`, and M8 fifteen more.
 # From `column-floor` on, eleven are defects in the reference's pagination,
 # and four are decisions: `footer-at-a-group-break`, `first-page-init`,
-# `carried-once`, and `suppressed-band-ejects`.  M9 added three about
-# deferred values: one defect, `deferred-glyph-warnings`, and two
-# decisions, `final-vertical` and `final-at-a-group-break`.
+# `carried-once`, and `suppressed-band-ejects`.  M9 added four about
+# deferred values: one defect, `deferred-glyph-warnings`, and three
+# decisions, `final-vertical`, `final-at-a-group-break`, and
+# `footer-deferral-balance`.
 #
 # The milestone numbers:
 #   M0: Scaffold and oracle
@@ -687,3 +688,22 @@ the side that changes.\
 ticket = "M9: when a scope ends, layout.md#when-a-scope-ends"
 since = "2026-10-03"
 affects = ["probe/deferred/at-a-break"]
+
+[[divergence]]
+id = "footer-deferral-balance"
+summary = "a column deferral in a column footer leaves the frame unbalanced here; the reference balances when the deferral is placed only in the last column"
+reason = """\
+doc/layout.md#balanced-columns leaves a page as the fill put it when a \
+`column` deferral is placed in the frame, since moving rows afterwards \
+would leave it counting rows that are elsewhere.  The page balances \
+before its footers are placed, so the last column's footer comes too \
+late to stop it.  Where that footer is the first to print the \
+deferral, the reference balances the page and the footer then counts \
+the rows the fill left in its column, not the rows above it.  doc/ now \
+judges a footer from the template: a frame whose columns' footers hold \
+a `column` deferral is never balanced.  It is a decision rather than a \
+defect, and the reference is the side that changes.\
+"""
+ticket = "M9: balanced columns, layout.md#what-is-left-where-the-fill-put-it"
+since = "2026-10-03"
+affects = ["probe/deferred/balance-late-footer"]

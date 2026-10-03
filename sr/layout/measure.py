@@ -62,7 +62,6 @@ from typing import Any
 from sr.errors import (
     BuildError,
     BuildWarning,
-    ExpressionError,
     Location,
     NodePath,
     Unsupported,
@@ -70,7 +69,7 @@ from sr.errors import (
 from sr.expr import Namespace, apply_format
 from sr.expr.values import quote
 from sr.fonts.text import Metrics, missing_glyph, wrap
-from sr.layout.context import Context, condition, evaluate
+from sr.layout.context import Context, condition, evaluate, evaluate_at
 from sr.layout.defer import Deferral, scope_of, snapshot
 from sr.layout.frame import Window
 from sr.printout.model import Box, Line, Mark, Rectangle, Text
@@ -426,10 +425,7 @@ class Measurer:
             extent(placed, mark) for placed, mark in zip(placements, marks, strict=True)
         )
         return Measurement(
-            round_points(height),
-            marks,
-            extents,
-            tuple(deferrals(placements)),
+            round_points(height), marks, extents, tuple(deferrals(placements))
         )
 
     def outer(
@@ -950,12 +946,10 @@ class Measurer:
         """
         field = deferral.element
         assert field.expr is not None
-        where = Location(file=self.file, path=field.path, record=deferral.record)
-        try:
-            value = field.expr.evaluate({**deferral.names, "FINAL": final})
-        except ExpressionError as failed:
-            raise BuildError(str(failed), replace(where, prop="expr")) from None
-        text = self.formatted(field, value, deferral.record)
+        names = {**deferral.names, "FINAL": final}
+        record = deferral.record
+        value = evaluate_at(field.expr, names, self.file, field.path, "expr", record)
+        text = self.formatted(field, value, record)
         metrics = self.fonts[mark.font]
         wrapped = wrap(text, mark.box.width, metrics)
         for character in wrapped.missing:
@@ -965,12 +959,12 @@ class Measurer:
         if not field.stretch:
             lines = lines[: fitting_lines(lines, room, metrics.leading)]
         height = round_points(len(lines) * metrics.leading)
-        if not fits(height, room):
+        if field.stretch and not fits(height, room):
             raise BuildError(
                 f"the deferred value {quote(text)} needs {number(height)} pt"
                 f" and its placeholder{described(field)} reserved"
                 f" {number(room)} pt; size the placeholder for the worst case",
-                where,
+                Location(file=self.file, path=field.path, record=record),
             )
         down = round_points(mark.box.y + VALIGN[field.valign] * (room - height))
         return replace(
@@ -1218,15 +1212,17 @@ def deferrals(
 def described(field: Field) -> str:
     """Return how an error names a deferred field's placeholder.
 
+    Only a field that stretches can outgrow its placeholder,
+    and validation refuses one without ``text`` or ``data``.
+
     Args:
-        field: The node.
+        field: The node, which stretches.
 
     """
     if field.text is not None:
         return f" {quote(field.text)}"
-    if field.data is not None:
-        return f", the data node {quote(field.data)},"
-    return ", which is empty,"
+    assert field.data is not None
+    return f", the data node {quote(field.data)},"
 
 
 def extent(placed: Placement, mark: Mark) -> Extent:

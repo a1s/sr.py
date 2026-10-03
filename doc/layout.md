@@ -1081,9 +1081,16 @@ in it:
 - **A `column` deferral.** It is resolved when the column ends, against
   the column it ended in, and moving bands afterwards would leave it
   counting rows that are elsewhere. One counts here when it is placed
-  in the frame: in a band of the fragment, in a header or a footer of the
-  frame's columns, or in anything inside them. One outside the frame,
-  in a page header say, leaves the fragment to balance.
+  in the frame: in a band of the fragment, in a header of the frame's
+  columns, or in anything inside them. One outside the frame, in a page
+  header say, leaves the fragment to balance.
+  **A footer is judged from the template.** The page balances before its
+  footers are placed, so the last column's footer comes too late to stop
+  it, and its deferral would count the rows the fill left in that column
+  while sitting under the rows balancing put there. A frame whose columns'
+  footers, or the footers of a frame inside it, hold a `column` deferral
+  is therefore never balanced, on any page, whether or not the deferral
+  prints there.
 - **A band placed outside the frame after the fragment's first one.**
   It interleaves with the columns and would be left behind by anything that moved.
   A group `summary` outside that group's own `columns` block is the usual case.
@@ -1343,15 +1350,15 @@ not the one it left.
 | `column` | at each column eject, and at the end of the report |
 | `page` | at each page eject, and at the end of the report |
 | *group* | when that group breaks, after its `summary` is committed, and at the end of the report |
-| `report` | after the `summary` band is committed |
+| `report` | at the end of the report |
 
-The trailing "and at the end of the report" covers the last page, last column,
-and last group, which end without an eject or a break.
+The end of the report comes after the last page's footers, so it covers the
+last page, last column, and last group, which end without an eject or a break.
 
-A group's deferrals resolve after its `summary`, so both read the same final group
-totals. Report-scoped variables are not reset until after the `summary` is
-committed, for the same reason. See
-[the report boundary](expressions.md#the-report-boundary).
+A group's deferrals resolve after its `summary`, so both read the same final
+group totals. A `report` deferral reads the totals the report's `summary` read,
+since report-scoped variables are not reset before the report ends.
+See [the report boundary](expressions.md#the-report-boundary).
 
 Several things follow from the table, and each is a place
 where two engines could otherwise disagree.

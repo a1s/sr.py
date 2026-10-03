@@ -194,6 +194,7 @@ the reference gave, and names the section of `doc/` that answer became.
 | `deferred/balance-column` | a column deferral in a balanced frame |
 | `deferred/balance-page` | a page deferral in a balanced frame |
 | `deferred/balance-column-footer` | a column deferral in a footer |
+| `deferred/balance-late-footer` | a column deferral only the last footer places |
 | `deferred/balance-outside` | a column deferral outside the frame |
 | `deferred/room` | where a resolved value is set |
 | `deferred/centred` | the arithmetic that centres a resolved value |
