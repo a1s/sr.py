@@ -1450,7 +1450,7 @@ the share of the difference `valign` names, rounded once more:
 top = round(room.top + share × (room.height - value.height))
 ```
 
-with `share` 0 for `top`, 0.5 for `center` and 1 for `bottom`.
+with `share` 0 for `top`, 0.5 for `center`, and 1 for `bottom`.
 It is not recomputed from the element's box.
 The room's top edge rounded a half once already, where the placeholder
 was centred in its box, and recomputing would round that half a second

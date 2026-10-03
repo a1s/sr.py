@@ -1227,10 +1227,10 @@ class Builder:
         for waiting in due:
             if waiting.page == len(self.pages):
                 marks = self.marks
+            elif waiting.page in made:
+                marks = made[waiting.page]
             else:
-                marks = made.setdefault(
-                    waiting.page, list(self.pages[waiting.page].marks)
-                )
+                marks = made[waiting.page] = list(self.pages[waiting.page].marks)
             placeholder = find(marks, waiting.path)
             assert isinstance(placeholder, Text)
             resolved = self.measurer.resolve(waiting.deferral, ending, placeholder)
