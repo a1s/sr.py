@@ -1,0 +1,32 @@
+// probes/deferred/balance-column-footer.kdl -- a column deferral in a footer.
+//
+// Eight rows in two balanced columns with a header and a footer, so the
+// first column holds six and the second two, and balancing would make it
+// four and four.  Only the footer carries a deferral, a `column` one.
+// The reference leaves the page as the fill put it: the first column's
+// footer is resolved at its column eject, before the page is balanced,
+// and would count rows balancing then moves away.  A frame's own header
+// and footer are in its columns as much as its rows are.
+//
+// doc/layout.md#what-is-left-where-the-fill-put-it is what this became.
+
+report name="deferred/balance-column-footer" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  records {
+    member "b" type="int"
+  }
+  layout width=200 height=50 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    columns count=2 gap=10 balance=#true {
+      header height=5 {
+        field expr="'CH col %d' % COLUMN_NUMBER" left=0 top=0 width=90 height=5
+      }
+      footer height=5 {
+        field expr="'CF col %d rows %d' % (COLUMN_NUMBER, FINAL.COLUMN_COUNT)" evaltime="column" left=0 top=0 width=90 height=5
+      }
+    }
+    detail height=5 {
+      field expr="'r%d' % b" left=0 top=0 width=90 height=5
+    }
+  }
+}

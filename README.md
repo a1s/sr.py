@@ -200,10 +200,10 @@ lands outside the printable area is not judged an
 [overflow](doc/layout.md#errors), which is the one row of that table
 neither engine checks. Today it paginates reports of `field`, `line`,
 `rectangle`, and `xref` elements, with groups, columns, band splitting,
-`eject` nodes, keep-together rules, and balanced columns, and writes them
-as NDJSON. Deferred values, barcodes, images, subreports, and PDF are
-the milestones after this one. The cases the differential corpus cannot
-yet compare are listed, with the milestone each waits for, in
+`eject` nodes, keep-together rules, balanced columns, and deferred
+values, and writes them as NDJSON. Barcodes, images, subreports, and PDF
+are the milestones after this one. The cases the differential corpus
+cannot yet compare are listed, with the milestone each waits for, in
 [tests/differential/pending.toml](tests/differential/pending.toml).
 
 The Go implementation is the **oracle**: a reference binary whose *outputs*

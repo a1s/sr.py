@@ -97,7 +97,7 @@ Nested objects come from nested JSON and are declared
 | `VERTICAL_POSITION` | float, points | Distance from the top of the frame to where the section being measured begins. |
 | `VERTICAL_SPACE` | float, points | Space from there to the frame's reserved bottom — what the section has left to grow into. Across columns, that stops above their footers. |
 | `BUILD_TIME` | time | When this run started. Constant for the whole run. |
-| `FINAL` | namespace | Every name above, and every `variable`, read at the end of a scope instead of now. See [`FINAL`](#final). |
+| `FINAL` | namespace | Every name above but the two vertical ones, and every `variable`, read at the end of a scope instead of now. See [`FINAL`](#final). |
 
 The names divide into two families. `DATA_COUNT` and `ITEM_NUMBER` describe
 the **input**: how many records there are, and which one is current. Everything
@@ -153,10 +153,10 @@ summary read, as [when a scope ends](layout.md#when-a-scope-ends) says.
 
 ### `FINAL`
 
-Every name in the table above, and every `variable`, is also reachable as
-`FINAL.`*name*, which reads the value that name holds when a scope **ends**
-rather than the value it holds now. Which scope is the element's
-[`evaltime`](template.md#content-sources).
+Every name in the table above but two, and every `variable`, is also
+reachable as `FINAL.`*name*, which reads the value that name holds
+when a scope **ends** rather than the value it holds now. Which scope
+is the element's [`evaltime`](template.md#content-sources).
 
 ```kdl
 field expr="'Page %d of %d' % (PAGE_NUMBER, FINAL.PAGE_NUMBER)" \
@@ -177,11 +177,23 @@ for any of them:
 | `FINAL.PAGE_COUNT`, `evaltime="page"` | detail rows on this page |
 | `FINAL.customer_COUNT`, `evaltime="customer"` | rows in this customer's group |
 | `FINAL.total_amount`, `evaltime="report"` | a report-scoped variable's final total |
-| `FINAL.THIS.region`, `evaltime="page"` | a field of the last record on this page |
+| `FINAL.THIS.region`, `evaltime="page"` | a field of the record the page ends at |
+
+The record a page ends at is `THIS` as that page's footer sees it: the last
+that entered the record loop, which is the record whose band did not fit
+where a band moved to the next page, and the last of the runs that ended
+where the page ends at a group break. See
+[what a header or footer sees](layout.md#what-a-header-or-footer-sees).
 
 `FINAL` holds only names whose value changes as the report is built: the predefined
 variables and the `variable` accumulators. A `parameter` is constant, and a record
 field belongs to a record rather than to a scope — reach one through `FINAL.THIS`.
+
+Two predefined variables are not in it. `VERTICAL_POSITION` and
+`VERTICAL_SPACE` describe a band being measured, where it begins
+and what it has left, and when a scope ends no band is being measured,
+so neither has a value to give. `FINAL` is not in itself either.
+Naming any of the three after `FINAL.` is a validation error.
 
 `FINAL` lives in **`expr` and nowhere else.** `expr` is the only property whose
 evaluation `evaltime` defers; a `printwhen`, a `style when`, an `outline title`

@@ -1,0 +1,40 @@
+// probes/deferred/page-count.kdl -- a page count, and what a deferral reads.
+//
+// Seven records over two pages, and the deferrals a report most often carries.
+// The reference answers doc/layout.md's two rules for what a deferred
+// expression sees:
+//
+//   * `PAGE_NUMBER` is the page the field prints on and `FINAL.PAGE_NUMBER`
+//     the last page, so the footer says "Page 1 of 2" and "Page 2 of 2";
+//   * a `page` deferral reads the page as it ends: `FINAL.PAGE_COUNT` is
+//     the rows on that page, and `FINAL.tot` the page's total, on both pages;
+//   * the fifth record's detail is measured on page 1, does not fit, and is
+//     measured again on page 2: its fold is rolled back, so page 1's total
+//     is 10, and what it registers is what the second measurement read,
+//     `pc 0` on page 2.
+//
+// The placeholder "rows 99999" is measured as written.
+// `format` is applied to the expression's value and
+// not to the placeholder, which `%05d` could not take.
+//
+// doc/layout.md#what-a-deferred-expression-sees is what this became.
+
+report name="deferred/page-count" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  records {
+    member "a" type="int"
+  }
+  variable "tot" expr="a" calc="sum" reset="page"
+  layout width=200 height=40 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    footer height=10 {
+      field expr="'Page %d of %d' % (PAGE_NUMBER, FINAL.PAGE_NUMBER)" evaltime="report" text="Page 999 of 999" left=0 top=0 width=60 height=5
+      field expr="FINAL.PAGE_COUNT" evaltime="page" format="rows %05d" text="rows 99999" left=70 top=0 width=60 height=5
+      field expr="'tot now %s final %s' % (tot, FINAL.tot)" evaltime="page" left=0 top=5 width=100 height=5
+    }
+    detail height=5 {
+      field expr="'r%d a%d' % (ITEM_NUMBER, a)" left=0 top=0 width=40 height=5
+      field expr="'pc %d final %d' % (PAGE_COUNT, FINAL.PAGE_COUNT)" evaltime="page" left=50 top=0 width=60 height=5
+    }
+  }
+}

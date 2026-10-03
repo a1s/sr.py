@@ -876,10 +876,12 @@ holding such a field could ever split, which would make `split=#true` inert in m
 templates that set it. Under this one it spans its line, and cuts below that line
 are legal.
 
-Barcodes, images, and band-spanning rectangles block a cut anywhere inside their span.
-A `rectangle` has no natural size to shrink to — its content is its box — so one given
-`bottom=0` genuinely does span the band and genuinely does block. A `stretch` field
-permits cuts between its lines.
+Barcodes, images, and band-spanning rectangles block a cut anywhere
+inside their span. A `rectangle` has no natural size to shrink to,
+its content is its box, so one given `bottom=0` genuinely does span
+the band and genuinely does block. A `stretch` field permits cuts
+between its lines, unless it is [deferred](#placeholders): its lines
+are then its placeholder's, and it blocks like the rest.
 
 #### 2. The cut must divide content
 
@@ -968,7 +970,8 @@ before the page ends and its header placed when the next one begins.
    placed flush at its reserved bottom band. Footers are built against the
    **outgoing** context, so a page footer reports the page it belongs to.
 2. **Resolve deferred values** for the scopes that just ended — `column` for a
-   column eject, `page` and `column` for a page eject.
+   column eject, `page` and `column` for a page eject. They read the context
+   the footers were built against; see [when a scope ends](#when-a-scope-ends).
 3. **Advance.** A column eject:
    - resets `COLUMN_COUNT`;
    - applies `column`-scoped variable resets, then `column`-scoped iterations;
@@ -1076,7 +1079,18 @@ in it:
 - **A subreport.** Its bands are the child engine's rather than a band of the
   host's, and the frame has no way to carry them along when it moves one.
 - **A `column` deferral.** It is resolved when the column ends, against
-  the column it ended in.
+  the column it ended in, and moving bands afterwards would leave it
+  counting rows that are elsewhere. One counts here when it is placed
+  in the frame: in a band of the fragment, in a header of the frame's
+  columns, or in anything inside them. One outside the frame, in a page
+  header say, leaves the fragment to balance.
+  **A footer is judged from the template.** The page balances before its
+  footers are placed, so the last column's footer comes too late to stop
+  it, and its deferral would count the rows the fill left in that column
+  while sitting under the rows balancing put there. A frame whose columns'
+  footers, or the footers of a frame inside it, hold a `column` deferral
+  is therefore never balanced, on any page, whether or not the deferral
+  prints there.
 - **A band placed outside the frame after the fragment's first one.**
   It interleaves with the columns and would be left behind by anything that moved.
   A group `summary` outside that group's own `columns` block is the usual case.
@@ -1319,6 +1333,16 @@ and the function is called. Everything else it sees is the snapshot.
 That is why the snapshot is per element rather than per band: two fields
 in one footer may sit at the same place but name different things.
 
+**An element is registered when its band is placed, not when it is
+measured.** A band is measured more often than it is placed: a header
+or footer once to reserve its space and once to be built, a band
+again after an eject it caused, and every band a
+[keep-together](#keeping-content-together) lookahead reaches.
+Only the measurement that reaches the page registers anything,
+so the snapshot is the one that band was placed from. A row that ejects
+and is measured again on the next page reads that page's `PAGE_COUNT`,
+not the one it left.
+
 ### When a scope ends
 
 | `evaltime` | Resolved |
@@ -1326,15 +1350,46 @@ in one footer may sit at the same place but name different things.
 | `column` | at each column eject, and at the end of the report |
 | `page` | at each page eject, and at the end of the report |
 | *group* | when that group breaks, after its `summary` is committed, and at the end of the report |
-| `report` | after the `summary` band is committed |
+| `report` | at the end of the report |
 
-The trailing "and at the end of the report" covers the last page, last column,
-and last group, which end without an eject or a break.
+The end of the report comes after the last page's footers, so it covers the
+last page, last column, and last group, which end without an eject or a break.
 
-A group's deferrals resolve after its `summary`, so both read the same final group
-totals. Report-scoped variables are not reset until after the `summary` is
-committed, for the same reason — see
-[the report boundary](expressions.md#the-report-boundary).
+A group's deferrals resolve after its `summary`, so both read the same final
+group totals. A `report` deferral reads the totals the report's `summary` read,
+since report-scoped variables are not reset before the report ends.
+See [the report boundary](expressions.md#the-report-boundary).
+
+Several things follow from the table, and each is a place
+where two engines could otherwise disagree.
+
+- **A scope's deferrals resolve in the order they were placed.**
+  It decides which of two failing expressions is reported,
+  and the order of the glyph warnings their values raise.
+- **An eject resolves after its footers**, which is step 2 of the
+  [sequence](#sequence), so a deferral in a footer resolves with the
+  scope that footer closes. `FINAL` then reads what the footers read.
+  A page that ends at a group break, with nothing of the new record on
+  it, is built against the context the break's summaries were built
+  in, as [what a header or footer sees](#what-a-header-or-footer-sees)
+  says, and so is its `FINAL`: `FINAL.THIS` is the record the page
+  ends with, and the group's names are the run that ended.
+- **Every eject ends a column**, in whichever frame it happens.
+  A `column` deferral outside any frame with columns, in a page
+  header say, resolves at the first column eject on its page,
+  and at the page eject where there is none.
+- **Groups that break together resolve innermost first**, each after its
+  own summary, or where its summary would go if it has none. A deferral
+  that an outer group's summary registers for an inner group is placed
+  after the inner group has resolved, and waits for its next break.
+- **A lookahead resolves nothing.** Keep-together measures what the
+  record loop would place, closing groups as it goes, and puts all of it
+  back. Nothing it measures was registered, and nothing already waiting
+  is resolved against a run it only measured.
+- **At the end of the report everything still waiting resolves**, after
+  the last page's footers, whatever its scope. The groups' last runs have
+  resolved by then, as each closed; what remains was placed after them,
+  in the report's summary or the last page's footers among others.
 
 ### Placeholders
 
@@ -1342,26 +1397,68 @@ A placeholder is **required** exactly when the deferred element's own size depen
 on its content: a `field` with `stretch=#true`, or any `barcode`. In both cases the
 box grows to fit, so the space it will need cannot be known from the geometry alone.
 
-Everywhere else the resolved box is content-independent — geometry resolution always
-produces a complete box — so there is nothing to reserve and the placeholder is
-optional.
+Everywhere else the resolved box is content-independent, because geometry
+resolution always produces a complete box, so there is nothing to reserve
+and the placeholder is optional.
 
 The placeholder is the element's `text` or `data`, and the band is measured from it.
 Validation rejects a deferred element that needs one and has none. See
 [content sources](template.md#content-sources).
 
+**It is measured as written.** `format` is applied to what `expr` resolves to,
+and the placeholder stands in for that result rather than feeding it:
+`format="rows %05d" text="rows 99999"` is a placeholder of ten characters,
+not a value `%05d` would refuse. An element without one is measured as
+empty text, which is one empty line.
+
+**It is never drawn**, so a character its font lacks raises no
+[glyph warning](template.md#missing-glyphs). The value raises
+its own when it is set, since that is the text the page shows.
+
+A deferred `stretch` field is **not cut between its lines** when its band
+[splits](#legal-split-points). Its lines are the placeholder's, which are
+replaced when the scope ends, so a cut between them would divide lines
+that are not the ones printed. It blocks a cut anywhere inside its span,
+as an element that cannot split does.
+
 ### Re-measurement
 
-After substitution the element is re-measured:
+When the scope ends the value is formatted and wrapped to the box's width,
+and set in **the room the placeholder reserved**. That room is the
+placeholder's own text: the box of the mark it was measured into,
+which went wherever the band was committed, split, or balanced.
+It is not the element's box. A field 30 pt tall whose placeholder
+is one line has a room one line tall.
 
-- **Height unchanged or smaller** — accepted. The box shrinks to the resolved
-  value, a barcode's on both axes, and the element's `halign` and `valign`
-  re-anchor it inside the room the placeholder reserved, so the whitespace
-  falls on the side the alignment does not name.
-- **Height larger** — **error**, naming the field, its placeholder, and both
-  heights.
+- **A field that does not stretch** keeps the lines that fit the room and
+  drops the rest, at a line boundary and keeping one at least, as it drops
+  the lines that do not fit its box. A value may therefore lose lines that
+  the box had room for, and a field with no placeholder at all keeps one.
+- **A field that stretches** drops nothing, so a value that needs more lines
+  than the room holds is an **error**, naming the field, the value,
+  its placeholder, both heights, and the record the field was built for.
+  That holds under a `maxheight` too: the clamp bounds the box the field
+  takes, and the box was taken by the placeholder.
+- **What is kept sits in the room by `valign`**, so a value shorter than its
+  placeholder leaves the whitespace on the side the alignment does not name.
+  The box keeps its width, and `align` places each line in it as before.
 
-So a placeholder must be sized for the worst case: `text="Page 999 of 999"`, 
+The new top edge is the room's top edge, already rounded, plus
+the share of the difference `valign` names, rounded once more:
+
+```
+top = round(room.top + share × (room.height - value.height))
+```
+
+with `share` 0 for `top`, 0.5 for `center`, and 1 for `bottom`.
+It is not recomputed from the element's box.
+The room's top edge rounded a half once already, where the placeholder
+was centred in its box, and recomputing would round that half a second
+time: for a field 9.607 pt tall at `top=0.37`, centring a two-line room
+and then one line in it gives 2.773, and centring the one line in the box
+gives 2.774.
+
+So a placeholder must be sized for the worst case: `text="Page 999 of 999"`,
 not `text="Page 1 of 1"`.
 
 ## Subreports
@@ -1544,7 +1641,7 @@ Each of these names the template node, the record index, and the measured values
 | Band taller than an empty frame, splitting allowed, some cut point exists | split there, giving up every split preference |
 | Band taller than an empty frame, splitting allowed, no cut point exists | **overflow** |
 | A mark lands outside the page's printable area | **overflow** |
-| Deferred value taller than its placeholder | error |
+| Deferred stretch field whose value is taller than its placeholder | error |
 | Header and footer reservations together exceed the frame | error |
 | Barcode content not encodable in the selected type | error |
 | Expression type mismatch, missing field, or a `null` in a member that is not `nullable` | error |

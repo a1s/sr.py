@@ -1,0 +1,65 @@
+// probes/deferred/scopes.kdl -- when each scope ends, and what FINAL holds.
+//
+// Seven records whose key runs 1 1 2 2 2 2 3, over two pages, with a deferral
+// of every scope.  The reference resolves each where doc/layout.md's table
+// says, and FINAL reads the report as it stands at that moment:
+//
+//   * a group's deferrals resolve after its summary, against the
+//     previous record: the title of run a1 reads `A_COUNT` 2, the
+//     total 3, `ITEM_NUMBER` 2 and that record's `b`; run a2, which
+//     crosses the page, reads `A_PAGE_NUMBER` 2;
+//   * a deferral in a detail row of the group resolves with the group,
+//     so every row of a run reads the `REPORT_COUNT` its run ends with;
+//   * a `page` deferral in the header reads the page as it ends, `THIS`
+//     included: the fifth record on page 1, whose detail did not fit and
+//     is the record the page ended at, and the last record on page 2;
+//   * one in the report's title is the first page's;
+//   * a group deferral in a page footer resolves at that group's break,
+//     where page 1's reads the run it was placed in;
+//   * every deferral still waiting at the end resolves after the
+//     last page's footers, so the last footer's `report` deferral
+//     is the last page's too.
+//
+// Nothing here reads a group's names after its last run, where
+// doc/expressions.md#between-a-groups-runs leaves them unspecified;
+// the footer's group field is printed on page 1 only, for that reason.
+//
+// doc/layout.md#when-a-scope-ends is what this became.
+
+report name="deferred/scopes" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  records {
+    member "a" type="int"
+    member "b" type="int"
+  }
+  variable "gsum" expr="b" calc="sum" reset="group" resetgrp="A"
+  variable "psum" expr="b" calc="sum" reset="page"
+  variable "rsum" expr="b" calc="sum"
+  layout width=200 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    title height=5 {
+      field expr="'T pg %d/%d pc %d rsum %s' % (PAGE_NUMBER, FINAL.PAGE_NUMBER, FINAL.PAGE_COUNT, FINAL.rsum)" evaltime="page" left=0 top=0 width=190 height=5
+    }
+    header height=5 {
+      field expr="'H pg %d pc %d/%d psum %s/%s this %s/%s' % (PAGE_NUMBER, PAGE_COUNT, FINAL.PAGE_COUNT, psum, FINAL.psum, THIS.b if THIS else None, FINAL.THIS.b)" evaltime="page" left=0 top=0 width=190 height=5
+    }
+    footer height=5 {
+      field expr="'F pg %d/%d' % (PAGE_NUMBER, FINAL.PAGE_NUMBER)" evaltime="report" left=0 top=0 width=90 height=5
+      field expr="'FA %s/%s' % (A_COUNT, FINAL.A_COUNT)" evaltime="A" printwhen="PAGE_NUMBER == 1" left=100 top=0 width=90 height=5
+    }
+    group "A" expr="a" {
+      title height=5 {
+        field expr="'AT a%d cnt %d/%d gsum %s/%s it %d/%d pg %d/%d this %d' % (a, A_COUNT, FINAL.A_COUNT, gsum, FINAL.gsum, ITEM_NUMBER, FINAL.ITEM_NUMBER, A_PAGE_NUMBER, FINAL.A_PAGE_NUMBER, FINAL.THIS.b)" evaltime="A" left=0 top=0 width=190 height=5
+      }
+      summary height=5 {
+        field expr="'AS a%d cnt %d/%d it %d/%d' % (a, A_COUNT, FINAL.A_COUNT, ITEM_NUMBER, FINAL.ITEM_NUMBER)" evaltime="A" left=0 top=0 width=190 height=5
+      }
+      detail height=5 {
+        field expr="'  r%d b%d rc %d/%d' % (ITEM_NUMBER, b, REPORT_COUNT, FINAL.REPORT_COUNT)" evaltime="A" left=0 top=0 width=190 height=5
+      }
+    }
+    summary height=5 {
+      field expr="'S pg %d/%d pc %d/%d rsum %s/%s' % (PAGE_NUMBER, FINAL.PAGE_NUMBER, PAGE_COUNT, FINAL.PAGE_COUNT, rsum, FINAL.rsum)" evaltime="report" left=0 top=0 width=190 height=5
+    }
+  }
+}

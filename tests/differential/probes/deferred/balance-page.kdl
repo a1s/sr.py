@@ -1,0 +1,22 @@
+// probes/deferred/balance-page.kdl -- a page deferral in a balanced frame.
+//
+// probes/deferred/balance-column.kdl with the deferral's scope changed
+// to the page.  The reference balances the six rows three and three,
+// since a page's deferrals are resolved after the page has been balanced,
+// and what they read does not depend on which column a row went to.
+//
+// doc/layout.md#what-is-left-where-the-fill-put-it is what this became.
+
+report name="deferred/balance-page" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  records {
+    member "b" type="int"
+  }
+  layout width=200 height=50 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    columns count=2 gap=10 balance=#true
+    detail height=5 {
+      field expr="'r%d row %d of %d' % (b, PAGE_COUNT, FINAL.PAGE_COUNT)" evaltime="page" left=0 top=0 width=90 height=5
+    }
+  }
+}

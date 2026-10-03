@@ -1,0 +1,35 @@
+// probes/deferred/centred.kdl -- the arithmetic that centres a resolved value.
+//
+// Six fields that do not stretch, each with a two-line placeholder centred
+// in a box a little over two lines tall, each resolving to one line.  Which
+// edge the value is centred from decides the last digit, and the reference
+// centres it in the placeholder's room, from the room's own rounded top:
+//
+//   room  = round(top + (height - 9.6) / 2)    0.373, for a height of 9.607
+//   value = round(room + (9.6 - 4.8) / 2)      2.773
+//
+// and not in the field's box, which would round the half once more:
+//
+//   round(top + (height - 4.8) / 2)            2.774
+//
+// Both are the binary64 rounding of doc/layout.md#coordinates-and-rounding.
+// The heights are chosen where the two disagree; across 450 boxes swept
+// while this was written, the first agreed with the reference every time
+// and the second 320 times.
+//
+// doc/layout.md#re-measurement is what this became.
+
+report name="deferred/centred" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    detail {
+      field expr="'x%d' % FINAL.PAGE_NUMBER" evaltime="report" text="1\n2" left=0 top=0.37 width=25 height=9.607 valign="center"
+      field expr="'x%d' % FINAL.PAGE_NUMBER" evaltime="report" text="1\n2" left=30 top=0.37 width=25 height=9.623 valign="center"
+      field expr="'x%d' % FINAL.PAGE_NUMBER" evaltime="report" text="1\n2" left=60 top=0.37 width=25 height=9.629 valign="center"
+      field expr="'x%d' % FINAL.PAGE_NUMBER" evaltime="report" text="1\n2" left=90 top=0.37 width=25 height=9.639 valign="center"
+      field expr="'x%d' % FINAL.PAGE_NUMBER" evaltime="report" text="1\n2" left=120 top=0.37 width=25 height=9.655 valign="center"
+      field expr="'x%d' % FINAL.PAGE_NUMBER" evaltime="report" text="1\n2" left=150 top=0.552 width=25 height=9.639 valign="center"
+    }
+  }
+}

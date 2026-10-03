@@ -1,11 +1,12 @@
 """Layout: a template and records become pages of marks.
 
-Seven modules, layered downward and importing in that order:
+Eight modules, layered downward and importing in that order:
 
 =============  ============================================================
 ``frame``      the frame tree, and the regions bands fill from the top down
 ``context``    the names an expression in a band can see
 ``variables``  accumulators, and the scopes that fold and clear them
+``defer``      deferred elements, what they read, and the register of them
 ``measure``    one band, measured: marks at band-relative coordinates
 ``place``      where a measured band may be cut, and the halves a cut makes
 ``columns``    balancing a page's bands over a frame's columns
@@ -20,10 +21,10 @@ are all consequences of that separation.
 
 What is here is the whole of pagination: frames and columns, the four
 branches of placing a band, splitting, `eject` nodes and the eject
-sequence, groups, keep-together, and balancing.  Deferred evaluation
-and subreports are not, nor are barcodes, images, and outline entries
-inside a band, and each raises :class:`~sr.errors.Unsupported` naming
-the milestone that brings it.
+sequence, groups, keep-together, and balancing, and deferred evaluation
+on top of it.  Subreports are not, nor are barcodes, images, and outline
+entries inside a band, and each raises :class:`~sr.errors.Unsupported`
+naming the milestone that brings it.
 
 """
 

@@ -1,0 +1,26 @@
+// probes/deferred/balance-column.kdl -- a column deferral in a balanced frame.
+//
+// Six rows that fit the first of two balanced columns, each row reading its
+// column's final count.  Without the deferral the page balances three and
+// three, as probes/pagination/balance.kdl shows.  With it the reference
+// leaves the six where the fill put them: the deferral is resolved when
+// the column ends, against that column, and moving rows afterwards would
+// leave it counting rows that are no longer there.
+//
+// doc/layout.md#what-is-left-where-the-fill-put-it is what this became,
+// and probes/deferred/balance-page.kdl is the same page with a `page`
+// deferral, which balances.
+
+report name="deferred/balance-column" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  records {
+    member "b" type="int"
+  }
+  layout width=200 height=50 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    columns count=2 gap=10 balance=#true
+    detail height=5 {
+      field expr="'r%d row %d of %d' % (b, COLUMN_COUNT, FINAL.COLUMN_COUNT)" evaltime="column" left=0 top=0 width=90 height=5
+    }
+  }
+}

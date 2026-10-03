@@ -1,0 +1,39 @@
+// probes/deferred/balance-late-footer.kdl -- a column deferral
+// the last column's footer places after the page has balanced.
+//
+// The rows of probes/deferred/balance-column-footer.kdl, six in the first
+// column and two in the second, with the footer's `column` deferral printed
+// only in the second column.  The first column's footer places nothing, so
+// no deferral is on the page when it balances.  The page balances before
+// its footers are placed, at a page break and at the end of the report
+// alike, and the second column's footer comes after.
+//
+// The reference balances the page, four rows and four, and the footer
+// under the second column then says it holds two.  doc/ judges a footer
+// from the template instead: a frame whose columns' footers hold a
+// `column` deferral is never balanced, so the page stays six and two
+// and the footer counts the rows above it.
+//
+// Registered as the divergence `footer-deferral-balance`.
+// doc/layout.md#what-is-left-where-the-fill-put-it is what this became.
+
+report name="deferred/balance-late-footer" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  records {
+    member "b" type="int"
+  }
+  layout width=200 height=50 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    columns count=2 gap=10 balance=#true {
+      header height=5 {
+        field expr="'CH col %d' % COLUMN_NUMBER" left=0 top=0 width=90 height=5
+      }
+      footer height=5 {
+        field expr="'CF col %d rows %d' % (COLUMN_NUMBER, FINAL.COLUMN_COUNT)" evaltime="column" printwhen="COLUMN_NUMBER == 2" left=0 top=0 width=90 height=5
+      }
+    }
+    detail height=5 {
+      field expr="'r%d' % b" left=0 top=0 width=90 height=5
+    }
+  }
+}

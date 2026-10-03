@@ -1,0 +1,26 @@
+// probes/deferred/split.kdl -- a deferred stretch field in a band that splits.
+//
+// A title leaves 10 pt of the first page, and a detail band of two
+// stretch fields, four lines each, 19.2 pt in all, may split with `orphans`
+// and `widows` 1.  Without the deferral the band splits two lines down,
+// as probes/pagination/split.kdl does.  With the first field deferred
+// the reference moves the whole band to the next page: a deferred field's
+// lines are its placeholder's, and are replaced when its scope ends,
+// so a cut between them would divide lines that are not the ones printed.
+// It blocks a cut as an element that cannot split does.
+//
+// doc/layout.md#legal-split-points is what this became.
+
+report name="deferred/split" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  layout width=200 height=40 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    title height=20 {
+      field text="title" left=0 top=0 width=40 height=5
+    }
+    detail split=#true orphans=1 widows=1 {
+      field expr="'x%d\\ny%d' % (FINAL.PAGE_NUMBER, PAGE_NUMBER)" evaltime="report" stretch=#true text="1\n2\n3\n4" left=0 top=0 width=40
+      field text="a\nb\nc\nd" stretch=#true left=50 top=0 width=40
+    }
+  }
+}

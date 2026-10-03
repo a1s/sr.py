@@ -1,0 +1,25 @@
+// probes/deferred/glyphs.kdl -- the glyph warnings of a deferred field.
+//
+// A deferred field whose placeholder holds one character the font lacks,
+// U+4E00, and whose value holds another, U+4E2D.  The placeholder is
+// measured and never drawn; the value is drawn, as an empty box.
+//
+// The reference warns about the placeholder's character,
+// which no page shows, and says nothing about the value's,
+// which every page does.  doc/ says the warning is about
+// a character the document draws as `.notdef`: here it is
+// raised for the value, when the value is set, and the placeholder
+// raises none.
+//
+// Registered as the divergence `deferred-glyph-warnings`.
+// doc/layout.md#placeholders is what this became.
+
+report name="deferred/glyphs" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    detail height=5 {
+      field expr="'page %d \u{4e2d}' % FINAL.PAGE_NUMBER" evaltime="report" text="\u{4e00}" left=0 top=0 width=60 height=5
+    }
+  }
+}
