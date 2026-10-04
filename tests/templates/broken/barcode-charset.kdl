@@ -1,0 +1,21 @@
+// broken/barcode-charset.kdl -- a charset on a 1-D type, and one no type has.
+//
+// expect: Code128 encodes characters rather than bytes, so it takes no charset
+// expect: 2of5i encodes characters rather than bytes, so it takes no eci
+// expect: unknown value "latin-1"; want one of: iso-8859-1 utf-8
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=40 {
+      // A 1-D type takes ASCII only, which every charset spells alike.
+      barcode type="Code128" text="x" charset="utf-8"
+      barcode type="2of5i" text="12" eci=#false
+      // The charset is named as the ECI registry names it.
+      barcode type="Aztec" text="x" charset="latin-1"
+      // Accepted: both are the 2-D types' own.
+      barcode type="QR-M" text="x" charset="iso-8859-1" eci=#true
+    }
+  }
+}

@@ -1,0 +1,25 @@
+// probes/barcode/split.kdl -- a barcode in a band that splits.
+//
+// doc/layout.md#legal-split-points lets a cut fall between the lines
+// of a stretch field and nowhere through a mark that cannot split, and
+// a barcode is one.  The band here is a field of sixty lines, 12 apart,
+// on pages 300 tall, so with nothing else in it the band would be cut
+// at 300 and 600.  A QR symbol 37 tall spans 280 to 317, across the
+// first, and the reference cuts at 276 instead, the last line boundary
+// above it; the symbol starts the second page 4 down.  A vertical
+// Code 128 symbol 88 tall spans 560 to 648, across the second page's
+// natural cut at 576, and the reference cuts at 552.
+//
+// doc/layout.md#band-splitting is what this became.
+
+report name="barcode/split" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=500 height=300 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail split=#true {
+      field expr="'\\n'.join(['line %d' % i for i in range(60)])" left=0 width=60 stretch=#true
+      barcode type="QR-H" text="split across the page" module=1 left=100 top=280
+      barcode type="Code128" text="ABC" module=1 left=200 top=560 vertical=#true
+    }
+  }
+}

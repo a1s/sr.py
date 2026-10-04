@@ -1,0 +1,45 @@
+// probes/barcode/grow.kdl -- what `grow` expands a symbol to.
+//
+// `grow=#true` expands a symbol to use its box.  The reference:
+//
+// - draws a 1-D symbol's bars across the whole box: `a` is 40 tall
+//   in a box 40 tall, and `b`, vertical, 50 wide in a box 50 wide.
+//   Bars never get shorter than they would be without it, so `c`,
+//   in a box 10 tall, keeps its quarter of an inch;
+// - gives a 2-D symbol the module that fills the box's shorter side:
+//   `d`, 29 modules in a box 58 wide and 100 tall, takes a module of 2,
+//   `e` one of 3 and is centred in the rest of its box, and `f` one of 3;
+// - never shrinks a symbol: `g`, in a box 7 wide, keeps its module;
+// - has nothing to expand into where the box's height is the symbol's
+//   own: `h` declares a width and no height, and keeps its module;
+// - expands only into what a clamp leaves: `i` is clamped to 58 wide;
+// - expands a symbol in a box that took its height from the band:
+//   `j` declared a `bottom`, and its bars reach the band's.
+//
+// Each box here divides into whole modules, so the module is exact;
+// see probes/barcode/rounding.kdl for one that does not.
+// doc/layout.md#a-barcode-in-its-box is what this became.
+
+report name="barcode/grow" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=500 height=800 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail {
+      // a, b, c
+      barcode type="Code128" text="A" module=1 grow=#true left=0 top=0 height=40
+      barcode type="Code128" text="A" module=1 grow=#true left=100 top=0 width=50 vertical=#true
+      barcode type="Code128" text="A" module=1 grow=#true left=200 top=0 height=10
+      // d, e, f
+      barcode type="QR-L" text="A" module=1 grow=#true left=0 top=100 width=58 height=100
+      barcode type="DataMatrix" text="A" module=1 grow=#true left=100 top=100 width=36 height=50 valign="center"
+      barcode type="Aztec" text="A" module=1 grow=#true left=200 top=100 width=45 height=45 vertical=#true
+      // g, h
+      barcode type="QR-L" text="A" module=1 grow=#true left=300 top=100 width=7 height=7 halign="right"
+      barcode type="QR-L" text="A" module=1 grow=#true left=400 top=100 width=80
+      // i
+      barcode type="QR-L" text="A" module=1 grow=#true left=0 top=250 width=100 maxwidth=58 height=100
+      // j
+      barcode type="Code128" text="A" module=1 grow=#true left=200 top=250 bottom=0
+    }
+  }
+}

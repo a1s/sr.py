@@ -510,27 +510,50 @@ The template's `scale` and `proportional` do not appear — both are resolved aw
 ```json
 {
   "kind": "barcode",
-  "box": { "x": 42.52, "y": 60, "width": 90.7, "height": 36 },
+  "box": { "x": 42.52, "y": 60, "width": 66, "height": 18 },
   "type": "Code128",
-  "value": "Code 128",
-  "module": 10,
+  "value": "A",
+  "module": 1,
   "vertical": false,
-  "ink": "#000000",
-  "paper": "#FFFF00",
-  "stripes": [10, 2, 1, 2, 2, 2, 2, 1, 1, 4, 10]
+  "ink": "#000080",
+  "paper": "#FFE9B0",
+  "stripes": [10, 2, 1, 1, 2, 1, 4, 1, 1, 1, 3, 2, 3, 1, 3, 1, 1, 2, 3, 2,
+              3, 3, 1, 1, 1, 2, 10]
 }
 ```
 
-`stripes` is the encoded geometry, in modules. Both arrays alternate **light
-and dark starting with light**, so index 0 is a light run, index 1 a dark one,
-and so on. Polarity is positional, and nothing records it separately:
+```json
+{
+  "kind": "barcode",
+  "box": { "x": 42.52, "y": 90, "width": 15, "height": 15 },
+  "type": "Aztec",
+  "value": "A",
+  "module": 1,
+  "vertical": false,
+  "ink": "#000000",
+  "rows": [[4, 2, 3, 4, 1, 1], [2, 3, 2, 1, 2, 2, 3], [1, 3, 8, 1, 2],
+           [1, 13, 1], [0, 1, 2, 1, 7, 1, 1, 1, 1], …]
+}
+```
 
-- **1-D types**: a flat array of alternating space and bar widths. The leading
-  quiet zone is simply the first element and the trailing one the last.
-- **2-D types**: an array of rows, each an array of alternating light and dark
-  run lengths. A row that opens dark opens with a **zero-length light run**,
-  which keeps the alternation unambiguous while letting the runs still sum to
-  the whole extent. Only a symbology that asks for no quiet zone produces one.
+The fields are in that order. A 1-D symbol carries `stripes` and a 2-D one
+`rows`, never both, and either is the encoded geometry, in modules, by the
+rules of [barcode.md](barcode.md). Both alternate **light and dark starting
+with light**, so index 0 is a light run, index 1 a dark one, and so on.
+Polarity is positional, and nothing records it separately:
+
+- **1-D types**: `stripes` is a flat array of alternating space and bar
+  widths. The leading quiet zone is simply the first element and the
+  trailing one the last.
+- **2-D types**: `rows` is an array of rows, from the top, each an array
+  of alternating light and dark run lengths from the left. A row that opens
+  dark opens with a **zero-length light run**, which keeps the alternation
+  unambiguous while letting the runs still sum to the whole extent. Only
+  a symbology that asks for no quiet zone produces one. A row ends with
+  its last run, never with an empty one.
+
+With `vertical` both arrays are what they would be without it, and only
+the box is turned; [render.md](render.md#barcodes) says how they are drawn.
 
 Quiet zones are part of the geometry for every type, because a symbol drawn
 without its margin does not scan. Each side carries what its standard requires:
@@ -543,9 +566,11 @@ is filled over the whole box before the bars, so the quiet zone carries that
 colour too; absent, nothing is laid down and whatever is beneath the mark shows
 through.
 
-A 1-D symbol's extent across the coding direction — its bar height — is fifteen
-per cent of the symbol's length or a quarter of an inch, whichever is greater,
-unless `grow` expands it to the box.
+`box` is the symbol's own, placed in the element's box as
+[layout.md](layout.md#a-barcode-in-its-box) describes, so it is the area the
+symbol covers and not the box the template declared. A 1-D symbol's extent
+across the coding direction, its bar height, is 15% of the symbol's length or
+a quarter of an inch, whichever is greater, unless `grow` expands it to the box.
 
 `module` is the narrow-element width in points, after any `grow` adjustment.
 `value` is the encoded string, recorded so a reader can verify the encoding
@@ -608,8 +633,9 @@ produced in the test suite.
 8. Every `text` mark has at least one line, and `lines` count times `leading` does
    not exceed the box height by more than the rounding tolerance.
 9. `stripes` sums, times `module`, equal the box extent along the coding
-   direction, within tolerance. For a 2-D symbol every row sums alike, and
-   the row count times `module` equals the extent across that direction.
+   direction, within tolerance. For a 2-D symbol every row of `rows` sums
+   alike, that sum times `module` equals the extent along the coding
+   direction, and the row count times `module` the extent across it.
 10. Outline `level` never jumps by more than one from the previous entry.
 11. Every `image` mark carries exactly one of `data` and `file`.
 12. Every `barcode` mark carries an `ink` colour.

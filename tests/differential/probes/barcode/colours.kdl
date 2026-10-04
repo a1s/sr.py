@@ -1,0 +1,38 @@
+// probes/barcode/colours.kdl -- the colours a barcode mark carries.
+//
+// `ink` is always written, black where the template named none, and
+// `paper` only where it named one.  Neither is taken from a `style`:
+// the band's style here sets a red `color` and a navy `bgcolor`,
+// and neither reaches a symbol.
+//
+// Every pair here is one the reference loads, and they are chosen
+// near the edges of the rule doc/template.md#colour states, which
+// works from each colour's red reflectance, its red channel taken
+// out of sRGB's transfer curve:
+//
+// - navy, indigo, maroon and dark green bars on white, yellow, orange,
+//   pink and red backgrounds, which the table in doc/ says read;
+// - `#BB0000` bars, which reflect 49.7% of red light, on white,
+//   just under the half of the background they must stay below;
+// - black on `#AA0000`, a background reflecting 40.2%, just past
+//   the 40 points the two must differ by.
+//
+// doc/template.md#colour is what this became.
+
+report name="barcode/colours" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=400 height=800 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="red" bgcolor="navy"
+    detail {
+      barcode type="Code128" text="A" module=1 left=0 top=0
+      barcode type="Code128" text="A" module=1 left=0 top=20 ink="navy" paper="#FFE9B0"
+      barcode type="Code128" text="A" module=1 left=0 top=40 ink="#4B0082" paper="yellow"
+      barcode type="Code128" text="A" module=1 left=0 top=60 ink="maroon" paper="orange"
+      barcode type="Code128" text="A" module=1 left=0 top=80 ink="#006400" paper="pink"
+      barcode type="Code128" text="A" module=1 left=0 top=100 ink="navy" paper="red"
+      barcode type="Code128" text="A" module=1 left=0 top=120 ink="#BB0000"
+      barcode type="Code128" text="A" module=1 left=0 top=140 ink="black" paper="#AA0000"
+      barcode type="QR-L" text="A" module=1 left=100 top=0 ink="navy" paper="white"
+    }
+  }
+}

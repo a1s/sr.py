@@ -204,6 +204,21 @@ the reference gave, and names the section of `doc/` that answer became.
 | `deferred/at-a-break` | `FINAL` where a page ends at a group break |
 | `deferred/glyphs` | the glyph warnings of a deferred field |
 | `deferred/final-vertical` | the vertical names, through `FINAL` |
+| `barcode/code128` | which code sets a Code 128 symbol uses |
+| `barcode/code39` | Code 39's wide elements and its check character |
+| `barcode/code93` | Code 93's full ASCII, and its check characters |
+| `barcode/interleaved` | Interleaved 2 of 5's wide elements |
+| `barcode/qr` | a QR symbol's mode, version, and mask |
+| `barcode/datamatrix` | a Data Matrix symbol's encodation and size |
+| `barcode/aztec` | how an Aztec symbol spends its bits, and its size |
+| `barcode/geometry` | where a symbol sits in its box |
+| `barcode/grow` | what `grow` expands a symbol to |
+| `barcode/deferred` | where a deferred barcode's symbol goes |
+| `barcode/colours` | the colours a barcode mark carries |
+| `barcode/band` | what a barcode does to the band around it |
+| `barcode/split` | a barcode in a band that splits |
+| `barcode/rounding` | a barcode's lengths at three decimals |
+| `barcode/charset` | the bytes a 2-D symbol carries, and its ECI |
 | `data/blob-names` | the name an embedded image gets |
 | `data/blob-collision` | a generated name that is already taken |
 | `data/key-order` | the order of the header's `data` object |
@@ -299,6 +314,21 @@ as drawn, and against that each band is an overflow. The tests of this
 engine's answer are `test_an_empty_frame_is_measured_below_the_column_headers`
 and `test_an_empty_frame_begins_below_the_headers_as_drawn` in
 [test_pagination.py](../../unit/test_pagination.py).
+
+M10 added the `barcode/` group and two defects in the reference with it,
+both about what a symbol is rather than where it goes. In `code93`, the
+reference writes Code 93's first check character and leaves out the second,
+which the specification requires; and in `rounding`, it writes a barcode's
+length, its bars, and a grown module as binary64 left them rather than
+at three decimals. The second would show in every barcode drawn at a module
+that is not a whole number of points, so every other `barcode/` probe draws
+at one point, and compares byte for byte.
+
+M10 also added one decision, in `charset`. The reference writes a 2-D
+value's UTF-8 bytes with no ECI, which every 2-D standard reads as
+ISO 8859-1. doc/ keeps that as the default and adds `charset` and `eci`
+for readers that follow the standard. The reference refuses both as unknown
+properties, so the probe is refused there until it catches up.
 
 Of the rest, every one agrees byte for byte except the three `data/`
 probes, which need an image. Those are in [pending.toml](../pending.toml)

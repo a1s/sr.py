@@ -44,9 +44,13 @@ Two columns, a group with its own title and summary, a column header \
 and footer, six barcode types, two images, both kinds of \
 cross-reference, conditional outline entries and a deferred page count. \
 It is the broadest single comparison the corpus has and it starts \
-passing when the last of those is built, not before.\
+passing when the last of those is built, not before.  The barcodes are \
+built, and drawn at 10mil, so the reference's unrounded barcode \
+lengths will still keep the two apart after M13: see \
+`barcode-lengths-unrounded` in divergences.toml, which an example may \
+not be covered by.\
 """
-ticket = "M10 barcodes, M11 images, M13 the rest"
+ticket = "M11 images, M13 the rest"
 since = "2026-09-20"
 affects = ["example/sakila", "example/sakila-june"]
 

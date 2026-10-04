@@ -19,14 +19,13 @@ classifiers = [
 ]
 
 # The engine's own dependencies.  Everything else in the layout --
-# the expression evaluator, the four barcode symbologies, layout,
+# the expression evaluator, every barcode symbology, layout,
 # and the PDF writer -- is written here rather than taken.
 dependencies = [
     "ckdl",       # KDL v2 parsing
     "fonttools",  # font tables, collections, subsetting primitives
     "cbor2",      # the .srp.cbor encoding
     "pillow",     # image decode, for the renderer only
-    "qrcode",     # QR matrices; provisional
     # The IANA zone database, which `zoneinfo` reads and Windows
     # does not ship.  A dependency rather than a host lookup on purpose:
     # a template that names Europe/Riga must mean the same thing on every
@@ -52,6 +51,10 @@ dev = [
 oracles = [
     "pypdfium2",  # rasterise rendered pages for image diffs
     "starlark",   # 0.6.0, a conformance-tested second opinion
+    # QR symbols built under a given mask, a second opinion on everything
+    # in a QR symbol but the choice of mask.  It was the engine's encoder
+    # until its masks turned out not to be the reference's.
+    "qrcode",
 ]
 
 [tool.setuptools.dynamic]

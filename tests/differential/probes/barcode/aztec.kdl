@@ -1,0 +1,33 @@
+// probes/barcode/aztec.kdl -- how an Aztec encoder spends its bits.
+//
+// ISO/IEC 24778 leaves the encoder to choose how the value becomes bits,
+// how much error correction to add, and which symbol to draw.
+// The reference:
+//
+// - finds the shortest bits the five character modes and Binary Shift
+//   allow, by a search whose order breaks ties; the values here latch,
+//   shift, use Punct's pairs `. ` and `, ` and `: ` and `\r\n`, and
+//   go into Binary Shift for a run of bytes no mode has;
+// - never uses Punct's code 7, the double quote, and writes one
+//   in Binary Shift instead;
+// - adds error correction of at least 33% of the data bits, rounded
+//   down, and eleven more, and takes the smallest symbol holding both:
+//   compact ones of one to four layers, then full-range ones of four
+//   layers or more, with the reference grid every sixteen modules.
+//   The values below reach compact symbols of one to four layers
+//   and full-range ones of four, six and eleven.
+//
+// An Aztec symbol has no quiet zone, so a row that opens dark
+// opens with a light run of nothing.  The values are in aztec.jsonl.
+//
+// doc/barcode.md#aztec-code is what this became.
+
+report name="barcode/aztec" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=400 height=900 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail {
+      barcode type="Aztec" expr="v" module=1 left=0 top=0
+    }
+  }
+}

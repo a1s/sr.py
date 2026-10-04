@@ -945,19 +945,10 @@ def test_a_variable_folds_per_record_and_the_summary_reads_the_total(
 # -- what this milestone does not do ----------------------------------
 
 
-@pytest.mark.parametrize(
-    ("body", "milestone"),
-    [
-        ('    detail height=10 { barcode type="Code128" text="1" }', "M10"),
-        ('    detail height=10 { image file="x.png" }', "M11"),
-    ],
-)
-def test_what_a_later_milestone_brings_says_so(
-    tmp_path: Path, body: str, milestone: str
-) -> None:
+def test_what_a_later_milestone_brings_says_so(tmp_path: Path) -> None:
     with pytest.raises(Unsupported) as refused:
-        built(tmp_path, body)
-    assert milestone in str(refused.value)
+        built(tmp_path, '    detail height=10 { image file="x.png" }')
+    assert "M11" in str(refused.value)
 
 
 def test_a_band_that_fits_no_frame_is_refused_by_name(tmp_path: Path) -> None:

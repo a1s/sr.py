@@ -97,7 +97,7 @@ from sr.layout.frame import Frame, Window
 from sr.layout.measure import Measurement, Measurer
 from sr.layout.place import choose, split
 from sr.layout.variables import Variables
-from sr.printout.model import FontEntry, Mark, Page, Paper, Printout, Text
+from sr.printout.model import FontEntry, Mark, Page, Paper, Printout
 from sr.printout.model import Report as ReportMeta
 from sr.printout.write import number
 from sr.template.model import Eject, Group, Layout, Nesting, Report, Section, Style
@@ -1232,7 +1232,6 @@ class Builder:
             else:
                 marks = made[waiting.page] = list(self.pages[waiting.page].marks)
             placeholder = find(marks, waiting.path)
-            assert isinstance(placeholder, Text)
             resolved = self.measurer.resolve(waiting.deferral, ending, placeholder)
             swap(marks, waiting.path, resolved)
         for index, marks in made.items():

@@ -45,11 +45,16 @@ place among the band's elements.  A glyph warning names the first element
 that needed the character and an error is the first one the document reaches,
 which is only true if nothing is evaluated out of turn.
 
-A deferred `field` is the one element whose ``expr`` is not evaluated
-here at all.  It is measured from its placeholder, and what it reads
-where it sits is kept with it, per doc/layout.md#deferred-evaluation;
-:meth:`Measurer.resolve` sets the value in the placeholder's room
-when the scope ends.
+A deferred `field` or `barcode` is the one element whose ``expr``
+is not evaluated here at all.  It is measured from its placeholder,
+and what it reads where it sits is kept with it, per
+doc/layout.md#deferred-evaluation; :meth:`Measurer.resolve` sets
+the value in the placeholder's room when the scope ends.
+
+A `barcode` is encoded here, where its content is resolved,
+and its symbol's size at the declared module is its content height.
+What the symbol is finally drawn at waits for its box, since ``grow``
+expands it to what the box offers: doc/layout.md#a-barcode-in-its-box.
 
 """
 
@@ -59,6 +64,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field, replace
 from typing import Any
 
+from sr.barcode import Symbol, Unencodable, encode
 from sr.errors import (
     BuildError,
     BuildWarning,
@@ -72,10 +78,12 @@ from sr.fonts.text import Metrics, missing_glyph, wrap
 from sr.layout.context import Context, condition, evaluate, evaluate_at
 from sr.layout.defer import Deferral, scope_of, snapshot
 from sr.layout.frame import Window
+from sr.printout.model import Barcode as BarcodeMark
 from sr.printout.model import Box, Line, Mark, Rectangle, Text
 from sr.printout.model import Xref as XrefMark
 from sr.printout.write import number
 from sr.template.model import (
+    Barcode,
     Element,
     Field,
     Section,
@@ -85,9 +93,14 @@ from sr.template.model import (
 )
 from sr.template.model import Line as LineElement
 from sr.template.model import Rectangle as RectangleElement
-from sr.units import fits, round_points
+from sr.units import fits, round_down_points, round_points
 
 __all__ = ["Extent", "Measurement", "Measurer", "Styling", "resolve_span"]
+
+# The body elements this milestone draws,
+# and the milestone that brings each kind it does not.
+DRAWN = (Field, LineElement, RectangleElement, Barcode)
+ELEMENT_MILESTONE = {"Image": "M11"}
 
 # The colour a mark is drawn in when no `style` in the walk set one.
 # doc/template.md leaves a text mark's `color` required and a
@@ -96,8 +109,15 @@ __all__ = ["Extent", "Measurement", "Measurer", "Styling", "resolve_span"]
 # colour to is simply not drawn.
 DEFAULT_COLOR = "#000000"
 
-# How far down a box its content starts, per `valign`.
+# How far down a box its content starts, per `valign`,
+# and how far across, per `halign`.
 VALIGN = {"top": 0.0, "center": 0.5, "bottom": 1.0}
+HALIGN = {"left": 0.0, "center": 0.5, "right": 1.0}
+
+# A 1-D symbol's bars are this share of its length across the coding
+# direction, or a quarter of an inch where that is more.
+BAR_SHARE = 0.15
+BAR_MINIMUM = 18.0
 
 
 @dataclass(frozen=True)
@@ -196,7 +216,9 @@ class Placement:
         marks: An `xref`'s children's marks, relative to its box.
         reach: How far down an `xref`'s contents reach, relative to
             its top, which is what it gives the band's second maximum.
-        deferral: What a deferred `field` waits for its scope with.
+        deferral: What a deferred element waits for its scope with.
+        value: The string a `barcode` encodes.
+        symbol: What it encodes to.
 
     """
 
@@ -217,6 +239,8 @@ class Placement:
     marks: tuple[Mark, ...] = ()
     reach: float = 0.0
     deferral: Deferral | None = None
+    value: str = ""
+    symbol: Symbol | None = None
 
     @property
     def floating(self) -> bool:
@@ -588,6 +612,8 @@ class Measurer:
         placed = Placement(element, style, x, extent)
         if isinstance(element, Field):
             self.wrap_content(placed, context, names)
+        elif isinstance(element, Barcode):
+            self.encode_content(placed, context, names)
         return placed
 
     def xref(
@@ -691,6 +717,10 @@ class Measurer:
         a ``top`` -- has a declared box of no height at its top.
         A negative height never gets this far: validation refuses one.
 
+        A ``maxheight`` clamps what a `barcode` declared and not its symbol,
+        which is drawn at its size whatever the clamp: the box is then
+        at least the symbol, as a box with no clamp is.
+
         Args:
             placed: The element being placed.
 
@@ -698,9 +728,16 @@ class Measurer:
         down = placed.element.box.down
         assert down.start is not None
         declared = down.size
-        size = max(0.0, declared or 0.0, placed.content_height or 0.0)
-        if down.limit is not None:
-            size = min(size, down.limit)
+        content = placed.content_height or 0.0
+        if isinstance(placed.element, Barcode):
+            box = declared or 0.0
+            if down.limit is not None:
+                box = min(box, down.limit)
+            size = max(0.0, box, content)
+        else:
+            size = max(0.0, declared or 0.0, content)
+            if down.limit is not None:
+                size = min(size, down.limit)
         placed.top = down.start
         placed.height = round_points(size)
         placed.declared_top = down.start
@@ -855,13 +892,14 @@ class Measurer:
             return self.formatted(field, self.blob(field), record)
         return ""
 
-    def placeholder(self, field: Field) -> str:
-        """Return the string a deferred `field` is measured from.
+    def placeholder(self, field: Field | Barcode) -> str:
+        """Return the string a deferred element is measured from.
 
         Its ``text``, or the content of its ``data`` node, as written.
         ``format`` is applied to what ``expr`` resolves to, and the
         placeholder stands in for that result rather than feeding it.
-        A field with neither is measured as empty text, one empty line.
+        A field with neither is measured as empty text, one empty line;
+        a barcode always has one, since validation requires it.
 
         Args:
             field: The node.
@@ -876,8 +914,8 @@ class Measurer:
             return self.blob(field)
         return ""
 
-    def blob(self, field: Field) -> str:
-        """Return the text of the `data` node a field names.
+    def blob(self, field: Field | Barcode) -> str:
+        """Return the text of the `data` node an element names.
 
         Args:
             field: The node, which names one.
@@ -895,8 +933,13 @@ class Measurer:
             )
         return content
 
-    def formatted(self, field: Field, value: Any, record: int | None) -> str:
-        """Return a value with the field's ``format`` applied.
+    def formatted(
+        self,
+        field: Field | Barcode,
+        value: Any,
+        record: int | None,
+    ) -> str:
+        """Return a value with the element's ``format`` applied.
 
         Args:
             field: The node.
@@ -915,9 +958,182 @@ class Measurer:
                 Location(file=self.file, path=field.path, prop="format", record=record),
             ) from None
 
+    # -- barcodes ---------------------------------------------------------
+
+    def encode_content(
+        self, placed: Placement, context: Context, names: dict[str, Any]
+    ) -> None:
+        """Resolve a `barcode`'s value, encode it, and size its symbol.
+
+        ``format`` applies to what ``expr`` resolves to and to nothing
+        else: doc/template.md#barcode.  A deferred barcode is encoded
+        from its placeholder instead, as written, and keeps what its
+        ``expr`` reads where it sits.  The symbol at the declared module is
+        the element's content height, whether or not ``grow`` will expand it.
+
+        Args:
+            placed: The element being placed.
+            context: The report as it stands.
+            names: The environment its expression is evaluated in.
+
+        Raises:
+            BuildError: The expression would not evaluate, the format
+                does not take its value, or the type cannot encode the result.
+
+        """
+        barcode = placed.element
+        assert isinstance(barcode, Barcode)
+        record = context.record_index
+        if barcode.evaltime is not None:
+            assert barcode.expr is not None
+            value = self.placeholder(barcode)
+            placed.deferral = Deferral(
+                barcode,
+                scope_of(barcode.evaltime),
+                snapshot(barcode.expr, names),
+                record,
+            )
+        elif barcode.expr is not None:
+            path = barcode.path
+            result = evaluate(barcode.expr, names, path, context, "expr")
+            value = self.formatted(barcode, result, record)
+        elif barcode.text is not None:
+            value = barcode.text
+        else:
+            value = self.blob(barcode)
+        placed.value = value
+        placed.symbol = self.encoded(barcode, value, record)
+        size = symbol_size(placed.symbol, barcode.module, barcode.vertical)
+        placed.content_height = size[1]
+
+    def encoded(
+        self,
+        barcode: Barcode,
+        value: str,
+        record: int | None,
+    ) -> Symbol:
+        """Return the symbol a value encodes to, or refuse the value.
+
+        Args:
+            barcode: The node, for how to encode and for a diagnostic.
+            value: The string to encode.
+            record: The record it was built for, for a diagnostic.
+
+        Raises:
+            BuildError: The type cannot encode it.
+
+        """
+        try:
+            return encode(barcode.kind, value, barcode.charset, barcode.eci)
+        except Unencodable as refused:
+            kind = barcode.kind
+            raise BuildError(
+                f"barcode {kind}: cannot encode {quote(value)}: {refused}",
+                Location(file=self.file, path=barcode.path, record=record),
+            ) from None
+
+    def barcode_mark(self, placed: Placement, barcode: Barcode) -> BarcodeMark:
+        """Return the mark a `barcode` produces.
+
+        The symbol is drawn at its declared module unless ``grow``
+        expands it to the box: a 2-D symbol's module becomes what fills
+        the box's shorter side, and a 1-D symbol's bars reach across
+        the box, never less than they would be without it.  Then it
+        is placed in the box by ``halign`` and ``valign``, and a symbol
+        larger than its box overhangs it on the side they do not name.
+
+        Args:
+            placed: The element, fully resolved.
+            barcode: The node.
+
+        """
+        symbol = placed.symbol
+        assert symbol is not None
+        box = Box(placed.x, placed.top, placed.width, placed.height)
+        return symbol_mark(barcode, placed.value, symbol, box, barcode.grow)
+
+    def resolve_barcode(
+        self, deferral: Deferral, final: Namespace, mark: BarcodeMark
+    ) -> BarcodeMark:
+        """Return a deferred barcode's mark, with its value encoded in it.
+
+        doc/layout.md#re-measurement.  The value is set in the room
+        the placeholder's symbol took, which is the placeholder's mark:
+        its length along the coding direction must fit there, or the
+        build fails.  A 1-D symbol's bars keep the room's extent across,
+        and a 2-D symbol keeps its module, or with ``grow`` fills the room
+        as the placeholder did.  The new symbol sits in the room by
+        ``halign`` and ``valign``.
+
+        Args:
+            deferral: The element, and what it read where it sat.
+            final: The ``FINAL`` of the scope that ended.
+            mark: The placeholder's mark, where it is now.
+
+        Raises:
+            BuildError: The expression would not evaluate, the format does
+                not take its value, the type cannot encode the result, or
+                the symbol needs more room than the placeholder reserved.
+
+        """
+        barcode = deferral.element
+        assert isinstance(barcode, Barcode)
+        assert barcode.expr is not None
+        names = {**deferral.names, "FINAL": final}
+        record = deferral.record
+        result = evaluate_at(
+            barcode.expr, names, self.file, barcode.path, "expr", record
+        )
+        value = self.formatted(barcode, result, record)
+        symbol = self.encoded(barcode, value, record)
+        width, height = symbol_size(symbol, barcode.module, barcode.vertical)
+        room = mark.box
+        needs = height if barcode.vertical else width
+        reserved = room.height if barcode.vertical else room.width
+        if not fits(needs, reserved):
+            raise BuildError(
+                f"the deferred value {quote(value)} needs {number(needs)} pt"
+                f" and its placeholder{described(barcode)} reserved"
+                f" {number(reserved)} pt; size the placeholder"
+                " for the worst case",
+                Location(file=self.file, path=barcode.path, record=record),
+            )
+        # A 1-D symbol's bars reach across the room as if it grew: the room
+        # is the placeholder's symbol, and its bars are what they should be.
+        grow = symbol.linear or barcode.grow
+        return symbol_mark(barcode, value, symbol, room, grow)
+
     # -- deferred values --------------------------------------------------
 
-    def resolve(self, deferral: Deferral, final: Namespace, mark: Text) -> Text:
+    def resolve(
+        self,
+        deferral: Deferral,
+        final: Namespace,
+        mark: Mark,
+    ) -> Mark:
+        """Return a deferred element's mark, with its value set in it.
+
+        Args:
+            deferral: The element, and what it read where it sat.
+            final: The ``FINAL`` of the scope that ended.
+            mark: The placeholder's mark, where it is now.
+
+        Raises:
+            BuildError: The value could not be set.
+
+        """
+        if isinstance(deferral.element, Barcode):
+            assert isinstance(mark, BarcodeMark)
+            return self.resolve_barcode(deferral, final, mark)
+        assert isinstance(mark, Text)
+        return self.resolve_field(deferral, final, mark)
+
+    def resolve_field(
+        self,
+        deferral: Deferral,
+        final: Namespace,
+        mark: Text,
+    ) -> Text:
         """Return a deferred field's mark, with its value set in it.
 
         doc/layout.md#re-measurement.  The expression is called with its
@@ -945,6 +1161,7 @@ class Measurer:
 
         """
         field = deferral.element
+        assert isinstance(field, Field)
         assert field.expr is not None
         names = {**deferral.names, "FINAL": final}
         record = deferral.record
@@ -1065,6 +1282,8 @@ class Measurer:
             )
         if isinstance(element, Field):
             return self.text_mark(placed, element)
+        if isinstance(element, Barcode):
+            return self.barcode_mark(placed, element)
         if isinstance(element, LineElement):
             return Line(
                 box,
@@ -1176,15 +1395,11 @@ class Measurer:
                     Location(file=self.file, path=element.path, prop="type"),
                 )
             return
-        if isinstance(element, Field | LineElement | RectangleElement):
+        if isinstance(element, DRAWN):
             return
         kind = type(element).__name__
         milestone = ELEMENT_MILESTONE.get(kind, "a later milestone")
         raise Unsupported(f"a {kind.lower()} element arrives in {milestone}", where)
-
-
-# Which milestone brings each element kind this one does not draw.
-ELEMENT_MILESTONE = {"Barcode": "M10", "Image": "M11"}
 
 
 def deferrals(
@@ -1209,14 +1424,14 @@ def deferrals(
             yield from deferrals(placed.children, path)
 
 
-def described(field: Field) -> str:
-    """Return how an error names a deferred field's placeholder.
+def described(field: Field | Barcode) -> str:
+    """Return how an error names a deferred element's placeholder.
 
-    Only a field that stretches can outgrow its placeholder,
-    and validation refuses one without ``text`` or ``data``.
+    Only a field that stretches and a barcode can outgrow their placeholders,
+    and validation refuses either without ``text`` or ``data``.
 
     Args:
-        field: The node, which stretches.
+        field: The node.
 
     """
     if field.text is not None:
@@ -1251,3 +1466,75 @@ def extent(placed: Placement, mark: Mark) -> Extent:
     ):
         return Extent(box.y, round_points(box.bottom), len(mark.lines), mark.leading)
     return Extent(box.y, round_points(box.bottom))
+
+
+def symbol_size(
+    symbol: Symbol,
+    module: float,
+    vertical: bool,
+) -> tuple[float, float]:
+    """Return how wide and how tall a symbol is drawn at a module.
+
+    A 1-D symbol's bars reach across the coding direction for 15%
+    of its length, or a quarter of an inch where that is more.
+     A 2-D symbol is a module per row as well as per column.
+
+    Args:
+        symbol: The symbol, quiet zone included.
+        module: The narrow element's width in points.
+        vertical: Whether the coding direction runs down the page.
+
+    """
+    along = round_points(module * symbol.length)
+    if symbol.linear:
+        across = max(round_points(along * BAR_SHARE), BAR_MINIMUM)
+    else:
+        across = round_points(module * symbol.depth)
+    return (across, along) if vertical else (along, across)
+
+
+def symbol_mark(
+    barcode: Barcode, value: str, symbol: Symbol, box: Box, grow: bool
+) -> BarcodeMark:
+    """Return a symbol's mark, sized for a box and placed in it.
+
+    Args:
+        barcode: The node, for its module, direction, alignment and colours.
+        value: The string the symbol encodes.
+        symbol: The symbol.
+        box: The box it is drawn in.
+        grow: Whether it expands to what the box offers.
+
+    """
+    module = barcode.module
+    vertical = barcode.vertical
+    if grow and not symbol.linear:
+        wide, tall = (
+            (symbol.depth, symbol.length)
+            if vertical
+            else (
+                symbol.length,
+                symbol.depth,
+            )
+        )
+        fill = round_down_points(min(box.width / wide, box.height / tall))
+        module = max(module, fill)
+    width, height = symbol_size(symbol, module, vertical)
+    if grow and symbol.linear:
+        if vertical:
+            width = max(width, box.width)
+        else:
+            height = max(height, box.height)
+    x = round_points(box.x + HALIGN[barcode.halign] * (box.width - width))
+    y = round_points(box.y + VALIGN[barcode.valign] * (box.height - height))
+    return BarcodeMark(
+        Box(x, y, width, height),
+        barcode.kind,
+        value,
+        module,
+        vertical,
+        barcode.ink,
+        barcode.paper,
+        symbol.stripes() if symbol.linear else (),
+        () if symbol.linear else symbol.rows(),
+    )

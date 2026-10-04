@@ -1,10 +1,10 @@
 """Deferred evaluation: elements that wait for the end of a scope.
 
-doc/layout.md#deferred-evaluation: a `field` with ``evaltime``
-is not evaluated when its band is built.  It is measured from
-its placeholder, the band is laid out around that, and the value
-replaces the placeholder when the scope the element names ends.
-``FINAL`` is what the expression reads from that moment;
+doc/layout.md#deferred-evaluation: a `field` or `barcode` with
+``evaltime`` is not evaluated when its band is built.  It is
+measured from its placeholder, the band is laid out around that,
+and the value replaces the placeholder when the scope the element
+names ends. ``FINAL`` is what the expression reads from that moment;
 every other name it reads where it sat.
 
 Three things carry it from one moment to the other.
@@ -17,8 +17,9 @@ Three things carry it from one moment to the other.
   at the same place and name different things.
 * **The placeholder's mark.**  It is on the page, translated wherever
   the band was committed, split, or balanced, and its box is the room
-  the placeholder reserved.  The resolved text is set inside that box,
-  so the translations a mark went through never have to be replayed.
+  the placeholder reserved.  The resolved text or symbol is set inside
+  that box, so the translations a mark went through never have to
+  be replayed.
 * **The register.**  A deferral is registered when its band is placed,
   not when it is measured.  A measurement that is thrown away leaves
   nothing behind: a header's reservation, a keep-together lookahead,
@@ -153,7 +154,7 @@ class Deferral:
 
     """
 
-    element: Field
+    element: Field | Barcode
     scope: Scope
     names: dict[str, Any]
     record: int | None

@@ -52,6 +52,7 @@ from sr.expr import Expression, compile_expression
 from sr.template import model
 from sr.template.model import (
     ALIGNS,
+    BARCODE_CHARSETS,
     BARCODE_TYPES,
     CALCS,
     COMPRESSIONS,
@@ -61,6 +62,7 @@ from sr.template.model import (
     HALIGNS,
     IMAGE_SCALES,
     IMAGE_TYPES,
+    LINEAR_BARCODES,
     SCOPES,
     SECTIONS,
     VALIGNS,
@@ -1266,6 +1268,9 @@ class Loader:
     def barcode(self, node: kdl.Node) -> Barcode:
         """Build a ``barcode`` node.
 
+        A 1-D type encodes characters rather than bytes, so ``charset``
+        and ``eci`` on one are refused: doc/template.md#character-set.
+
         Args:
             node: The node to read.
 
@@ -1285,10 +1290,21 @@ class Loader:
             "grow",
             "ink",
             "paper",
+            "charset",
+            "eci",
         )
         node.known_children("style")
+        kind = node.enum("type", BARCODE_TYPES, default="", required=True)
+        if kind in LINEAR_BARCODES:
+            for prop in ("charset", "eci"):
+                if node.has(prop):
+                    node.error(
+                        f"{kind} encodes characters rather than bytes,"
+                        f" so it takes no {prop}",
+                        prop,
+                    )
         return Barcode(
-            kind=node.enum("type", BARCODE_TYPES, default="", required=True),
+            kind=kind,
             expr=self.expression(node, "expr"),
             text=node.string("text"),
             data=node.string("data"),
@@ -1299,6 +1315,8 @@ class Loader:
             grow=node.boolean("grow", default=False),
             ink=node.color("ink", default="#000000"),
             paper=node.color("paper"),
+            charset=node.enum("charset", BARCODE_CHARSETS, default="utf-8"),
+            eci=node.boolean("eci", default=False),
             **self.common(node),
         )
 

@@ -25,7 +25,9 @@
 # `carried-once`, and `suppressed-band-ejects`.  M9 added four about
 # deferred values: one defect, `deferred-glyph-warnings`, and three
 # decisions, `final-vertical`, `final-at-a-group-break`, and
-# `footer-deferral-balance`.
+# `footer-deferral-balance`.  M10 added two defects in the reference's
+# barcodes, `code93-check-k` and `barcode-lengths-unrounded`, and one
+# decision, `barcode-charset`.
 #
 # The milestone numbers:
 #   M0: Scaffold and oracle
@@ -707,3 +709,59 @@ defect, and the reference is the side that changes.\
 ticket = "M9: balanced columns, layout.md#what-is-left-where-the-fill-put-it"
 since = "2026-10-03"
 affects = ["probe/deferred/balance-late-footer"]
+
+[[divergence]]
+id = "code93-check-k"
+summary = "a Code 93 symbol carries its check characters C and K here; the reference leaves K out"
+reason = """\
+The Code 93 standard makes both check characters mandatory: C, weighted \
+1 to 20 from the right, and K, weighted 1 to 15 over the data and C. \
+A reader verifies both and transmits neither, so a symbol with C alone \
+reads as a symbol whose last data character is C and whose K is wrong. \
+The reference writes C and stops, and every symbol it draws is nine \
+modules short of a readable one.  doc/barcode.md#code-93 follows the \
+standard, and the reference is the side that changes.\
+"""
+ticket = "M10: Code 93, barcode.md#code-93; filed against the Go engine"
+since = "2026-10-04"
+affects = ["probe/barcode/code93"]
+
+[[divergence]]
+id = "barcode-lengths-unrounded"
+summary = "a barcode's length, bars and grown module are rounded to three decimals here; the reference writes them as binary64 left them"
+reason = """\
+doc/layout.md#coordinates-and-rounding rounds every computed coordinate \
+and extent to three decimals as soon as it is computed, and \
+doc/printout.md#units-and-number-format writes no length with more.  The \
+reference rounds none of a barcode's own: the length is the module times \
+the modules, 47.519999999999996 for 66 modules of 10mil; the bars are 15% \
+of that; and under `grow` the module is the box's side over the modules, \
+1.7241379310344827 for 29 of them in 50.  doc/ rounds each, and rounds \
+a grown module down, so that the symbol never outgrows the box it was \
+made to fill.  Any barcode whose module is not a whole number of \
+points shows it, which is why every other probe here uses a module of \
+one point, and the sakila example will show it too once it can be built.\
+"""
+ticket = "M10: a barcode in its box, layout.md#a-barcode-in-its-box; filed against the Go engine"
+since = "2026-10-04"
+affects = ["probe/barcode/rounding"]
+
+[[divergence]]
+id = "barcode-charset"
+summary = "`charset` and `eci` choose a 2-D symbol's bytes and its ECI here; the reference refuses both as unknown properties"
+reason = """\
+Every 2-D standard reads a symbol's bytes as ISO 8859-1 unless an ECI \
+names another charset.  The reference writes a value's UTF-8 bytes and \
+no ECI, so a reader that follows the standard turns each character \
+outside ASCII into two or more wrong ones.  doc/template.md#character-set \
+keeps that as the default, because phone apps reading QR detect UTF-8 \
+for themselves, and adds two properties for the readers that follow the \
+standard: `charset="iso-8859-1"`, a byte per character, and `eci=#true`, \
+which names the charset in the symbol whenever the value is not ASCII.  \
+doc/barcode.md says where each type writes the ECI.  The reference \
+refuses both, as it refuses any property it does not know (see \
+`unknown-names-accepted`), and is the side that changes.\
+"""
+ticket = "M10: template.md#character-set and barcode.md; filed against the Go engine"
+since = "2026-10-04"
+affects = ["probe/barcode/charset"]

@@ -26,9 +26,11 @@ in the file that wrote it.
 Two rules are deliberately not checked here.  Name resolution inside
 an expression is not, because an undeclared record field is reached
 dynamically and there is no list of what the data will carry.  And a
-`barcode` is not held to what its symbology can encode, nor its `ink`
-against its `paper`: both are load errors, and both wait for the
-encoders of M10, which are what knows the answers.
+`barcode` is not held to what its symbology can encode, even where
+its content is a literal: that is an error when the band is built,
+as it is for content an expression computes, so `validate` and `build`
+agree about which templates load.  A barcode's `ink` against its `paper`
+is checked, since a pair a scanner cannot read is wrong whatever the data.
 
 """
 
@@ -37,6 +39,7 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass, field
 
+from sr.barcode.readable import unreadable
 from sr.errors import Diagnostic, Diagnostics, NodePath
 from sr.expr import GLOBALS, GROUP_SUFFIXES, PREDEFINED, Expression
 from sr.template.load import (
@@ -619,6 +622,8 @@ def band_rules(visit: Visit, space: Space, band: Section) -> None:
     for element in elements_of(band):
         if isinstance(element, Field | Barcode):
             content_source(visit, space, element)
+        if isinstance(element, Barcode):
+            readable_colours(visit, element)
         if isinstance(element, Image):
             image_source(visit, element)
         blob_reference(visit, element)
@@ -783,6 +788,24 @@ def final_scope(visit: Visit, space: Space, element: Field | Barcode) -> None:
                 path=element.path,
                 prop="expr",
             )
+
+
+def readable_colours(visit: Visit, element: Barcode) -> None:
+    """Report a ``barcode`` whose ink a scanner cannot tell from its paper.
+
+    doc/template.md#colour makes a pair that cannot be read a load error,
+    and :func:`~sr.barcode.readable.unreadable` says which of the two
+    properties the diagnostic names.
+
+    Args:
+        visit: The document and its collectors.
+        element: The node to check.
+
+    """
+    found = unreadable(element.ink, element.paper)
+    if found is not None:
+        prop, reason = found
+        visit.diagnostics.error(reason, path=element.path, prop=prop)
 
 
 def image_source(visit: Visit, element: Image) -> None:

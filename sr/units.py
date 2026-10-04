@@ -39,6 +39,7 @@ __all__ = [
     "fits",
     "parse_dimension",
     "parse_number",
+    "round_down_points",
     "round_half_away",
     "round_points",
 ]
@@ -105,6 +106,19 @@ def round_points(value: float) -> float:
 
     """
     return round_half_away(value * SCALE) / SCALE + 0.0
+
+
+def round_down_points(value: float) -> float:
+    """Return a positive ``value`` rounded down to 3 decimal places.
+
+    The one exception to :func:`round_points`, for a length that
+    must not exceed what it was divided out of: a barcode's module
+    under ``grow`` is the box's side over the symbol's modules,
+    and rounding it up would draw a symbol larger than the box
+    it was made to fill. The scaling comes first here too, in binary64.
+
+    """
+    return math.floor(value * SCALE) / SCALE
 
 
 def fits(extent: float, limit: float) -> bool:

@@ -49,6 +49,7 @@ from sr.units import POINTS_PER_UNIT, parse_number, round_points
 
 __all__ = [
     "ALIGNS",
+    "BARCODE_CHARSETS",
     "BARCODE_TYPES",
     "CALCS",
     "COMPRESSIONS",
@@ -59,6 +60,7 @@ __all__ = [
     "HALIGNS",
     "IMAGE_SCALES",
     "IMAGE_TYPES",
+    "LINEAR_BARCODES",
     "PAGE_SIZES",
     "RFC3339_DATE",
     "SCOPES",
@@ -133,6 +135,7 @@ BARCODE_TYPES: Final = (
     "QR-Q",
     "QR-H",
 )
+BARCODE_CHARSETS: Final = ("utf-8", "iso-8859-1")
 IMAGE_SCALES: Final = ("cut", "fill", "grow")
 IMAGE_TYPES: Final = ("png", "jpeg", "gif")
 XREF_TYPES: Final = ("outline", "url")
@@ -157,6 +160,10 @@ SECTIONS: Final = ("title", "summary", "header", "footer", "detail")
 # The two `evaltime` scopes that are not a group name.  A group name
 # is the third spelling, and which names are groups is not known here.
 EVALTIME_SCOPES: Final = ("report", "page", "column")
+
+# The barcode types that encode characters rather than bytes, and so
+# take no `charset` and no `eci`: doc/template.md#character-set.
+LINEAR_BARCODES: Final = ("Code128", "Code39", "Code93", "2of5i")
 
 # What doc/template.md#parameter-values-as-text takes for a `decimal`:
 # a sign, digits, and an optional fractional part.  None of the spellings
@@ -659,6 +666,9 @@ class Barcode(Element):
         grow: Whether the symbol expands to use the box.
         ink: The bars' colour.
         paper: The background's colour, where one is painted.
+        charset: One of :data:`BARCODE_CHARSETS`,
+            which a 2-D type encodes its value's characters in.
+        eci: Whether a 2-D symbol names its charset to the reader.
 
     """
 
@@ -673,6 +683,8 @@ class Barcode(Element):
     grow: bool
     ink: str
     paper: str | None
+    charset: str
+    eci: bool
 
 
 @dataclass(frozen=True)

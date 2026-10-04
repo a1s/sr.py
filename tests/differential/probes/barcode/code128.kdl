@@ -1,0 +1,31 @@
+// probes/barcode/code128.kdl -- which code sets a Code 128 symbol uses.
+//
+// ISO/IEC 15417 allows many symbols for one value, and the printout
+// records the one drawn, so the choice of code sets is part of the answer.
+//  One symbol per record; the values are in code128.jsonl.  The reference:
+//
+// - starts in set C on four leading digits or more, so `1234` is C
+//   and `123` and `12` are B;
+// - switches to C for any run of four digits or more, anywhere, and takes
+//   as many pairs of the run as there are: `12345` is C `12 34`, then B `5`;
+// - otherwise starts in A where the first character only one of A and B has
+//   is a control character, and in B everywhere else: `A\x01` starts in A,
+//   and `Aa\x01` in B;
+// - stays in A or B while the next character is there, and latches
+//   to the other where it is not, never shifting for one character;
+// - leaves C for A where the next character is a control character and
+//   for B otherwise, looking no further: `1234A\x01` goes C, B, A.
+//
+// The check character and the stop pattern are the standard's.
+// Every symbol is ten modules of quiet zone, the runs, and ten more.
+// doc/barcode.md#code-128 is what this became.
+
+report name="barcode/code128" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=400 height=900 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail {
+      barcode type="Code128" expr="v" module=1 left=0 top=0
+    }
+  }
+}

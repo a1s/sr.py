@@ -415,6 +415,8 @@ def mark_line(mark: dict[str, Any]) -> str:
         parts.append(shown if key in BARE else f"{key} {shown}")
     if kind == "barcode" and mark.get("stripes"):
         parts.append(f"{len(mark['stripes'])} stripes")
+    if kind == "barcode" and mark.get("rows"):
+        parts.append(f"{len(mark['rows'])} rows")
     return "  ".join(parts)
 
 

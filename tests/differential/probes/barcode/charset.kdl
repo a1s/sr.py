@@ -1,0 +1,39 @@
+// probes/barcode/charset.kdl -- the bytes a 2-D symbol carries, and its ECI.
+//
+// Every 2-D standard reads a symbol's bytes as ISO 8859-1
+// unless an ECI says otherwise, and the reference writes
+// a value's UTF-8 bytes without one: the qr, datamatrix
+// and aztec probes hold it to that.  The format's answer is
+// two properties the reference does not know:
+//
+// - `charset="iso-8859-1"`, a byte per character, which a reader that
+//   follows the standard reads back without being told;
+// - `eci=#true`, which opens the symbol with the ECI naming its charset,
+//   000026 for UTF-8 and 000003 for ISO 8859-1, and only where the value
+//   has a character outside ASCII.
+//
+// Each record is drawn three ways in each 2-D family: ISO 8859-1, UTF-8
+// with its ECI, and ISO 8859-1 with its ECI.  The second record is ASCII,
+// whose three symbols are each the same as the default would draw.
+// The values are in charset.jsonl.
+//
+// doc/template.md#character-set is what this became, and
+// doc/barcode.md says where each type writes the ECI.
+
+report name="barcode/charset" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=400 height=400 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail {
+      barcode type="QR-M" expr="v" module=1 left=0 top=0 charset="iso-8859-1"
+      barcode type="QR-M" expr="v" module=1 left=50 top=0 eci=#true
+      barcode type="QR-M" expr="v" module=1 left=100 top=0 charset="iso-8859-1" eci=#true
+      barcode type="DataMatrix" expr="v" module=1 left=150 top=0 charset="iso-8859-1"
+      barcode type="DataMatrix" expr="v" module=1 left=200 top=0 eci=#true
+      barcode type="DataMatrix" expr="v" module=1 left=250 top=0 charset="iso-8859-1" eci=#true
+      barcode type="Aztec" expr="v" module=1 left=300 top=0 charset="iso-8859-1"
+      barcode type="Aztec" expr="v" module=1 left=330 top=0 eci=#true
+      barcode type="Aztec" expr="v" module=1 left=360 top=0 charset="iso-8859-1" eci=#true
+    }
+  }
+}

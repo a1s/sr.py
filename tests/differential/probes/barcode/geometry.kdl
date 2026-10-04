@@ -1,0 +1,55 @@
+// probes/barcode/geometry.kdl -- where a symbol sits in its box.
+//
+// A symbol's size comes from its modules, not from the box, so the two
+// rarely match.  The reference places the symbol in the box by `halign`
+// and `valign` in every case, and the box gives way only downward:
+//
+// - across the page the box is what the geometry resolved, and a symbol
+//   wider than it overhangs it on the side `halign` does not name: `b`
+//   and `c` are 66 wide in a box 10 wide, right-aligned and centred;
+// - down the page the symbol's height is a content height, so the box
+//   is at least that tall and a taller symbol pushes it down rather
+//   than overhanging: `g` is 29 tall in a box declared 10 tall,
+//   and starts at the box's top whatever `valign` says;
+// - a box that took its height from the band is the exception:
+//   `h` declared a `bottom`, its box is the 5 the band leaves it, and
+//   the symbol overhangs that box by `valign` as a field's text would;
+// - a 1-D symbol's bars are 15% of its length or a quarter of an inch,
+//   whichever is more: `i` is 165 modules long and 24.75 tall;
+// - `vertical` turns the symbol a quarter turn, so `e` and `f` are
+//   18 wide and 66 tall, and `halign` and `valign` place them the same;
+// - `maxwidth` and `maxheight` clamp the box and never the symbol:
+//   `j` is right-aligned in a box clamped to 80, `k` bottom-aligned in
+//   one clamped to 70, and `l`, clamped below its own height, is 18 tall.
+//
+// The rule spans the band, which is as tall as the tallest symbol.
+// doc/layout.md#a-barcode-in-its-box is what this became.
+
+report name="barcode/geometry" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=500 height=800 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail {
+      // a
+      barcode type="Code128" text="A" module=1
+      // b, c
+      barcode type="Code128" text="A" module=1 left=200 width=10 top=0 halign="right"
+      barcode type="Code128" text="A" module=1 left=200 width=10 top=30 halign="center"
+      // d
+      barcode type="Code128" text="A" module=1 left=300 width=100 top=0 height=40 halign="center" valign="bottom"
+      // e, f
+      barcode type="Code128" text="A" module=1 left=0 top=100 vertical=#true
+      barcode type="Code128" text="A" module=1 left=50 width=50 top=100 height=100 vertical=#true halign="center" valign="center"
+      // g, h
+      barcode type="QR-L" text="A" module=1 left=150 width=10 top=100 height=10 halign="center" valign="center"
+      barcode type="QR-L" text="A" module=1 left=200 width=10 top=100 bottom=215 halign="center" valign="center"
+      // i
+      barcode type="Code128" text="ABCDEFGHIJ" module=1 left=250 top=100
+      // j, k, l
+      barcode type="Code128" text="A" module=1 left=0 width=100 maxwidth=80 top=250 halign="right"
+      barcode type="Code128" text="A" module=1 left=100 width=40 top=250 height=100 maxheight=70 vertical=#true valign="bottom"
+      barcode type="Code128" text="A" module=1 left=200 top=250 height=10 maxheight=5 valign="bottom"
+      line left=490 width=0
+    }
+  }
+}
