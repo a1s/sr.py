@@ -36,10 +36,10 @@ __all__ = [
     "POINTS_PER_UNIT",
     "TOLERANCE",
     "as_written",
+    "fill_points",
     "fits",
     "parse_dimension",
     "parse_number",
-    "round_down_points",
     "round_half_away",
     "round_points",
 ]
@@ -108,17 +108,23 @@ def round_points(value: float) -> float:
     return round_half_away(value * SCALE) / SCALE + 0.0
 
 
-def round_down_points(value: float) -> float:
-    """Return a positive ``value`` rounded down to 3 decimal places.
+def fill_points(extent: float, count: int) -> float:
+    """Return the longest length, in whole thousandths, ``count`` fit in.
 
     The one exception to :func:`round_points`, for a length that
     must not exceed what it was divided out of: a barcode's module
     under ``grow`` is the box's side over the symbol's modules,
     and rounding it up would draw a symbol larger than the box
-    it was made to fill. The scaling comes first here too, in binary64.
+    it was made to fill.  The extent is a whole number of thousandths
+    already, so dividing those as whole numbers is exact, where a binary64
+    quotient rounded down would sometimes lose a thousandth that fits.
+
+    Args:
+        extent: The length to divide, rounded to three decimals.
+        count: How many it is divided among.
 
     """
-    return math.floor(value * SCALE) / SCALE
+    return (round(extent * SCALE) // count) / SCALE
 
 
 def fits(extent: float, limit: float) -> bool:

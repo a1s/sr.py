@@ -689,16 +689,21 @@ where that is more. A 2-D symbol's module becomes what fills the box's
 shorter side, where that is more:
 
 ```
-module = max(module, round_down(min(box width / columns, box height / rows)))
+module = max(module, min(fill(box width, columns), fill(box height, rows)))
 ```
 
-`round_down` keeps three decimals and drops the rest, in binary64 like
-every other rounding here: `floor(value × 1000) / 1000`. It is the one
-length in the engine that is not rounded half away from zero, because
-a module rounded up would draw a symbol larger than the box it was made
-to fill. A box whose height is the symbol's own content height leaves
-`grow` nothing to expand into down the page, so a 2-D symbol given a
-width and no height keeps its module.
+`fill(side, count)` is the longest whole number of thousandths of a point
+that `count` modules fit into `side`. The side is a whole number of
+thousandths already, so it is computed in whole numbers, exactly:
+`floor(round(side × 1000) / count) / 1000`, the division an integer one.
+A binary64 quotient rounded down would lose a thousandth that fits about
+one time in nine: 22.185 over 29 modules is 0.765 exactly, and
+`floor(22.185 / 29 × 1000)` is 764. It is the one length in the engine
+that is not rounded half away from zero, because a module rounded up
+would draw a symbol larger than the box it was made to fill.
+A box  whose height is the symbol's own content height leaves `grow`
+nothing to expand into down the page, so a 2-D symbol given a width
+and no height keeps its module.
 
 **The symbol sits in the box** by `halign` and `valign`, measured
 from the box's edges:

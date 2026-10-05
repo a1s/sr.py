@@ -190,7 +190,7 @@ def test_code128_refuses_a_character_outside_ascii() -> None:
 
 def test_code39_draws_wide_elements_two_modules_wide_with_no_check() -> None:
     runs_ = linear.code39("CODE 39")
-    # The start, seven characters and the stop, twelve modules each,
+    # The start, seven characters, and the stop, twelve modules each,
     # and a narrow space between each two.
     assert sum(runs_) == 9 * 12 + 8
     assert set(runs_) == {1, 2}
@@ -345,7 +345,8 @@ def test_qr_scores_a_finder_like_pattern_with_light_inside_the_symbol() -> None:
     pattern = (True, False, True, True, True, False, True)
     assert qr.finder_penalty((False,) * 4 + pattern) == 40
     assert qr.finder_penalty(pattern + (False,) * 4) == 40
-    assert qr.finder_penalty((False,) * 4 + pattern + (False,) * 4) == 40
+    # Light on both sides is two windows, and scores twice.
+    assert qr.finder_penalty((False,) * 4 + pattern + (False,) * 4) == 80
     # Light on neither side within the symbol: the quiet zone does not count.
     assert qr.finder_penalty((False,) * 3 + pattern + (False,) * 3) == 0
 
@@ -541,7 +542,8 @@ def test_a_pair_a_scanner_can_read_passes(ink: str, paper: str | None) -> None:
         ("#FFFF00", None, "ink", "a difference of 0% where a scanner needs 40%"),
         ("#000000", "#000080", "paper", "a difference of 0%"),
         ("#FFFFFF", "#000000", "paper", "a difference of -100%"),
-        ("#000000", "#A90000", "paper", "a difference of 40%"),
+        ("#000000", "#A90000", "paper", "of 39.7% where a scanner needs 40%"),
+        ("#CC0000", None, "ink", "of 39.6% where a scanner needs 40%"),
         ("#C0C0C0", None, "ink", "needs them under 50%"),
         ("#BC0000", None, "ink", "needs them under 50%"),
         ("#B80000", "#FA0000", "ink", "needs them under 48%"),

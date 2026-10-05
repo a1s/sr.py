@@ -250,7 +250,7 @@ def code93(value: str) -> tuple[int, ...]:
 def full_ascii(code: int) -> tuple[int, ...]:
     """Return the Code 93 values that spell one ASCII character.
 
-    Digits, upper-case letters, space, ``-`` and ``.`` are their own
+    Digits, upper-case letters, space, ``-``, and ``.`` are their own
     characters.  Everything else is a shift and a letter, by the full
     ASCII table Code 39 and Code 93 share -- ``$ / + %`` included,
     although Code 93 has a character of its own for each of them.

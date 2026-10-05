@@ -13,7 +13,7 @@ A 1-D symbol becomes ``stripes``: the leading quiet zone, the runs,
 the trailing quiet zone, which starts light and alternates because
 every symbol starts and ends on a bar.  A 2-D symbol becomes ``rows``,
 each the run lengths of one row of modules starting with a light run,
-so a row that opens dark opens with a light run of nothing -- possible
+so a row that starts dark opens with a light run of nothing -- possible
 only for a symbology with no quiet zone, which is Aztec.
 
 """

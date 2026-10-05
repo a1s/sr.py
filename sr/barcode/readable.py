@@ -68,26 +68,47 @@ def unreadable(ink: str, paper: str | None) -> tuple[str, str] | None:
     background = reflectance(ground)
     said = f"ink {ink} on paper {ground} will not scan: "
     if background - bars < DIFFERENCE:
+        places = decimals(background - bars, DIFFERENCE)
         return "ink" if paper is None else "paper", said + (
-            f"the bars reflect {percent(bars)} of red light and the background"
-            f" {percent(background)}, a difference of"
-            f" {percent(background - bars)} where a scanner needs"
-            f" {percent(DIFFERENCE)}"
+            f"the bars reflect {percent(bars, places)} of red light and"
+            f" the background {percent(background, places)}, a difference"
+            f" of {percent(background - bars, places)} where a scanner"
+            f" needs {percent(DIFFERENCE)}"
         )
     if bars >= background * SHARE:
         return "ink", said + (
-            f"the bars reflect {percent(bars)} of red light against the"
-            f" background's {percent(background)}, and a scanner needs them"
-            f" under {percent(background * SHARE)}"
+            f"the bars reflect {percent(bars)} of red light against"
+            f" the background's {percent(background)}, and a scanner"
+            f" needs them under {percent(background * SHARE)}"
         )
     return None
 
 
-def percent(value: float) -> str:
-    """Return a reflectance as a whole percentage, for a message.
+def decimals(value: float, threshold: float) -> int:
+    """Return how many decimals tell a percentage from its threshold.
+
+    None, unless a whole percentage would read the same as the threshold
+    the value falls short of, as a difference of 39.6% does against 40%.
+
+    Args:
+        value: The fraction measured.
+        threshold: The fraction it falls short of.
+
+    """
+    places = 0
+    while places < 3 and round(value * 100, places) == round(threshold * 100, places):
+        places += 1
+    return places
+
+
+def percent(value: float, places: int = 0) -> str:
+    """Return a reflectance as a percentage, for a message.
 
     Args:
         value: The fraction.
+        places: How many decimals to show.
 
     """
-    return f"{round(value * 100)}%"
+    if not places:
+        return f"{round(value * 100)}%"
+    return f"{round(value * 100, places):.{places}f}%"

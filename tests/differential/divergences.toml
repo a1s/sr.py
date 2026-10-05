@@ -26,8 +26,8 @@
 # deferred values: one defect, `deferred-glyph-warnings`, and three
 # decisions, `final-vertical`, `final-at-a-group-break`, and
 # `footer-deferral-balance`.  M10 added two defects in the reference's
-# barcodes, `code93-check-k` and `barcode-lengths-unrounded`, and one
-# decision, `barcode-charset`.
+# barcodes, `code93-check-k`, `barcode-lengths-unrounded`, and
+# `qr-numeric-plus`, and one decision, `barcode-charset`.
 #
 # The milestone numbers:
 #   M0: Scaffold and oracle
@@ -728,7 +728,7 @@ affects = ["probe/barcode/code93"]
 
 [[divergence]]
 id = "barcode-lengths-unrounded"
-summary = "a barcode's length, bars and grown module are rounded to three decimals here; the reference writes them as binary64 left them"
+summary = "a barcode's length, bars, and grown module are rounded to three decimals here; the reference writes them as binary64 left them"
 reason = """\
 doc/layout.md#coordinates-and-rounding rounds every computed coordinate \
 and extent to three decimals as soon as it is computed, and \
@@ -765,3 +765,20 @@ refuses both, as it refuses any property it does not know (see \
 ticket = "M10: template.md#character-set and barcode.md; filed against the Go engine"
 since = "2026-10-04"
 affects = ["probe/barcode/charset"]
+
+[[divergence]]
+id = "qr-numeric-plus"
+summary = "a QR value with a plus sign among its digits is alphanumeric here; the reference writes it in numeric mode and loses the sign"
+reason = """\
+QR numeric mode holds the ten digits, three to a 10-bit group, and \
+nothing else.  The reference writes `+69`, `123+45`, and `+069` in \
+numeric mode, so the plus sign is dropped and the symbols scan back as \
+`069`, `123045`, and `0069`, as though each three-character group were \
+read as a signed number.  It writes `-69` and `1+2+3` in alphanumeric \
+mode, as it should.  doc/barcode.md#qr-code puts a value in numeric mode \
+only where every byte is a digit, and the reference is the side that \
+changes.\
+"""
+ticket = "M10: QR Code, barcode.md#qr-code; filed against the Go engine"
+since = "2026-10-05"
+affects = ["probe/barcode/qr-plus"]

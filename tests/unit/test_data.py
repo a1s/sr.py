@@ -107,6 +107,13 @@ def test_a_json_number_reaches_a_decimal_through_its_own_spelling() -> None:
     assert str(row["d"]) == "1.5"
 
 
+def test_a_lone_surrogate_escape_reads_as_u_fffd() -> None:
+    rows = records_from('{"s":"a\\ud800b","\\udfff":["\\ud83d\\ude00"]}', None)
+    assert rows[0]["s"] == "a\ufffdb"
+    # A whole pair is one character, and stays it.
+    assert list(rows[0]["\ufffd"]) == ["\U0001f600"]
+
+
 def test_an_undeclared_member_is_passed_through() -> None:
     row = records_from('{"extra":{"k":[1,2]}}', declared())[0]
     assert isinstance(row["extra"], Record)

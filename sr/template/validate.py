@@ -624,6 +624,7 @@ def band_rules(visit: Visit, space: Space, band: Section) -> None:
             content_source(visit, space, element)
         if isinstance(element, Barcode):
             readable_colours(visit, element)
+            positive_module(visit, element)
         if isinstance(element, Image):
             image_source(visit, element)
         blob_reference(visit, element)
@@ -806,6 +807,25 @@ def readable_colours(visit: Visit, element: Barcode) -> None:
     if found is not None:
         prop, reason = found
         visit.diagnostics.error(reason, path=element.path, prop=prop)
+
+
+def positive_module(visit: Visit, element: Barcode) -> None:
+    """Report a ``barcode`` whose module is not wider than nothing.
+
+    A symbol is its modules times the module, so a module of zero
+    draws no symbol at all, and a negative one a symbol turned inside out.
+
+    Args:
+        visit: The document and its collectors.
+        element: The node to check.
+
+    """
+    if element.module <= 0:
+        visit.diagnostics.error(
+            "module must be positive; a symbol is its modules times this",
+            path=element.path,
+            prop="module",
+        )
 
 
 def image_source(visit: Visit, element: Image) -> None:

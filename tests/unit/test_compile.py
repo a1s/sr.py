@@ -98,6 +98,7 @@ def test_the_globals_need_no_declaring() -> None:
         ("1j", "no complex numbers"),
         ("_sr_getattr(1, 'a')", "may not begin"),
         ("{**other}", r"no \*\* in a dict literal"),
+        ("'a\\ud800'", r"invalid Unicode code point U\+D800"),
     ],
 )
 def test_a_construct_the_dialect_lacks_is_refused(source: str, complaint: str) -> None:
@@ -223,6 +224,23 @@ def test_a_failure_at_evaluation_carries_its_message() -> None:
 def test_a_python_error_becomes_an_expression_error() -> None:
     with pytest.raises(ExpressionError, match="ZeroDivisionError"):
         evaluate("1 // 0")
+
+
+# ------------------------------------------------- no surrogates in a string
+
+
+def test_str_of_bytes_writes_u_fffd_for_each_invalid_byte() -> None:
+    assert evaluate("str(b'\\xe2\\x82A')") == "\ufffd\ufffdA"
+    assert evaluate("str(b'\\xc3\\xa9')") == "\u00e9"
+
+
+def test_chr_and_percent_c_give_u_fffd_for_a_surrogate() -> None:
+    assert evaluate("chr(0xD800)") == "\ufffd"
+    assert evaluate("'%c' % 0xDCFF") == "\ufffd"
+
+
+def test_the_repr_of_bytes_escapes_each_invalid_byte() -> None:
+    assert evaluate("'%s' % b'A\\xc3\\xa9\\xc3'") == 'b"A\u00e9\\xc3"'
 
 
 def evaluate_with(source: str, environment: dict[str, Any]) -> Any:

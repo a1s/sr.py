@@ -695,10 +695,12 @@ is string repetition rather than arithmetic.
 
 ### Data input
 
-Records come from JSON: either a single array document, or NDJSON with one record
-per line. The engine buffers the whole dataset — `DATA_COUNT`, report-scoped
-aggregates, and [keep-together](layout.md#keeping-content-together) lookahead
-all require the full sequence.
+Records come from JSON: either a single array document, or NDJSON with
+one record per line. A `\u` escape that spells half a surrogate pair
+on its own reads as U+FFFD; see [strings](expressions.md#strings).
+The engine buffers the whole dataset — `DATA_COUNT`, report-scoped
+aggregates, and [keep-together](layout.md#keeping-content-together)
+lookahead all require the full sequence.
 
 The library API takes a Go slice directly; JSON is the CLI's front end.
 
@@ -1234,7 +1236,7 @@ barcode type="QR-Q" expr="FINAL.PAGE_COUNT" evaltime="page" text="1000" grow=#tr
 | `data` | string, a `data` node name | — |
 | `evaltime` | as for `field` | — |
 | `format` | string, a `%` format | `"%s"` |
-| `module` | dimension, narrow bar width | `"10mil"` |
+| `module` | dimension, narrow bar width, positive | `"10mil"` |
 | `vertical` | boolean | `#false` |
 | `grow` | boolean | `#false` |
 | `ink` | colour, the bars | `"black"` |
@@ -1915,6 +1917,7 @@ Validation runs once, at load, before any data is read. It checks:
   not even for a `text`: that is an error when the band is built.
 - `charset` and `eci` appear only on a 2-D `barcode`;
   see [character set](#character-set).
+- A `barcode`'s `module` is positive.
 - Expressions parse. Name resolution is not checked at load, since undeclared
   record fields are reached dynamically.
 

@@ -19,11 +19,15 @@ colours a symbol is printed in, and is asked when the template loads.
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 from sr.barcode import aztec, dmtx, linear, qr
 from sr.barcode.symbol import Symbol, Unencodable
 
 __all__ = [
+    "CHARSETS",
     "ECI",
+    "LINEAR",
     "QUIET",
     "Symbol",
     "Unencodable",
@@ -50,7 +54,18 @@ QUIET = {
 # Each charset a 2-D type encodes in, and its ECI assignment number.
 ECI = {"utf-8": 26, "iso-8859-1": 3}
 
+# The charsets, and the types that encode characters rather than bytes
+# and so take none: what the template model checks `charset` against.
+CHARSETS = tuple(ECI)
+LINEAR = tuple(linear.ENCODERS)
 
+# How many symbols :func:`encode` keeps.  A band is measured
+# more than once, a header or a footer at least twice a page,
+# and each measure encodes its barcodes.
+CACHED_SYMBOLS = 1024
+
+
+@lru_cache(maxsize=CACHED_SYMBOLS)
 def encode(
     kind: str,
     value: str,
@@ -58,6 +73,9 @@ def encode(
     eci: bool = False,
 ) -> Symbol:
     """Return the symbol a value encodes to.
+
+    The answer is cached, which a :class:`Symbol` being immutable allows;
+    a refusal is not.
 
     Args:
         kind: The type, one of doc/template.md's barcode enum.

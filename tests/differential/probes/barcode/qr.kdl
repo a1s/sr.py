@@ -12,7 +12,10 @@
 //   which for the 166-character value is version 7, the first with
 //   the version information blocks;
 // - takes the mask with the lowest penalty by the standard's four rules,
-//   the lower number winning a tie.
+//   the lower number winning a tie.  Rule 3 scores each side of
+//   a finder-like run on its own, so a run with four light modules
+//   on both sides scores twice; the last two values take another mask
+//   where it scores once.
 //
 // Each symbol carries four modules of quiet zone all round,
 // and every row of `rows` opens and closes light.
@@ -29,6 +32,8 @@ report name="barcode/qr" {
       barcode type="QR-Q" text="hello, world" module=1 left=80 top=0
       barcode type="QR-H" text="Šķūnis" module=1 left=120 top=0
       barcode type="QR-M" expr="'0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ' * 4 + 'ABCDEFGHIJKLMNOPQRSTUV'" module=1 left=200 top=0
+      barcode type="QR-M" text="kotJXQHmxhesfSN" module=1 left=270 top=0
+      barcode type="QR-L" text="kJLqLbEe08TwEQeGK5l lkcRmH" module=1 left=320 top=0
     }
   }
 }

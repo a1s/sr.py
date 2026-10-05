@@ -40,6 +40,7 @@ from typing import Any, Final
 
 from sr.errors import ExpressionError
 from sr.expr.builtins import GLOBALS, getattr_, getitem_, getslice_, mod_
+from sr.expr.values import SURROGATE
 
 __all__ = ["Expression", "compile_expression", "evaluate"]
 
@@ -202,11 +203,21 @@ class Rejector(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Constant(self, node: ast.Constant) -> None:
-        """Refuse the literal kinds the language has no values for."""
+        """Refuse the literal kinds the language has no values for.
+
+        A string literal whose escape names a surrogate is one:
+        no string holds a surrogate, doc/expressions.md#strings.
+
+        """
         if isinstance(node.value, complex):
             raise self.refuse(node, "there are no complex numbers")
         if node.value is Ellipsis:
             raise self.refuse(node, "there is no ...")
+        if isinstance(node.value, str):
+            found = SURROGATE.search(node.value)
+            if found is not None:
+                code = ord(found.group())
+                raise self.refuse(node, f"invalid Unicode code point U+{code:04X}")
 
     def visit_comprehension(self, node: ast.comprehension) -> None:
         """Refuse an asynchronous comprehension, and check the rest."""

@@ -252,6 +252,20 @@ def test_a_grown_module_is_rounded_down_so_the_symbol_fits_its_box(
     assert (sixty_six.module, box(sixty_six)) == (2.275, (100, 0, 65.975, 65.975))
 
 
+def test_a_grown_module_that_fits_exactly_is_kept_whole(tmp_path: Path) -> None:
+    # 22.185 over 29 is 0.765 exactly, which a binary64 quotient rounded
+    # down makes 0.764.
+    printout = built(
+        tmp_path,
+        detail(
+            'barcode type="QR-L" text="A" module=0.5 grow=#true width=22.185'
+            " height=22.185",
+        ),
+    )
+    (mark,) = symbols(printout)
+    assert (mark.module, box(mark)) == (0.765, (0, 0, 22.185, 22.185))
+
+
 # -- content ----------------------------------------------------------
 
 
@@ -289,11 +303,20 @@ def test_a_value_the_type_cannot_encode_is_refused_with_its_record(
     assert refused.value.diagnostic.location.record == 1
 
 
+def test_bytes_that_are_not_utf8_encode_as_u_fffd(tmp_path: Path) -> None:
+    printout = built(
+        tmp_path, detail('barcode type="Aztec" expr="str(b\'A\\\\xffB\')" module=1')
+    )
+    (mark,) = symbols(printout)
+    assert mark.value == "A\ufffdB"
+    assert mark.rows == encode("Aztec", "A\ufffdB").rows()
+
+
 def test_code93_carries_both_check_characters(tmp_path: Path) -> None:
     # The reference leaves K out: probes/barcode/code93.kdl.
     printout = built(tmp_path, detail('barcode type="Code93" text="TEST93" module=1'))
     (mark,) = symbols(printout)
-    # Start, six characters, C, K and stop, nine modules each, the
+    # Start, six characters, C, K, and stop, nine modules each, the
     # termination bar, and two quiet zones.
     assert mark.box.width == 10 * 9 + 1 + 20
 

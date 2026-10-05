@@ -350,6 +350,21 @@ Two methods iterate:
 "Šķūnis".codepoint_ords()    # 352, 311, 363, 110, 105, 115
 ```
 
+**A string holds no surrogates.** U+D800 to U+DFFF are not characters,
+and no string holds one:
+
+- `str` of a bytes value decodes it as UTF-8, and each byte that is not part
+  of a valid sequence becomes U+FFFD, one per byte: `str(b'\xe2\x82A')` is
+  two U+FFFD and an `A`.
+- `chr` and `%c` give U+FFFD for a surrogate's code point.
+- A string literal whose escape names one is an error: `'\ud800'`
+  does not compile.
+- A JSON record or parameter value whose `\u` escape spells half
+  a surrogate pair on its own reads it as U+FFFD.
+
+The `repr` of a bytes value is the other way round: there, each byte that
+is not part of a valid sequence is written as an escape, `b"\xe2\x82"`.
+
 There is deliberately **no `elems` or `elem_ords` on a string**. Those are
 the byte pair, and under codepoint indexing they have nothing left to mean.
 `bytes` keeps its own `elems`, because bytes are bytes and iterating them

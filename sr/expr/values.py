@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import decimal
 import math
+import re
 from collections.abc import Hashable, Iterable, Iterator, Mapping, Sequence
 from datetime import UTC, datetime, timedelta, tzinfo
 from fractions import Fraction
@@ -1335,7 +1336,10 @@ def quote(text: str) -> str:
     """Return a string quoted the way the language writes one.
 
     Double quotes, because that is what ``repr`` and ``%q`` produce
-    and what the reference's printouts carry.
+    and what the reference's printouts carry.  A byte that is not part
+    of a valid UTF-8 sequence, which only a bytes value's ``repr``
+    brings here, as ``surrogateescape`` decoded it, is written
+    as the byte it stands for.
 
     Args:
         text: The string to quote.
@@ -1348,10 +1352,63 @@ def quote(text: str) -> str:
             written.append(escape)
         elif character < " " or character == "\x7f":
             written.append(f"\\x{ord(character):02x}")
+        elif "\udc80" <= character <= "\udcff":
+            written.append(f"\\x{ord(character) - 0xDC00:02x}")
         else:
             written.append(character)
     written.append('"')
     return "".join(written)
+
+
+# A surrogate code point.  No string the language makes holds one: where
+# the reference's string would hold invalid UTF-8, this one holds U+FFFD,
+# which is what the reference writes for it.  doc/expressions.md#strings.
+SURROGATE: Final = re.compile("[\ud800-\udfff]")
+
+
+def without_surrogates(text: str) -> str:
+    """Return text with each surrogate code point replaced by U+FFFD.
+
+    Args:
+        text: The text, as Python made it.
+
+    """
+    return SURROGATE.sub("\ufffd", text)
+
+
+def json_without_surrogates(value: Any) -> Any:
+    r"""Return what ``json.loads`` made, each lone surrogate as U+FFFD.
+
+    JSON's ``\u`` escape can spell half a surrogate pair on its own,
+    which Python keeps and the reference reads as U+FFFD.  A pair
+    that is whole is one character by now, so what is left is lone.
+
+    Args:
+        value: The parsed value.
+
+    """
+    if isinstance(value, str):
+        return without_surrogates(value)
+    if isinstance(value, list):
+        return [json_without_surrogates(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            without_surrogates(name): json_without_surrogates(item)
+            for name, item in value.items()
+        }
+    return value
+
+
+def character_of(code: int) -> str:
+    """Return the string of one code point, as ``chr`` and ``%c`` make it.
+
+    A surrogate's code point is not a character, and gives U+FFFD.
+
+    Args:
+        code: The code point.
+
+    """
+    return without_surrogates(chr(code))
 
 
 def starlark_str(value: Any) -> str:

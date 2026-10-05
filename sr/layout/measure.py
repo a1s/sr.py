@@ -93,7 +93,7 @@ from sr.template.model import (
 )
 from sr.template.model import Line as LineElement
 from sr.template.model import Rectangle as RectangleElement
-from sr.units import fits, round_down_points, round_points
+from sr.units import fill_points, fits, round_points
 
 __all__ = ["Extent", "Measurement", "Measurer", "Styling", "resolve_span"]
 
@@ -729,7 +729,7 @@ class Measurer:
         assert down.start is not None
         declared = down.size
         content = placed.content_height or 0.0
-        if isinstance(placed.element, Barcode):
+        if drawn_whole(placed.element):
             box = declared or 0.0
             if down.limit is not None:
                 box = min(box, down.limit)
@@ -1468,6 +1468,21 @@ def extent(placed: Placement, mark: Mark) -> Extent:
     return Extent(box.y, round_points(box.bottom))
 
 
+def drawn_whole(element: Element | Xref) -> bool:
+    """Report whether an element's content is drawn whole, whatever its box.
+
+    A clamp cannot cut such content, so it clamps the box the element
+    declared and the box then grows to the content: doc/template.md,
+    under maxwidth and maxheight.  A barcode's symbol is drawn whole,
+    and so is an image with ``scale="grow"``, which M11 adds here.
+
+    Args:
+        element: The element.
+
+    """
+    return isinstance(element, Barcode)
+
+
 def symbol_size(
     symbol: Symbol,
     module: float,
@@ -1477,7 +1492,7 @@ def symbol_size(
 
     A 1-D symbol's bars reach across the coding direction for 15%
     of its length, or a quarter of an inch where that is more.
-     A 2-D symbol is a module per row as well as per column.
+    A 2-D symbol is a module per row as well as per column.
 
     Args:
         symbol: The symbol, quiet zone included.
@@ -1499,7 +1514,7 @@ def symbol_mark(
     """Return a symbol's mark, sized for a box and placed in it.
 
     Args:
-        barcode: The node, for its module, direction, alignment and colours.
+        barcode: The node, for its module, direction, alignment, and colours.
         value: The string the symbol encodes.
         symbol: The symbol.
         box: The box it is drawn in.
@@ -1517,7 +1532,7 @@ def symbol_mark(
                 symbol.depth,
             )
         )
-        fill = round_down_points(min(box.width / wide, box.height / tall))
+        fill = min(fill_points(box.width, wide), fill_points(box.height, tall))
         module = max(module, fill)
     width, height = symbol_size(symbol, module, vertical)
     if grow and symbol.linear:

@@ -136,7 +136,7 @@ rather than padded, and `format` is how a value is given a fixed width.
 
 A wide element is **three modules** and a narrow one is one. The start is
 a narrow bar, a narrow space, a narrow bar and a narrow space, and the stop
-a wide bar, a narrow space and a narrow bar. Each pair of digits is ten
+a wide bar, a narrow space, and a narrow bar. Each pair of digits is ten
 elements, the first digit's five in the bars and the second's in the
 spaces, starting with a bar. There is **no check digit**.
 
@@ -148,8 +148,9 @@ ISO/IEC 18004, model 2. The type names the error-correction level,
 **One segment, in one mode.** Numeric where every byte is an ASCII
 digit; alphanumeric where every byte is one of that mode's 45: the
 digits, `A` to `Z`, space, and `$ % * + - . / :`; and byte otherwise.
-A value is never split into segments of different modes, and Kanji mode
-and structured append are never used.
+A sign is not a digit, so `+69` is alphanumeric. A value is never split
+into segments of different modes, and Kanji mode and structured append
+are never used.
 
 **An ECI**, where there is one, comes before the segment: the ECI mode
 indicator 0111, then the designator in eight bits, 00011010 for 000026
@@ -171,9 +172,10 @@ zone left out. It is the sum of four scores:
 2. Each two by two block of one colour scores 3.
    Blocks that overlap are each counted.
 3. Each place in a row or a column where dark, light, dark, dark, dark,
-   light, dark is preceded or followed by four light modules scores 40.
-   The four must lie inside the symbol, since the quiet zone is left out,
-   and a place with four light modules on both sides counts once.
+   light, dark is preceded by four light modules scores 40, and each place
+   where it is followed by four light modules scores 40, so a place with
+   four on both sides scores 80. The four must lie inside the symbol,
+   since the quiet zone is left out.
 4. With `d` dark modules among `n`, the score is 10 times
    `floor(|20d - 10n| / n)`: 10 for each whole 5% the proportion of dark
    modules is away from half.
@@ -217,12 +219,12 @@ If we ever need to draw runes, we'll make another barcode type for them.
 ### The bits
 
 The value's bytes become bits by a search for a short encoding through
-the five character modes, Upper, Lower, Mixed, Punct and Digit, and Binary
-Shift. The standard's character tables are used with one change: **Punct's
-code 7, the double quote, is never used**, and a double quote is written in
-Binary Shift like a byte no mode holds. Several encodings are often equally
-short, and which one is written is decided by the search's order, so the
-search is the rule:
+Binary Shift and the five character modes: Upper, Lower, Mixed, Punct,
+and Digit. The standard's character tables are used with one change:
+**Punct's code 7, the double quote, is never used**, and a double quote
+is written in Binary Shift like a byte no mode holds. Several encodings
+are often equally short, and which one is written is decided by the
+search's order, so the search is the rule:
 
 A **state** is one encoding of the bytes read so far: its codes, the mode
 it is in, the bytes in a Binary Shift run it has open, and its length
@@ -262,7 +264,7 @@ The value is read from the left, two bytes at a time where they are one of
 Punct's pairs, CR LF, `. `, `, ` or `: `, and one byte at a time otherwise.
 Each state in turn makes new states, in this order:
 
-- **For one byte**, for each of Upper, Lower, Digit, Mixed and Punct, in
+- **For one byte**, for each of Upper, Lower, Digit, Mixed, and Punct, in
   that order, that holds it: a **latch** to that mode and the byte's code,
   if the state's own mode lacks the byte, or the mode is the state's own
   or Digit; then a **shift** to that mode and the code, if the state's mode
@@ -308,6 +310,6 @@ A value no symbol holds is refused.
 
 The layers hold, in order, the zero bits left over from a whole codeword,
 the data codewords, and as many Reed-Solomon check codewords as fill the
-rest, computed in GF(64), GF(256), GF(1024) or GF(4096) as the codeword
+rest, computed in GF(64), GF(256), GF(1024), or GF(4096) as the codeword
 size gives. The mode message, the layers' arrangement, the reference grid,
 and the finder pattern are the standard's.

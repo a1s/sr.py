@@ -133,7 +133,7 @@ def unmasked(payload: bytes, level: str, eci: int | None = None) -> Grid:
 
     Args:
         payload: The value's bytes.
-        level: ``L``, ``M``, ``Q`` or ``H``.
+        level: ``L``, ``M``, ``Q``, or ``H``.
         eci: The ECI the symbol opens with, or ``None`` for none.
 
     Raises:
@@ -182,7 +182,7 @@ def stream(
     """Return the bits of one segment, before the terminator.
 
     Args:
-        mode: ``numeric``, ``alphanumeric`` or ``byte``.
+        mode: ``numeric``, ``alphanumeric``, or ``byte``.
         payload: The value's bytes.
         version: The version, which sets the character count's width.
         eci: The ECI the segment is preceded by, or ``None`` for none.
@@ -235,7 +235,7 @@ def finish(bits: list[int], capacity: int) -> list[int]:
 def raw_modules(version: int) -> int:
     """Return how many modules a version leaves for codewords.
 
-    Everything the function patterns, the format and the version
+    Everything the function patterns, the format, and the version
     information do not take, remainder bits included.
 
     Args:
@@ -256,7 +256,7 @@ def data_codewords(version: int, level: str) -> int:
 
     Args:
         version: 1 to 40.
-        level: ``L``, ``M``, ``Q`` or ``H``.
+        level: ``L``, ``M``, ``Q``, or ``H``.
 
     """
     blocks = BLOCKS[level][version - 1]
@@ -388,7 +388,7 @@ def masked(grid: Grid, level: str, mask: int) -> Matrix:
 
 
 def functions(grid: Grid, version: int) -> None:
-    """Draw the finder, separator, timing and alignment patterns.
+    """Draw the finder, separator, timing, and alignment patterns.
 
     The version information is drawn too, where the version has it,
     and the format information's modules are reserved.
@@ -561,6 +561,10 @@ def runs_penalty(line: tuple[bool, ...]) -> int:
 def finder_penalty(line: tuple[bool, ...]) -> int:
     """Return rule 3's score for one row or column.
 
+    Each side of a finder-like run scores on its own, so a run with
+    four light modules on both sides scores twice: once for each of
+    the two 11-module windows it is part of.
+
     Args:
         line: The modules, in order.
 
@@ -572,8 +576,8 @@ def finder_penalty(line: tuple[bool, ...]) -> int:
             continue
         before = bits[max(0, start - 4) : start]
         after = bits[start + 7 : start + 11]
-        if (len(before) == 4 and not any(before)) or (
-            len(after) == 4 and not any(after)
-        ):
+        if len(before) == 4 and not any(before):
+            score += N3
+        if len(after) == 4 and not any(after):
             score += N3
     return score

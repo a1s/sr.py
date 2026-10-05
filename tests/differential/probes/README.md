@@ -219,6 +219,7 @@ the reference gave, and names the section of `doc/` that answer became.
 | `barcode/split` | a barcode in a band that splits |
 | `barcode/rounding` | a barcode's lengths at three decimals |
 | `barcode/charset` | the bytes a 2-D symbol carries, and its ECI |
+| `barcode/qr-plus` | a plus sign among a QR value's digits |
 | `data/blob-names` | the name an embedded image gets |
 | `data/blob-collision` | a generated name that is already taken |
 | `data/key-order` | the order of the header's `data` object |
@@ -315,14 +316,15 @@ engine's answer are `test_an_empty_frame_is_measured_below_the_column_headers`
 and `test_an_empty_frame_begins_below_the_headers_as_drawn` in
 [test_pagination.py](../../unit/test_pagination.py).
 
-M10 added the `barcode/` group and two defects in the reference with it,
-both about what a symbol is rather than where it goes. In `code93`, the
+M10 added the `barcode/` group and three defects in the reference with it,
+all about what a symbol is rather than where it goes. In `code93`, the
 reference writes Code 93's first check character and leaves out the second,
-which the specification requires; and in `rounding`, it writes a barcode's
-length, its bars, and a grown module as binary64 left them rather than
-at three decimals. The second would show in every barcode drawn at a module
-that is not a whole number of points, so every other `barcode/` probe draws
-at one point, and compares byte for byte.
+which the specification requires; in `qr-plus`, it writes digits with a plus
+sign among them in numeric mode, which drops the sign; and in `rounding`,
+it writes a barcode's length, its bars, and a grown module as binary64 left
+them rather than at three decimals. The last would show in every barcode
+drawn at a module that is not a whole number of points, so every other
+`barcode/` probe draws at one point, and compares byte for byte.
 
 M10 also added one decision, in `charset`. The reference writes a 2-D
 value's UTF-8 bytes with no ECI, which every 2-D standard reads as

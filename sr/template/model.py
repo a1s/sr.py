@@ -40,11 +40,12 @@ from decimal import InvalidOperation
 from pathlib import Path
 from typing import Any, Final
 
+from sr.barcode import CHARSETS, LINEAR
 from sr.errors import BadValue, NodePath, SrError
 from sr.expr import Decimal, Expression, FrozenList, Record
 from sr.expr.builtins import parse_time
 from sr.expr.golayout import RFC3339
-from sr.expr.values import parse_decimal
+from sr.expr.values import json_without_surrogates, parse_decimal
 from sr.units import POINTS_PER_UNIT, parse_number, round_points
 
 __all__ = [
@@ -135,7 +136,7 @@ BARCODE_TYPES: Final = (
     "QR-Q",
     "QR-H",
 )
-BARCODE_CHARSETS: Final = ("utf-8", "iso-8859-1")
+BARCODE_CHARSETS: Final = CHARSETS
 IMAGE_SCALES: Final = ("cut", "fill", "grow")
 IMAGE_TYPES: Final = ("png", "jpeg", "gif")
 XREF_TYPES: Final = ("outline", "url")
@@ -163,7 +164,7 @@ EVALTIME_SCOPES: Final = ("report", "page", "column")
 
 # The barcode types that encode characters rather than bytes, and so
 # take no `charset` and no `eci`: doc/template.md#character-set.
-LINEAR_BARCODES: Final = ("Code128", "Code39", "Code93", "2of5i")
+LINEAR_BARCODES: Final = LINEAR
 
 # What doc/template.md#parameter-values-as-text takes for a `decimal`:
 # a sign, digits, and an optional fractional part.  None of the spellings
@@ -1115,7 +1116,7 @@ def read_json(kind: str, text: str) -> Any:
 
     """
     try:
-        value = json.loads(text)
+        value = json_without_surrogates(json.loads(text))
     except ValueError as refused:
         raise BadValue(f"not JSON: {refused}") from None
     wanted = dict if kind == "object" else list
