@@ -96,7 +96,9 @@ def decimals(value: float, threshold: float) -> int:
 
     """
     places = 0
-    while places < 3 and round(value * 100, places) == round(threshold * 100, places):
+    while (places < 3) and (
+        round(value * 100, places) == round(threshold * 100, places)
+    ):
         places += 1
     return places
 

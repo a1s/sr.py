@@ -108,7 +108,7 @@ def encode(payload: bytes, level: str, eci: int | None = None) -> Matrix:
 
     Args:
         payload: The value's bytes.
-        level: ``L``, ``M``, ``Q`` or ``H``.
+        level: ``L``, ``M``, ``Q``, or ``H``.
         eci: The ECI the symbol opens with, or ``None`` for none.
 
     Raises:

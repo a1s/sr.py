@@ -45,7 +45,11 @@ from sr.errors import BadValue, NodePath, SrError
 from sr.expr import Decimal, Expression, FrozenList, Record
 from sr.expr.builtins import parse_time
 from sr.expr.golayout import RFC3339
-from sr.expr.values import json_without_surrogates, parse_decimal
+from sr.expr.values import (
+    json_without_surrogates,
+    parse_decimal,
+    without_surrogates,
+)
 from sr.units import POINTS_PER_UNIT, parse_number, round_points
 
 __all__ = [
@@ -1000,6 +1004,11 @@ def parse_text(kind: str, text: str, format: str | None = None) -> Any:
     NAME=VALUE`` from the command line.  Both have to mean the same
     thing, which is why the reading is here rather than in either.
 
+    A byte of the text that is not part of a valid UTF-8 sequence is
+    U+FFFD before anything reads it.  Python hands such a byte over as
+    a surrogate, from a command line on Linux by ``surrogateescape``,
+    and no string may hold one: doc/expressions.md#strings.
+
     Args:
         kind: One of :data:`VALUE_TYPES`.
         text: The value as the caller spelled it.
@@ -1010,6 +1019,7 @@ def parse_text(kind: str, text: str, format: str | None = None) -> Any:
         BadValue: The text does not spell a value of that type.
 
     """
+    text = without_surrogates(text)
     if kind in ("date", "datetime"):
         return read_time(kind, text, format)
     reader = READERS.get(kind)

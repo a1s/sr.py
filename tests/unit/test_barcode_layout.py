@@ -312,6 +312,30 @@ def test_bytes_that_are_not_utf8_encode_as_u_fffd(tmp_path: Path) -> None:
     assert mark.rows == encode("Aztec", "A\ufffdB").rows()
 
 
+def test_a_parameter_byte_that_is_not_utf8_encodes_as_u_fffd(
+    tmp_path: Path,
+) -> None:
+    template = tmp_path / "report.kdl"
+    template.write_text(
+        HEAD.replace("FACE", REGULAR)
+        .replace("HEIGHT", "800")
+        .replace('Barcodes" {', 'Barcodes" {\n  parameter "code" type="string"')
+        .replace("BANDS", detail('barcode type="QR-M" expr="code" module=1')),
+        encoding="utf-8",
+    )
+    data = tmp_path / "rows.jsonl"
+    data.write_text('{"n": 1}\n', encoding="utf-8")
+    # A command line on Linux hands Python such a byte as a surrogate.
+    options = Options(
+        build_time="2026-08-04T09:12:44Z",
+        strict_fonts=True,
+        params={"code": "A\udcffB"},
+    )
+    (mark,) = symbols(build(template, data, options).printout)
+    assert mark.value == "A\ufffdB"
+    assert mark.rows == encode("QR-M", "A\ufffdB").rows()
+
+
 def test_code93_carries_both_check_characters(tmp_path: Path) -> None:
     # The reference leaves K out: probes/barcode/code93.kdl.
     printout = built(tmp_path, detail('barcode type="Code93" text="TEST93" module=1'))

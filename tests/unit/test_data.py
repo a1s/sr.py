@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -10,7 +11,7 @@ from sr.data import as_text, coerce, read_records, records_from
 from sr.errors import BadValue, BuildError, NodePath
 from sr.expr import Decimal, Record, Time
 from sr.template.load import load_text
-from sr.template.model import Member, Records
+from sr.template.model import Member, Records, parse_text
 
 TEMPLATE = """
 report name="Data" {
@@ -112,6 +113,22 @@ def test_a_lone_surrogate_escape_reads_as_u_fffd() -> None:
     assert rows[0]["s"] == "a\ufffdb"
     # A whole pair is one character, and stays it.
     assert list(rows[0]["\ufffd"]) == ["\U0001f600"]
+
+
+@pytest.mark.parametrize(
+    ("kind", "text", "expected"),
+    [
+        ("string", "A\udcffB", "A\ufffdB"),
+        ("string", "A\udce2\udc82B", "A\ufffd\ufffdB"),
+        ("list", '["C\udcffD"]', ["C\ufffdD"]),
+    ],
+)
+def test_parameter_text_reads_each_byte_that_is_not_utf8_as_u_fffd(
+    kind: str, text: str, expected: Any
+) -> None:
+    # A command line on Linux hands Python such a byte as a surrogate.
+    found = parse_text(kind, text)
+    assert (list(found) if kind == "list" else found) == expected
 
 
 def test_an_undeclared_member_is_passed_through() -> None:

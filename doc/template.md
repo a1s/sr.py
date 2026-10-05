@@ -644,6 +644,11 @@ A parameter value arriving as text — from `--param NAME=VALUE`, or from
 
 `date` yields a time value with zero time of day.
 
+Each byte of the text that is not part of a valid UTF-8 sequence reads
+as U+FFFD, whatever the type, as it does everywhere a string is made;
+see [strings](expressions.md#strings). A command line on Linux is bytes,
+and can carry such a byte.
+
 Text that does not parse is an error naming the parameter, its declared type, and
 the offending text.
 

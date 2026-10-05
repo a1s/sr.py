@@ -8,7 +8,7 @@ makes each of them a rule.
 * **ASCII encodation, throughout.**  A pair of digits is one codeword,
   a byte up to 127 is one, and a byte above it is two, an Upper Shift
   and the byte less 127.  An ECI, where there is one, comes first.
-  The standard's C40, Text, X12, EDIFACT and Base 256 encodations are
+  The standard's C40, Text, X12, EDIFACT, and Base 256 encodations are
   denser for some values and are never used, so a value always gets
   the same symbol.
 * **The smallest square symbol that holds it.**  The six rectangular
