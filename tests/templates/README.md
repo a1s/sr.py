@@ -52,6 +52,6 @@ silent.
 ## What is here
 
 Each file's first line says what it isolates. Between them they cover
-the validation section's list, less the two rules that wait for the barcode
-encoders in M10: what a symbology can encode, and whether an `ink` and
-a `paper` can be read apart.
+the validation section's list. What a barcode's type can encode is not
+on it: that is an error when the band is built, and
+[`test_barcode_layout.py`](../unit/test_barcode_layout.py) holds it.

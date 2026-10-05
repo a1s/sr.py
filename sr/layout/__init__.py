@@ -22,9 +22,9 @@ are all consequences of that separation.
 What is here is the whole of pagination: frames and columns, the four
 branches of placing a band, splitting, `eject` nodes and the eject
 sequence, groups, keep-together, and balancing, and deferred evaluation
-on top of it.  Subreports are not, nor are barcodes, images, and outline
-entries inside a band, and each raises :class:`~sr.errors.Unsupported`
-naming the milestone that brings it.
+on top of it, and every body element but `image`.  Subreports are not,
+nor are images and outline entries inside a band, and each raises
+:class:`~sr.errors.Unsupported` naming the milestone that brings it.
 
 """
 

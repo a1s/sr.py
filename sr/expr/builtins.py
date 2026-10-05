@@ -49,6 +49,7 @@ from sr.expr.values import (
     Record,
     Set,
     Time,
+    character_of,
     find_location,
     hashable,
     quantize,
@@ -57,6 +58,7 @@ from sr.expr.values import (
     truthy,
     type_name,
     valid_timezone,
+    without_surrogates,
 )
 
 __all__ = [
@@ -1010,14 +1012,16 @@ def sr_str(value: Any) -> str:
     ``str`` and ``%s`` agree on everything but bytes, where ``str``
     decodes and ``%s`` writes the quoted ``b"..."`` form.  Measured
     against the reference rather than reasoned about, because there
-    is no reason to it.
+    is no reason to it.  Each byte that is not part of a valid UTF-8
+    sequence becomes U+FFFD: one per byte, as the reference has it,
+    which is what ``surrogateescape`` lays out for the replacing.
 
     Args:
         value: The value to write.
 
     """
     if isinstance(value, bytes):
-        return value.decode("utf-8", "surrogateescape")
+        return without_surrogates(value.decode("utf-8", "surrogateescape"))
     return starlark_str(value)
 
 
@@ -1520,7 +1524,7 @@ GLOBALS: Final[dict[str, Any]] = {
     "any": any,
     "bool": truthy,
     "bytes": sr_bytes,
-    "chr": chr,
+    "chr": character_of,
     "decimal": Decimal,
     "dict": sr_dict,
     "dir": sr_dir,

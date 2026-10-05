@@ -1,0 +1,35 @@
+// probes/barcode/datamatrix.kdl -- the two choices a Data Matrix encoder makes.
+//
+// ISO/IEC 16022 leaves the encoder to choose an encodation
+// and a symbol size.  The reference:
+//
+// - uses ASCII encodation throughout: two digits are one codeword,
+//   a byte up to 127 one, and a byte above it two, an Upper Shift
+//   and the byte less 128.  The value is its UTF-8 bytes, so `é`
+//   is four codewords.  A run of lower case that C40 or Text would
+//   carry in fewer codewords stays in ASCII all the same;
+// - takes the smallest square symbol that holds the codewords,
+//   so `A` and `123456` are 10 x 10, and never a rectangular one.
+//
+// The padding after the data is the standard's: 129, then the
+// randomised pad codewords.  The 70-codeword value takes the 36 x 36
+// symbol, four data regions with their own finder patterns, and the
+// 219-codeword one the 64 x 64 symbol, sixteen regions and two
+// interleaved blocks.  Every symbol has one module of quiet zone.
+//
+// doc/barcode.md#data-matrix is what this became.
+
+report name="barcode/datamatrix" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=600 height=900 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail {
+      barcode type="DataMatrix" text="A" module=1 left=0 top=0
+      barcode type="DataMatrix" text="123456" module=1 left=20 top=0
+      barcode type="DataMatrix" text="é" module=1 left=40 top=0
+      barcode type="DataMatrix" text="hello world" module=1 left=60 top=0
+      barcode type="DataMatrix" expr="'abcdefghij' * 7" module=1 left=100 top=0
+      barcode type="DataMatrix" expr="'Data Matrix 0123456789 ' * 12 + 'end'" module=1 left=160 top=0
+    }
+  }
+}

@@ -1,0 +1,39 @@
+// probes/barcode/qr.kdl -- the three choices a QR encoder makes.
+//
+// ISO/IEC 18004 fixes everything about a QR symbol but three things:
+// how the value is split into modes, which version holds it, and
+// which of the eight masks is applied.  The reference:
+//
+// - encodes the whole value in one mode: numeric where every character
+//   is a digit, alphanumeric where every character is in that mode's 45,
+//   and byte otherwise, as UTF-8 with no ECI.  `HELLO 123` is one
+//   alphanumeric segment, not alphanumeric and numeric;
+// - takes the smallest version that holds the value at the type's level,
+//   which for the 166-character value is version 7, the first with
+//   the version information blocks;
+// - takes the mask with the lowest penalty by the standard's four rules,
+//   the lower number winning a tie.  Rule 3 scores each side of
+//   a finder-like run on its own, so a run with four light modules
+//   on both sides scores twice; the last two values take another mask
+//   where it scores once.
+//
+// Each symbol carries four modules of quiet zone all round,
+// and every row of `rows` opens and closes light.
+//
+// doc/barcode.md#qr-code is what this became.
+
+report name="barcode/qr" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=600 height=900 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail {
+      barcode type="QR-L" text="0123456789" module=1 left=0 top=0
+      barcode type="QR-M" text="HELLO 123" module=1 left=40 top=0
+      barcode type="QR-Q" text="hello, world" module=1 left=80 top=0
+      barcode type="QR-H" text="Šķūnis" module=1 left=120 top=0
+      barcode type="QR-M" expr="'0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ' * 4 + 'ABCDEFGHIJKLMNOPQRSTUV'" module=1 left=200 top=0
+      barcode type="QR-M" text="kotJXQHmxhesfSN" module=1 left=270 top=0
+      barcode type="QR-L" text="kJLqLbEe08TwEQeGK5l lkcRmH" module=1 left=320 top=0
+    }
+  }
+}

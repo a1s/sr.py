@@ -35,6 +35,7 @@ from sr.expr.values import (
     Decimal,
     FrozenDict,
     Record,
+    character_of,
     go_general,
     go_shortest,
     quantize,
@@ -211,7 +212,7 @@ def integer_text(value: Any, spec: Spec) -> str:
 
     """
     if spec.verb == "c":
-        text = value if isinstance(value, str) else chr(as_integer(value, "c"))
+        text = value if isinstance(value, str) else character_of(as_integer(value, "c"))
         return spec.pad("", text)
     number = as_integer(value, spec.verb)
     base, prefix = BASES[spec.verb]

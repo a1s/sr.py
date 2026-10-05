@@ -568,8 +568,11 @@ Given a band template and a context, measurement proceeds:
         so the image is drawn at natural size, neither scaled nor clipped.
         Only `fill` scales, so `proportional` is consulted only for `fill`;
         only `cut` produces a `crop`.
-      - `barcode`: encode, obtaining stripe widths and a minimum symbol size;
-        the box grows along the coding direction to at least that minimum.
+      - `barcode`: encode the value by the rules of
+        [barcode.md](barcode.md), giving a symbol in modules.
+        Its size at the declared `module` is the element's content height,
+        and how it is finally drawn waits for the box: see
+        [a barcode in its box](#a-barcode-in-its-box).
       - `xref`: recurse — an xref is a container of elements and is measured as one.
         Its own box comes from its geometry alone and never grows to what it
         holds. An xref has no content height, so it is container-dependent,
@@ -606,7 +609,7 @@ Given a band template and a context, measurement proceeds:
    An element has a height of its own — a **content height** — when it is
 
    - a `field` with `stretch=#true`: the wrapped text's height;
-   - a `barcode`: the symbol's minimum height;
+   - a `barcode`: its symbol's height at the declared `module`;
    - an `image` with `scale="grow"`: the bitmap's natural height.
 
    Those three participate in the maximum even with no vertical geometry
@@ -649,6 +652,71 @@ The second maximum cannot feed back into step 2, and that is not a
 simplification for its own sake: resolving the rule against the final height
 would make the two define each other, which is the reason step 6 excludes
 container-dependent elements from the first maximum at all.
+
+### A barcode in its box
+
+A symbol's size comes from its modules and not from its box, so the two
+rarely match, and these are the rules that put one in the other.
+Every length here is rounded as it is computed, as
+[coordinates and rounding](#coordinates-and-rounding) requires.
+
+**The symbol's size at a module** is its length, the module times the
+modules along the coding direction, quiet zone included; and its depth,
+which for a 2-D symbol is the module times its rows, and for a 1-D symbol
+is 15% of the length or a quarter of an inch, whichever is greater:
+
+```
+length = round(module × modules)
+depth  = max(round(length × 0.15), 18)       1-D
+depth  = round(module × rows)                2-D
+```
+
+The coding direction runs across the page, or down it with `vertical`,
+so the symbol is `length` wide and `depth` tall, or the other way round.
+Its height on the page at the declared `module` is the element's
+[content height](#building-a-band).
+
+**The box** is resolved from the geometry like any element's, `maxwidth`
+and `maxheight` included, which clamp the box and never the symbol.
+Across the page, that is all. Down the page, a box whose height
+is its own is at least the content height, so a symbol taller
+than the box pushes the box down rather than overhanging it,
+and a container-dependent box is what the band gives it.
+
+**`grow`** expands the symbol into the box, and never shrinks it.
+A 1-D symbol's depth becomes the box's extent across the coding direction,
+where that is more. A 2-D symbol's module becomes what fills the box's
+shorter side, where that is more:
+
+```
+module = max(module, min(fill(box width, columns), fill(box height, rows)))
+```
+
+`fill(side, count)` is the longest whole number of thousandths of a point
+that `count` modules fit into `side`. The side is a whole number of
+thousandths already, so it is computed in whole numbers, exactly:
+`floor(round(side × 1000) / count) / 1000`, the division an integer one.
+A binary64 quotient rounded down would lose a thousandth that fits about
+one time in nine: 22.185 over 29 modules is 0.765 exactly, and
+`floor(22.185 / 29 × 1000)` is 764. It is the one length in the engine
+that is not rounded half away from zero, because a module rounded up
+would draw a symbol larger than the box it was made to fill.
+A box  whose height is the symbol's own content height leaves `grow`
+nothing to expand into down the page, so a 2-D symbol given a width
+and no height keeps its module.
+
+**The symbol sits in the box** by `halign` and `valign`, measured
+from the box's edges:
+
+```
+x = round(box.x + share × (box.width  - symbol width))
+y = round(box.y + share × (box.height - symbol height))
+```
+
+with `share` 0, 0.5, or 1 as for a field. A symbol larger than its box
+overhangs it, on the side the alignment does not name, and the mark is
+the symbol: its box, its `module`, and its runs. A symbol that overhangs
+the band reaches the band's second maximum like any mark.
 
 ## Floating elements
 
@@ -1409,7 +1477,9 @@ Validation rejects a deferred element that needs one and has none. See
 and the placeholder stands in for that result rather than feeding it:
 `format="rows %05d" text="rows 99999"` is a placeholder of ten characters,
 not a value `%05d` would refuse. An element without one is measured as
-empty text, which is one empty line.
+empty text, which is one empty line. A barcode's placeholder is encoded
+as written, so it has to be a value its type can carry: Interleaved
+2 of 5 refuses `text="999"` as it would refuse the value `999`.
 
 **It is never drawn**, so a character its font lacks raises no
 [glyph warning](template.md#missing-glyphs). The value raises
@@ -1460,6 +1530,26 @@ gives 2.774.
 
 So a placeholder must be sized for the worst case: `text="Page 999 of 999"`,
 not `text="Page 1 of 1"`.
+
+A **barcode** is re-measured the same way, its value encoded and its symbol
+set in the room its placeholder's symbol took: the placeholder's mark,
+which is a symbol rather than the element's box.
+
+- **Its length must fit the room's**, along the coding direction, at the
+  declared `module`. A longer symbol is an **error**, naming the barcode,
+  the value, its placeholder, both lengths, and the record the barcode
+  was built for.
+- **A 1-D symbol's bars reach across the room**, as long as the
+  placeholder's were. They are never shorter than the value's own would be,
+  since a symbol no longer than the room has bars no longer than its own.
+- **A 2-D symbol keeps the declared `module`**, or with `grow` takes
+  the module that fills the room, as the placeholder did.
+- **The symbol sits in the room** by `halign` and `valign`, by the same
+  arithmetic as in [its box](#a-barcode-in-its-box), measured from the
+  room's edges.
+
+So the placeholder for a page count drawn as a barcode is the longest value
+the count can take, encoded: `text="9999"` for a four-digit count.
 
 ## Subreports
 
@@ -1642,6 +1732,7 @@ Each of these names the template node, the record index, and the measured values
 | Band taller than an empty frame, splitting allowed, no cut point exists | **overflow** |
 | A mark lands outside the page's printable area | **overflow** |
 | Deferred stretch field whose value is taller than its placeholder | error |
+| Deferred barcode whose symbol is longer than its placeholder's | error |
 | Header and footer reservations together exceed the frame | error |
 | Barcode content not encodable in the selected type | error |
 | Expression type mismatch, missing field, or a `null` in a member that is not `nullable` | error |

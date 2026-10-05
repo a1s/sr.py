@@ -1,0 +1,33 @@
+// probes/barcode/rounding.kdl -- a barcode's lengths at three decimals.
+//
+// doc/layout.md#coordinates-and-rounding rounds every computed extent
+// to three decimals as soon as it is computed, and a barcode's
+// are computed: its length is the module times its modules,
+// its bars 15% of that, and under `grow` its module is the box's side
+// over its modules.  The reference writes all three unrounded,
+// as binary64 gives them:
+//
+// - `10mil` is 0.72 points, and 66 modules of it are 47.519999999999996
+//   rather than 47.52;
+// - 154 modules of one point have bars of 23.099999999999998;
+// - a QR symbol of 29 modules grown into a box 50 wide
+//   has a module of 1.7241379310344827, and a side of 50.
+//
+// doc/ rounds each: 47.52, 23.1, and a module rounded down to 1.724,
+// so that the symbol, 49.996, never outgrows the box it was
+// made to fill.  This probe is a registered divergence:
+// see `barcode-lengths-unrounded` in divergences.toml.
+//
+// doc/layout.md#a-barcode-in-its-box is what this became.
+
+report name="barcode/rounding" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=400 height=800 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail {
+      barcode type="Code128" text="A" left=0 top=0
+      barcode type="Code128" text="ABCDEFGHI" module=1 left=0 top=30
+      barcode type="QR-L" text="A" module=1 grow=#true left=200 top=0 width=50 height=100
+    }
+  }
+}

@@ -40,15 +40,21 @@ from decimal import InvalidOperation
 from pathlib import Path
 from typing import Any, Final
 
+from sr.barcode import CHARSETS, LINEAR
 from sr.errors import BadValue, NodePath, SrError
 from sr.expr import Decimal, Expression, FrozenList, Record
 from sr.expr.builtins import parse_time
 from sr.expr.golayout import RFC3339
-from sr.expr.values import parse_decimal
+from sr.expr.values import (
+    json_without_surrogates,
+    parse_decimal,
+    without_surrogates,
+)
 from sr.units import POINTS_PER_UNIT, parse_number, round_points
 
 __all__ = [
     "ALIGNS",
+    "BARCODE_CHARSETS",
     "BARCODE_TYPES",
     "CALCS",
     "COMPRESSIONS",
@@ -59,6 +65,7 @@ __all__ = [
     "HALIGNS",
     "IMAGE_SCALES",
     "IMAGE_TYPES",
+    "LINEAR_BARCODES",
     "PAGE_SIZES",
     "RFC3339_DATE",
     "SCOPES",
@@ -133,6 +140,7 @@ BARCODE_TYPES: Final = (
     "QR-Q",
     "QR-H",
 )
+BARCODE_CHARSETS: Final = CHARSETS
 IMAGE_SCALES: Final = ("cut", "fill", "grow")
 IMAGE_TYPES: Final = ("png", "jpeg", "gif")
 XREF_TYPES: Final = ("outline", "url")
@@ -157,6 +165,10 @@ SECTIONS: Final = ("title", "summary", "header", "footer", "detail")
 # The two `evaltime` scopes that are not a group name.  A group name
 # is the third spelling, and which names are groups is not known here.
 EVALTIME_SCOPES: Final = ("report", "page", "column")
+
+# The barcode types that encode characters rather than bytes, and so
+# take no `charset` and no `eci`: doc/template.md#character-set.
+LINEAR_BARCODES: Final = LINEAR
 
 # What doc/template.md#parameter-values-as-text takes for a `decimal`:
 # a sign, digits, and an optional fractional part.  None of the spellings
@@ -659,6 +671,9 @@ class Barcode(Element):
         grow: Whether the symbol expands to use the box.
         ink: The bars' colour.
         paper: The background's colour, where one is painted.
+        charset: One of :data:`BARCODE_CHARSETS`,
+            which a 2-D type encodes its value's characters in.
+        eci: Whether a 2-D symbol names its charset to the reader.
 
     """
 
@@ -673,6 +688,8 @@ class Barcode(Element):
     grow: bool
     ink: str
     paper: str | None
+    charset: str
+    eci: bool
 
 
 @dataclass(frozen=True)
@@ -987,6 +1004,11 @@ def parse_text(kind: str, text: str, format: str | None = None) -> Any:
     NAME=VALUE`` from the command line.  Both have to mean the same
     thing, which is why the reading is here rather than in either.
 
+    A byte of the text that is not part of a valid UTF-8 sequence is
+    U+FFFD before anything reads it.  Python hands such a byte over as
+    a surrogate, from a command line on Linux by ``surrogateescape``,
+    and no string may hold one: doc/expressions.md#strings.
+
     Args:
         kind: One of :data:`VALUE_TYPES`.
         text: The value as the caller spelled it.
@@ -997,6 +1019,7 @@ def parse_text(kind: str, text: str, format: str | None = None) -> Any:
         BadValue: The text does not spell a value of that type.
 
     """
+    text = without_surrogates(text)
     if kind in ("date", "datetime"):
         return read_time(kind, text, format)
     reader = READERS.get(kind)
@@ -1103,7 +1126,7 @@ def read_json(kind: str, text: str) -> Any:
 
     """
     try:
-        value = json.loads(text)
+        value = json_without_surrogates(json.loads(text))
     except ValueError as refused:
         raise BadValue(f"not JSON: {refused}") from None
     wanted = dict if kind == "object" else list

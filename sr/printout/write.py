@@ -36,6 +36,7 @@ from typing import Any, TextIO
 from sr.errors import BuildWarning
 from sr.printout.model import (
     VERSION,
+    Barcode,
     Box,
     FontEntry,
     Line,
@@ -359,6 +360,19 @@ def mark_object(mark: Mark) -> dict[str, Any]:
             found["fill"] = mark.fill
         if mark.radius:
             found["radius"] = mark.radius
+        return found
+    if isinstance(mark, Barcode):
+        found["type"] = mark.symbology
+        found["value"] = mark.value
+        found["module"] = mark.module
+        found["vertical"] = mark.vertical
+        found["ink"] = mark.ink
+        if mark.paper is not None:
+            found["paper"] = mark.paper
+        if mark.rows:
+            found["rows"] = [list(row) for row in mark.rows]
+        else:
+            found["stripes"] = list(mark.stripes)
         return found
     if isinstance(mark, Xref):
         found["type"] = mark.link

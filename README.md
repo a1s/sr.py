@@ -16,6 +16,7 @@ A Python library with a CLI over it, counterpart to the parallel
 | [doc/expressions.md](doc/expressions.md) | Expression language, predefined names, formatting, variable semantics |
 | [doc/layout.md](doc/layout.md) | Layout and pagination |
 | [doc/printout.md](doc/printout.md) | The intermediate document a renderer consumes |
+| [doc/barcode.md](doc/barcode.md) | Barcode encoding: which symbol each type draws for a value |
 | [doc/render.md](doc/render.md) | PDF rendering: what a renderer decides, and what it must not |
 | [doc/cli.md](doc/cli.md) | The command line: subcommands, flags, streams, exit codes |
 | [example/minimal/](example/minimal/) | The smallest complete report, and the printout doc/printout.md shows |
@@ -199,11 +200,13 @@ lists what a command that works does not reach yet -- today a mark that
 lands outside the printable area is not judged an
 [overflow](doc/layout.md#errors), which is the one row of that table
 neither engine checks. Today it paginates reports of `field`, `line`,
-`rectangle`, and `xref` elements, with groups, columns, band splitting,
-`eject` nodes, keep-together rules, balanced columns, and deferred
-values, and writes them as NDJSON. Barcodes, images, subreports, and PDF
-are the milestones after this one. The cases the differential corpus
-cannot yet compare are listed, with the milestone each waits for, in
+`rectangle`, `barcode`, and `xref` elements, with groups, columns,
+band splitting, `eject` nodes, keep-together rules, balanced columns,
+and deferred values, and writes them as NDJSON. Every barcode type
+is encoded here, from the standards, rather than by a library.
+Images, subreports, and PDF are the milestones after this one.
+The cases the differential corpus cannot yet compare are listed,
+with the milestone each waits for, in
 [tests/differential/pending.toml](tests/differential/pending.toml).
 
 The Go implementation is the **oracle**: a reference binary whose *outputs*

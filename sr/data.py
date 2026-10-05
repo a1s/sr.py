@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any, TextIO
 
 from sr.errors import BadValue, BuildError, Location
-from sr.expr.values import Record, go_shortest
+from sr.expr.values import Record, go_shortest, json_without_surrogates
 from sr.template.model import Member, Records, freeze, parse_text
 
 __all__ = ["coerce", "read_records", "records_from", "records_in"]
@@ -95,6 +95,24 @@ def rows_in(text: str, where: str | None) -> list[Any]:
 
     Raises:
         BuildError: The text is not JSON, or does not hold objects.
+
+    """
+    rows = json_rows(text, where)
+    if "\\u" in text:
+        # Only an escape spells a lone surrogate.
+        return [json_without_surrogates(row) for row in rows]
+    return rows
+
+
+def json_rows(text: str, where: str | None) -> list[Any]:
+    """Return the JSON values a document holds, in order, as parsed.
+
+    Args:
+        text: The document.
+        where: What to call it in a diagnostic.
+
+    Raises:
+        BuildError: The text is not JSON, or is not an array document.
 
     """
     stripped = text.lstrip()

@@ -1,0 +1,23 @@
+// probes/barcode/code39.kdl -- Code 39's wide elements and its check character.
+//
+// ISO/IEC 16388 lets a wide element be two to three narrow ones and
+// makes the check character optional.  The reference draws a wide element
+// two modules wide, puts one narrow space between characters, and adds no
+// check character: `CODE 39` is the start, seven characters and the stop,
+// 9 x 12 + 8 = 116 modules between the quiet zones.
+//
+// doc/barcode.md#code-39 is what this became.
+
+report name="barcode/code39" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=400 height=400 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail {
+      barcode type="Code39" text="CODE 39" module=1 left=0 top=0
+      barcode type="Code39" text="0123456789" module=1 left=0 top=20
+      barcode type="Code39" text="ABCDEFGHIJKLM" module=1 left=0 top=40
+      barcode type="Code39" text="NOPQRSTUVWXYZ" module=1 left=0 top=80
+      barcode type="Code39" text="- .$/+%" module=1 left=0 top=120
+    }
+  }
+}

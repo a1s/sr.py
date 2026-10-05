@@ -1,0 +1,26 @@
+// probes/barcode/qr-plus.kdl -- a plus sign among digits, in a QR symbol.
+//
+// QR numeric mode holds the ten digits, three to a 10-bit group,
+// and nothing else.  The reference writes `+69`, `123+45`, and `+069`
+// in numeric mode anyway, and the plus sign is lost: they scan back
+// as `069`, `123045`, and `0069`, as though each three-character
+// group were read as a signed number.  `-69` and `1+2+3` it writes
+// in alphanumeric mode, as it should.
+//
+// doc/barcode.md#qr-code puts a value in numeric mode only where every
+// byte is a digit, so this engine writes all five in alphanumeric mode.
+// The difference is registered as `qr-numeric-plus`.
+
+report name="barcode/qr-plus" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=300 height=100 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail {
+      barcode type="QR-M" text="+69" module=1 left=0 top=0
+      barcode type="QR-M" text="123+45" module=1 left=40 top=0
+      barcode type="QR-M" text="+069" module=1 left=80 top=0
+      barcode type="QR-M" text="-69" module=1 left=120 top=0
+      barcode type="QR-M" text="1+2+3" module=1 left=160 top=0
+    }
+  }
+}

@@ -1,0 +1,27 @@
+// probes/barcode/code93.kdl -- Code 93's full ASCII, and its check characters.
+//
+// Code 93 has 43 characters of its own and four shifts, and the standard's
+// full ASCII table spells every other character as a shift and a letter.
+// It has a character of its own for each of `$ / + %` too, and the
+// reference spells those four through the table all the same, as
+// `(/)D (/)O (/)K (/)E`, which a reader decodes to the same text.
+// Lower case is `(+)` and a letter, a control character `($)` or `(%)`.
+//
+// The standard requires two check characters, C and K.  The reference
+// writes C and leaves K out, so every symbol here is nine modules shorter
+// than doc/ says it is, and the probe is a registered divergence:
+// see `code93-check-k` in divergences.toml.  Every value is short enough
+// that its bars are a quarter of an inch either way, so K is the only
+// difference.
+//
+// doc/barcode.md#code-93 is what this became.
+
+report name="barcode/code93" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=600 height=900 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail {
+      barcode type="Code93" expr="v" module=1 left=0 top=0
+    }
+  }
+}

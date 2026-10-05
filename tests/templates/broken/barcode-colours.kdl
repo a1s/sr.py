@@ -1,0 +1,27 @@
+// broken/barcode-colours.kdl -- an ink and a paper a scanner cannot tell apart.
+//
+// expect: ink #FFFF00 on paper #FFFFFF will not scan: the bars reflect 100% of red light and the background 100%
+// expect: ink #000000 on paper #000080 will not scan
+// expect: ink #FFFFFF on paper #000000 will not scan
+// expect: ink #C0C0C0 on paper #FFFFFF will not scan: the bars reflect 53% of red light against the background's 100%, and a scanner needs them under 50%
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=40 {
+      // Yellow reflects red light as fully as the white page under it.
+      barcode type="QR-H" text="x" ink="yellow"
+      // A navy background absorbs red light as black bars do.
+      barcode type="Code128" text="x" ink="black" paper="navy"
+      // Light bars on a dark ground are the wrong way round.
+      barcode type="Code128" text="x" ink="white" paper="black"
+      // Silver is dark enough to the eye, and reflects half the red.
+      barcode type="Code39" text="X" ink="silver"
+      // Accepted: navy reads as black, and pale yellow as white.
+      barcode type="Code39" text="X" ink="navy" paper="#FFE9B0"
+      // Accepted: what a symbol can encode is checked when it is built.
+      barcode type="2of5i" text="123"
+    }
+  }
+}

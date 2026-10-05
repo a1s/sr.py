@@ -1,0 +1,22 @@
+// probes/barcode/interleaved.kdl -- Interleaved 2 of 5's wide elements.
+//
+// The standard lets a wide element be two to three narrow ones and makes
+// a check digit optional.  The reference draws it three modules wide and
+// adds no check digit.  A pair of digits is ten elements, the first digit
+// in the bars and the second in the spaces; the start is four narrow
+// elements and the stop a wide bar, a narrow space, and a narrow bar.
+// `format` pads a number to the even width the symbology needs.
+//
+// doc/barcode.md#interleaved-2-of-5 is what this became.
+
+report name="barcode/interleaved" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=400 height=400 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail {
+      barcode type="2of5i" text="0016" module=1 left=0 top=0
+      barcode type="2of5i" text="0123456789" module=1 left=0 top=20
+      barcode type="2of5i" expr="7" format="%06d" module=1 left=0 top=40
+    }
+  }
+}

@@ -17,6 +17,7 @@ import pytest
 
 from sr.errors import BuildWarning
 from sr.printout.model import (
+    Barcode,
     Box,
     FontEntry,
     Line,
@@ -276,6 +277,43 @@ def test_a_line_writes_its_fields_in_order() -> None:
     mark = Line(Box(0, 0, 10, 0), 0.5, "solid", "#000000", False)
     written = page_object(Page(1, (mark,)), A4)["marks"][0]
     assert list(written) == ["kind", "box", "width", "dash", "color", "backslant"]
+
+
+def test_a_1d_barcode_writes_its_fields_in_order() -> None:
+    mark = Barcode(
+        Box(0, 0, 66, 18), "Code128", "A", 1, False, "#000080", "#FFE9B0", (10, 2, 10)
+    )
+    written = page_object(Page(1, (mark,)), A4)["marks"][0]
+    assert list(written) == [
+        "kind",
+        "box",
+        "type",
+        "value",
+        "module",
+        "vertical",
+        "ink",
+        "paper",
+        "stripes",
+    ]
+    assert written["stripes"] == [10, 2, 10]
+
+
+def test_a_2d_barcode_writes_rows_and_no_stripes_or_paper() -> None:
+    rows = ((3,), (1, 1, 1), (3,))
+    mark = Barcode(Box(0, 0, 3, 3), "QR-L", "A", 1, True, "#000000", None, (), rows)
+    written = page_object(Page(1, (mark,)), A4)["marks"][0]
+    assert list(written) == [
+        "kind",
+        "box",
+        "type",
+        "value",
+        "module",
+        "vertical",
+        "ink",
+        "rows",
+    ]
+    assert written["rows"] == [[3], [1, 1, 1], [3]]
+    assert dumps(written["rows"]) == "[[3],[1,1,1],[3]]"
 
 
 def test_a_page_names_only_the_geometry_it_overrides() -> None:

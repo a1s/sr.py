@@ -1,0 +1,42 @@
+// probes/barcode/deferred.kdl -- where a deferred barcode's symbol goes.
+//
+// A deferred barcode is measured from its placeholder, and the symbol
+// that encodes the resolved value is set in the room the placeholder's
+// symbol took.  Over twelve records and four pages, the reference:
+//
+// - places a shorter symbol in the room by `halign` and `valign`:
+//   `a`'s placeholder is 121 modules long, its value 66, and the
+//   value's symbol is centred along the room's 121;
+// - keeps a 1-D symbol's bars as long as the room's, so `a`'s bars stay
+//   the placeholder's 18.15 although the value alone would have 18, and
+//   `d`'s, vertical, keep the 100 its `grow` gave the placeholder;
+// - keeps a 2-D symbol's module, so `b`'s value, one version smaller
+//   than its placeholder, sits in the room's bottom right corner;
+// - grows a 2-D symbol to the room again where the element grows:
+//   `c`'s placeholder and value are the same version, and both fill 58;
+// - sets `e`, Interleaved 2 of 5 with `format`, as the sakila example does.
+//
+// The page footer's barcode waits for the end of the report.
+// doc/layout.md#re-measurement is what this became.
+
+report name="barcode/deferred" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=500 height=400 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    footer {
+      barcode type="Code39" expr="'P%d OF %d' % (PAGE_NUMBER, FINAL.PAGE_NUMBER)" evaltime="report" text="P99 OF 99" module=1 left=0
+    }
+    detail {
+      // a
+      barcode type="Code128" expr="'%d' % FINAL.PAGE_COUNT" evaltime="page" text="ABCDEF" module=1 left=0 top=0 width=200 height=40 halign="center" valign="center"
+      // b
+      barcode type="QR-L" expr="'%d' % FINAL.PAGE_COUNT" evaltime="page" text="ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJ" module=1 left=210 top=0 width=60 height=60 halign="right" valign="bottom"
+      // c
+      barcode type="QR-L" expr="FINAL.PAGE_COUNT" format="%02d" evaltime="page" text="99" module=1 grow=#true left=280 top=0 width=58 height=58
+      // d
+      barcode type="Code128" expr="'%d' % FINAL.PAGE_COUNT" evaltime="page" text="ABCDEF" module=1 grow=#true vertical=#true left=350 top=0 width=100 halign="right" valign="bottom"
+      // e
+      barcode type="2of5i" expr="FINAL.PAGE_COUNT" format="%04d" evaltime="page" text="9999" module=1 vertical=#true left=460
+    }
+  }
+}

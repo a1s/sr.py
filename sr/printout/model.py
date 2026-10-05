@@ -19,8 +19,8 @@ Three rules of the format are visible in the shapes here.
   is what the writer reads to decide, per doc/printout.md#paths.
 
 The kinds produced so far are :class:`Text`, :class:`Line`,
-:class:`Rectangle`, and :class:`Xref`.  Images, barcodes, and outline
-entries arrive with the elements that make them.
+:class:`Rectangle`, :class:`Barcode`, and :class:`Xref`.  Images
+and outline entries arrive with the elements that make them.
 
 """
 
@@ -34,6 +34,7 @@ from sr.units import round_points
 
 __all__ = [
     "VERSION",
+    "Barcode",
     "Box",
     "FontEntry",
     "Line",
@@ -193,6 +194,38 @@ class Rectangle(Mark):
     stroke: str | None
     fill: str | None
     radius: float
+
+
+@dataclass(frozen=True)
+class Barcode(Mark):
+    """An encoded symbol, as runs of light and dark modules.
+
+    A renderer draws filled rectangles and encodes nothing.
+    The box is the symbol's, quiet zone included, and the runs
+    sum to it: a 1-D symbol's ``stripes`` along its length,
+    each 2-D row along its width. Both start with a light run,
+    so polarity is positional.
+
+    Attributes:
+        symbology: The barcode type, which the printout calls `type`.
+        value: The string that was encoded.
+        module: The narrow element's width in points.
+        vertical: Whether the coding direction runs down the page.
+        ink: The bars' colour.
+        paper: The background's, where one is painted.
+        stripes: A 1-D symbol's runs; empty for a 2-D one.
+        rows: A 2-D symbol's rows of runs; empty for a 1-D one.
+
+    """
+
+    symbology: str
+    value: str
+    module: float
+    vertical: bool
+    ink: str
+    paper: str | None
+    stripes: tuple[int, ...] = ()
+    rows: tuple[tuple[int, ...], ...] = ()
 
 
 @dataclass(frozen=True)

@@ -307,6 +307,7 @@ not `target="top"`.
 | `iter` / `reset` | `report` `page` `column` `group` `detail` `item` |
 | `eject type` | `page` `column` |
 | `barcode type` | `Code128` `Code39` `Code93` `2of5i` `DataMatrix` `Aztec` `QR-L` `QR-M` `QR-Q` `QR-H` |
+| `barcode charset` | `utf-8` `iso-8859-1` |
 | `image scale` | `cut` `fill` `grow` |
 | `xref type` | `outline` `url` |
 | `dash` | `solid` `dot` `dash` `dashdot` |
@@ -417,10 +418,14 @@ are dropped at a line boundary, exactly as they are for a field without
 `stretch`. That holds for a stretch field sized from the band as well,
 even where the band gave it less room than the clamp would have: a
 `maxheight` is what says a stretched field may be cut. It does not
-clamp a `barcode`, whose box extent along the coding direction is fixed
-by its stripe count and module, nor a `grow` image, which is drawn at
-natural size: shrinking either box would describe a mark that is not
-what gets drawn.
+clamp a `grow` image, which is drawn at natural size: shrinking the box
+would describe a mark that is not what gets drawn.
+
+On a `barcode` the two clamp the box and never the symbol, whose size is
+fixed by its modules. The symbol is placed in the clamped box by `halign`
+and `valign`, overhangs it where it is larger, and `grow` expands it
+only as far as the clamped box reaches; see
+[a barcode in its box](layout.md#a-barcode-in-its-box).
 
 ### Section height
 
@@ -639,6 +644,11 @@ A parameter value arriving as text — from `--param NAME=VALUE`, or from
 
 `date` yields a time value with zero time of day.
 
+Each byte of the text that is not part of a valid UTF-8 sequence reads
+as U+FFFD, whatever the type, as it does everywhere a string is made;
+see [strings](expressions.md#strings). A command line on Linux is bytes,
+and can carry such a byte.
+
 Text that does not parse is an error naming the parameter, its declared type, and
 the offending text.
 
@@ -690,10 +700,12 @@ is string repetition rather than arithmetic.
 
 ### Data input
 
-Records come from JSON: either a single array document, or NDJSON with one record
-per line. The engine buffers the whole dataset — `DATA_COUNT`, report-scoped
-aggregates, and [keep-together](layout.md#keeping-content-together) lookahead
-all require the full sequence.
+Records come from JSON: either a single array document, or NDJSON with
+one record per line. A `\u` escape that spells half a surrogate pair
+on its own reads as U+FFFD; see [strings](expressions.md#strings).
+The engine buffers the whole dataset — `DATA_COUNT`, report-scoped
+aggregates, and [keep-together](layout.md#keeping-content-together)
+lookahead all require the full sequence.
 
 The library API takes a Go slice directly; JSON is the CLI's front end.
 
@@ -1229,11 +1241,13 @@ barcode type="QR-Q" expr="FINAL.PAGE_COUNT" evaltime="page" text="1000" grow=#tr
 | `data` | string, a `data` node name | — |
 | `evaltime` | as for `field` | — |
 | `format` | string, a `%` format | `"%s"` |
-| `module` | dimension, narrow bar width | `"10mil"` |
+| `module` | dimension, narrow bar width, positive | `"10mil"` |
 | `vertical` | boolean | `#false` |
 | `grow` | boolean | `#false` |
 | `ink` | colour, the bars | `"black"` |
 | `paper` | colour, the background | — |
+| `charset` | barcode charset enum, 2-D types only | `"utf-8"` |
+| `eci` | boolean, 2-D types only | `#false` |
 
 Plus geometry, alignment, `printwhen`, and `style*`.
 
@@ -1241,20 +1255,26 @@ Content comes from `expr`, `text`, or `data` — see
 [content sources](#content-sources). A barcode's size is always content-dependent,
 so a deferred barcode always needs a placeholder.
 
-`format` is applied to the `expr` result before encoding, which is how a numeric
-value gets a fixed width:
+`format` is applied to the `expr` result before encoding, and to nothing else:
+a `text`, or a `data` node's content, is encoded as written. `format` is how
+a numeric value gets a fixed width:
 
 ```kdl
 barcode type="2of5i" expr="order_id" format="%08d"
 ```
 
-The box always grows along the coding direction — vertically when
-`vertical=#true`, horizontally otherwise — to at least the symbol's minimum size.
-`grow=#true` additionally expands the symbol to use the available box: for 2-D
-types this recomputes `module`, for 1-D types it grows the bar height.
+The symbol is drawn at the size its modules give it, and never smaller.
+It is placed in the box by `halign` and `valign`: across the page
+a symbol wider than its box overhangs it, and down the page the box
+is at least as tall as the symbol. `grow=#true` additionally expands
+the symbol to use the box: for 2-D types it recomputes `module`, and
+for 1-D types it lengthens the bars. Layout has the arithmetic,
+in [a barcode in its box](layout.md#a-barcode-in-its-box).
 
-Each type constrains what it can encode, and content it cannot encode is an error
-naming the type, the value, and the reason:
+Each type constrains what it can encode, and content it cannot encode is
+an error naming the type, the value, and the reason. An empty value is
+refused by every type. Which symbol a type draws for a value it accepts
+is in [barcode.md](barcode.md).
 
 | Type | Accepts |
 |---|---|
@@ -1262,7 +1282,7 @@ naming the type, the value, and the reason:
 | `Code39` | digits, `A`–`Z` upper case, space, and `- . $ / + %` |
 | `Code93` | as `Code39`, plus the full ASCII range through its shift characters |
 | `2of5i` | digits only, and an **even** number of them |
-| `DataMatrix` `Aztec` `QR-*` | any bytes, up to the symbol's capacity, which for the `QR-*` types shrinks as the error-correction level rises |
+| `DataMatrix` `Aztec` `QR-*` | any text in its [`charset`](#character-set), as bytes, up to the largest symbol's capacity, which for the `QR-*` types shrinks as the error-correction level rises |
 
 `2of5i` encodes digits in pairs, so an odd-length value is an error
 rather than being padded. Use `format` to fix the width:
@@ -1275,6 +1295,45 @@ Every symbol carries the quiet zone its standard requires: ten modules
 at each end of a 1-D symbol, four all round a QR, one round a Data Matrix,
 none round an Aztec; and the box is sized to include it. A symbol without
 its margin is not read, so this is not something a template can turn off.
+
+#### Character set
+
+A 2-D type encodes bytes, and `charset` says which bytes a value's
+characters become:
+
+| `charset` | |
+|---|---|
+| `utf-8` | every character, in one to four bytes |
+| `iso-8859-1` | U+0000 to U+00FF only, in one byte each |
+
+A character `iso-8859-1` does not have is refused when the band is built,
+as any value a type cannot encode is.
+
+Each 2-D standard reads a symbol's bytes as ISO 8859-1 unless the symbol
+says otherwise. So the default, UTF-8 that says nothing, reads back right
+only on a reader that detects UTF-8 for itself, as phone apps reading QR
+generally do. On a reader that follows the standard, `Café` comes back
+as `CafÃ©`. A value in ASCII is the same bytes in both charsets and reads
+back right everywhere.
+
+`eci=#true` makes the symbol say. It then opens with an Extended Channel
+Interpretation naming its charset, 000026 for UTF-8 or 000003 for
+ISO 8859-1, and a reader that follows the standard decodes by it.
+The ECI is written only for a value with a character outside ASCII,
+so an ASCII value draws the same symbol whatever the two properties say.
+A reader that does not support ECI may show it as data or refuse the symbol,
+which is why it is not the default.
+
+Which to choose depends on the readers that will scan the symbol:
+
+| Readers | |
+|---|---|
+| Phone apps, for a QR | the default |
+| Readers that follow the standard and support ECI | `eci=#true` |
+| Readers that follow the standard and do not support ECI | `charset="iso-8859-1"`, where the text allows it |
+
+The 1-D types encode characters rather than bytes, and take ASCII only,
+so `charset` or `eci` on one is a load error.
 
 #### Colour
 
@@ -1297,7 +1356,25 @@ how little red it reflects:
 | Bars | black, navy, dark green, brown, purple | red, orange, yellow, light grey |
 | Background | white, yellow, orange, pink, red | navy, dark green, black |
 
-A pair that cannot be read is a **load error**, not a warning:
+The check works from each colour's **red reflectance**: its red channel,
+taken out of sRGB's transfer curve into the light it stands for. Green and
+blue play no part, which is why yellow reads as white and navy as black.
+
+```
+c = red / 255
+reflectance = c / 12.92                       where c <= 0.04045
+reflectance = ((c + 0.055) / 1.055) ^ 2.4     otherwise
+```
+
+A pair reads when both of these hold, and is refused on the first that does not:
+
+1. the background reflects at least 0.4 more than the bars, which also
+   refuses light bars on a dark background;
+2. the bars reflect less than half what the background does.
+
+A pair that cannot be read is a **load error**, not a warning. The diagnostic
+names `paper` where the first test failed and the template gave a `paper`,
+and `ink` otherwise:
 
 ```kdl
 barcode type="Code128" text="7350053850019" ink="navy" paper="#FFE9B0"
@@ -1840,6 +1917,12 @@ Validation runs once, at load, before any data is read. It checks:
   no two embedded layouts in one scope chain share a name.
 - `image` does not combine `embed=#false` with `data` or a `content` child.
 - `columns count` does not make the column width non-positive.
+- A `barcode`'s `ink` and `paper` can be told apart in red light;
+  see [colour](#colour). What its type can encode is not checked here,
+  not even for a `text`: that is an error when the band is built.
+- `charset` and `eci` appear only on a 2-D `barcode`;
+  see [character set](#character-set).
+- A `barcode`'s `module` is positive.
 - Expressions parse. Name resolution is not checked at load, since undeclared
   record fields are reached dynamically.
 

@@ -216,8 +216,9 @@ for no quiet zone -- the array opens with a **zero-length light run**.
   is set.
 - **2-D**: each row of `rows` alternates light and dark along the coding
   direction, starting with light, and each row is one module deep across it.
-  The quiet zone is part of the geometry: the outermost rows are wholly
-  light, and every other row opens and closes light.
+  Where the symbology has a quiet zone it is part of the geometry: the
+  outermost rows are wholly light, and every other row opens and closes
+  light. An Aztec symbol has none, and its rows open and close either way.
   With `vertical` set the symbol is turned a **quarter turn clockwise**:
   the coding direction runs down the page and the rows advance leftward
   from the box's right edge.

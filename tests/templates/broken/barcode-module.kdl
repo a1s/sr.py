@@ -1,0 +1,16 @@
+// broken/barcode-module.kdl -- a module that draws no symbol.
+//
+// expect: module must be positive
+
+report name="probe" {
+  font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=40 {
+      // A symbol is its modules times the module: nothing at all.
+      barcode type="QR-M" text="x" module=0
+      // And a negative one is a symbol turned inside out.
+      barcode type="Code128" text="x" module=-1 top=20
+    }
+  }
+}

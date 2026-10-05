@@ -1,0 +1,38 @@
+// probes/barcode/band.kdl -- what a barcode does to the band around it.
+//
+// A barcode's symbol height is a content height: it takes part
+// in the band's height with no vertical geometry given at all,
+// and it is what a floating barcode is moved by and moves.
+// Over nine records, the reference:
+//
+// - grows the detail band to its tallest symbol, which the rule spans;
+// - floats the Code 128 symbol below the stretch field above it, and
+//   the Data Matrix symbol below that, each keeping its declared gap;
+// - places a barcode inside an `xref` against the xref's box, centred;
+// - reserves the page header and footer from the symbols they hold,
+//   the footer's encoding the page number.
+//
+// doc/layout.md#building-a-band is what this became.
+
+report name="barcode/band" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=500 height=400 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    header {
+      barcode type="QR-M" text="header" module=1 right=0 width=40 halign="right"
+    }
+    footer {
+      barcode type="Code39" expr="'P%d' % PAGE_NUMBER" module=1 left=0
+    }
+    detail {
+      field expr="'row %d' % n" left=0 width=100 height=12
+      field text="a b c d e f g h" left=0 top=14 width=30 stretch=#true
+      barcode type="Code128" expr="n" format="R%04d" module=1 left=40 top=14 float=#true
+      barcode type="DataMatrix" expr="'%d' % (n * 7919)" module=1 left=200 top=40 float=#true
+      xref type="url" target="'https://example.invalid/%d' % n" left=300 top=0 width=60 height=30 {
+        barcode type="Aztec" expr="'x%d' % n" module=1 halign="center" valign="center"
+      }
+      line left=400 width=0
+    }
+  }
+}
