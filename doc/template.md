@@ -1885,7 +1885,7 @@ Validation runs once, at load, before any data is read. It checks:
   an `evaltime`**, and such an element's `expr` names `FINAL` at least once.
   Each without the other is a mistake rather than a no-op: the first
   has no scope to read from, the second defers an expression that would
-  give the same answer in place.  Each diagnostic names the half that is
+  give the same answer in place. Each diagnostic names the half that is
   there without the other: the first names `expr`, where `FINAL` is
   written, and the second names `evaltime`. An `expr` without `FINAL`
   is the ordinary case, so it is the deferral that is wrong, as it is

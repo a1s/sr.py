@@ -95,7 +95,7 @@ def test_an_evaltime_whose_expr_never_names_final_is_named_by_evaltime(
 ) -> None:
     (found,) = built(element).errors
     assert found.location.prop == "evaltime"
-    assert "this expression never names FINAL" in found.message
+    assert "evaltime defers an expr that never names FINAL" in found.message
 
 
 def test_final_in_an_expr_with_no_evaltime_is_named_by_expr() -> None:
