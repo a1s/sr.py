@@ -2,7 +2,8 @@
 
 The corpus in ``tests/templates/broken`` is where each rule is exercised
 end to end; what is here is the reasoning a rule is built on: reading
-``FINAL.`` names out of an expression, recognising a literal, and
+``FINAL.`` names out of an expression, which property a misplaced
+``FINAL`` or ``evaltime`` is named by, recognising a literal, and
 deciding which elements give a band a height.
 
 """
@@ -77,6 +78,30 @@ def elements(loaded: Loaded) -> tuple[Element | Xref, ...]:
 )
 def test_the_names_read_out_of_final(source: str, expected: tuple[str, ...]) -> None:
     assert tuple(sorted(final_names(source))) == tuple(sorted(expected))
+
+
+# -- FINAL and evaltime -----------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "element",
+    [
+        'field expr="PAGE_NUMBER" evaltime="page" width=50',
+        'barcode type="2of5i" expr="\'12\'" evaltime="page" text="1234"',
+    ],
+)
+def test_an_evaltime_whose_expr_never_names_final_is_named_by_evaltime(
+    element: str,
+) -> None:
+    (found,) = built(element).errors
+    assert found.location.prop == "evaltime"
+    assert "this expression never names FINAL" in found.message
+
+
+def test_final_in_an_expr_with_no_evaltime_is_named_by_expr() -> None:
+    (found,) = built('field expr="FINAL.PAGE_COUNT" width=50').errors
+    assert found.location.prop == "expr"
+    assert "FINAL belongs in the expr" in found.message
 
 
 # -- literals ---------------------------------------------------------
