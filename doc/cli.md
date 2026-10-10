@@ -102,17 +102,17 @@ in a file, and are read the same way. On Windows a pipe would otherwise be
 decoded with the legacy code page, and an `é` in the data would arrive as
 two other characters with nothing said about it.
 
-Windows PowerShell 5.1 needs two settings before it pipes records in intact.
-It encodes them with `$OutputEncoding`, which is ASCII by default and turns
-every other character into `?`. When `[Console]::InputEncoding` is UTF-8,
-it also puts a byte order mark first, which is
-[refused](template.md#data-input). UTF-8 without a byte order mark,
-for both, is what works:
+Windows PowerShell 5.1 encodes what it pipes into a program with
+`$OutputEncoding`, which is ASCII by default and turns every other
+character into `?` before `sr.py` reads it. Set it to UTF-8 first:
 
 ```powershell
-$utf8 = New-Object Text.UTF8Encoding $false
-$OutputEncoding = [Console]::InputEncoding = $utf8
+$OutputEncoding = [Text.Encoding]::UTF8
 ```
+
+PowerShell may then put one or two byte order marks in front of the records,
+depending on `[Console]::InputEncoding`. They are
+[skipped](template.md#data-input).
 
 A printout being *read* is always a file. Relative paths in a printout (a font,
 an image with `embed=#false`) resolve against the directory it was read from,

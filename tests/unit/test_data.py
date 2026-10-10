@@ -94,19 +94,24 @@ def test_a_byte_that_is_not_utf8_reads_as_one_replacement_each(
     assert read_records(path, None)[0]["a"] == "Caf\ufffd\ufffdA\ufffd!"
 
 
-def test_a_byte_order_mark_is_refused_in_words_a_user_can_act_on(
+@pytest.mark.parametrize("marks", [1, 2])
+def test_byte_order_marks_at_the_start_are_skipped(
     tmp_path: Path,
+    marks: int,
 ) -> None:
-    # The JSON parser's own message names a Python codec to decode with,
-    # which is advice for the programmer rather than for the user.
+    # Two is what Windows PowerShell 5.1 pipes when the console's
+    # input encoding and `$OutputEncoding` are both UTF-8 with a mark.
     path = tmp_path / "rows.jsonl"
-    path.write_bytes(b'\xef\xbb\xbf{"a":1}\n')
+    path.write_bytes(b"\xef\xbb\xbf" * marks + b'{"a":1}\n')
+    assert read_records(path, None)[0]["a"] == 1
+
+
+def test_a_byte_order_mark_after_the_start_is_refused(tmp_path: Path) -> None:
+    path = tmp_path / "rows.jsonl"
+    path.write_bytes(b'{"a":1}\n\xef\xbb\xbf{"a":2}\n')
     with pytest.raises(BuildError) as refused:
         read_records(path, None)
-    assert str(refused.value) == (
-        f"{path}:1: not JSON: it opens with a byte order mark; "
-        "save it as UTF-8 without one"
-    )
+    assert str(refused.value).startswith(f"{path}:2: not JSON")
 
 
 # -- coercion ---------------------------------------------------------

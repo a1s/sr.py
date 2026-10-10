@@ -57,11 +57,13 @@ def read_records(
     parses the text.  A stream is decoded by whoever opened it, which
     for standard input is the command line, with the same two settings.
 
-    A byte order mark is refused, as the reference refuses it, but
-    in words a user can act on.  The JSON parser's own message tells
-    a Python programmer which codec to use.  A file saved by Windows
-    PowerShell 5.1 often starts with one, and so does what it pipes
-    into a program when the console's input encoding is UTF-8.
+    Byte order marks at the start are skipped, as RFC 8259 allows and
+    the reference does not, and there can be two.  Windows PowerShell
+    5.1 puts one in front of what it pipes into a program when the
+    console's input encoding is UTF-8, whatever ``$OutputEncoding``
+    says, and a second when ``$OutputEncoding`` is UTF-8 with one.
+    Anywhere else a mark is a stray character, and the JSON parser
+    refuses it as one.
 
     Args:
         source: A path to read, or an open stream such as standard input.
@@ -80,9 +82,7 @@ def read_records(
     else:
         where = "standard input" if name is None else name
         text = source.read()
-    if text.startswith("\N{BYTE ORDER MARK}"):
-        why = "it opens with a byte order mark; save it as UTF-8 without one"
-        raise BuildError(f"not JSON: {why}", Location(file=where, line=1))
+    text = text.lstrip("\N{BYTE ORDER MARK}")
     return records_from(without_surrogates(text), declared, where)
 
 

@@ -704,9 +704,10 @@ Records come from JSON: either a single array document, or NDJSON with
 one record per line. The JSON is UTF-8, whether it comes from a file or
 from standard input. A byte that is not part of a valid UTF-8 sequence
 reads as U+FFFD, one per byte, as it does everywhere a string is made.
-A byte order mark is not JSON, and is refused as any other stray
-character would be. A `\u` escape that spells half a surrogate pair
-on its own reads as U+FFFD; see [strings](expressions.md#strings).
+Byte order marks at the start are skipped, as many as there are, since
+Windows PowerShell 5.1 can pipe two. Anywhere else a byte order mark is
+a stray character, and refused. A `\u` escape that spells half a surrogate
+pair on its own reads as U+FFFD; see [strings](expressions.md#strings).
 The engine buffers the whole dataset — `DATA_COUNT`, report-scoped
 aggregates, and [keep-together](layout.md#keeping-content-together)
 lookahead all require the full sequence.

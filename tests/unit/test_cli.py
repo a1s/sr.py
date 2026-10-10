@@ -994,6 +994,17 @@ def test_records_on_standard_input_are_read_as_utf8(
     assert f'"{LATVIAN}"' in built_from_stdin(monkeypatch, tmp_path, records)
 
 
+def test_byte_order_marks_on_standard_input_are_skipped(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # What Windows PowerShell 5.1 pipes in when the console's input
+    # encoding and `$OutputEncoding` are both UTF-8 with a mark:
+    # two marks, then the records, with its own line endings.
+    record = f'{{"title":"{LATVIAN}"}}\r\n'.encode()
+    records = b"\xef\xbb\xbf" * 2 + record
+    assert f'"{LATVIAN}"' in built_from_stdin(monkeypatch, tmp_path, records)
+
+
 def test_a_byte_on_standard_input_that_is_not_utf8_reads_as_in_a_file(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

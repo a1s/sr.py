@@ -1,0 +1,24 @@
+// probes/records/byte-order-mark.kdl -- records that open with a byte order mark.
+//
+// A registered divergence: built here, refused by the reference,
+// which reads the mark as a stray character before the first record.
+// See `divergences.toml`, entry `records-byte-order-mark`.
+//
+// doc/template.md#data-input: byte order marks at the start of the records
+// are skipped, as RFC 8259 allows.  Windows PowerShell 5.1 saves UTF-8
+// with one, and puts one or two in front of what it pipes into a program.
+// The record's one value is outside ASCII, so the printout also shows
+// that what follows the mark was read as UTF-8.
+
+report name="records/byte-order-mark" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  records {
+    member "title" type="string"
+  }
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=20 {
+      field expr="title" left=0 top=0 width=100 height=10
+    }
+  }
+}
