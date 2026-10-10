@@ -903,6 +903,12 @@ element is measured from before the real one is known. At most one placeholder.
 It is measured as written, since `format` applies to what `expr` resolves to,
 which is what the placeholder stands in for.
 
+`format` applies to that result and to nothing else. A `text`, or a `data`
+node's content, is always taken as written, whether it is the content or
+a placeholder. An element with no `expr` therefore never applies its `format`
+and never checks it: a conversion its literal would refuse, or a specification
+that would not parse, is not an error.
+
 ```kdl
 // immediate — one source
 field expr="amount" format="%.2f"
@@ -1120,11 +1126,9 @@ field expr="(customer.last_name, customer.first_name, customer_amount)"
       format="Total for %s, %s: %.2f"
 ```
 
-It is applied to nothing else, as for a [`barcode`](#barcode): a `text`,
-or a `data` node's content, is printed as written. A `format` beside one
-is never applied, so it is not checked either, and a conversion
-the literal would refuse, or a specification that would not parse,
-is not an error.
+It is applied to nothing else: a `text`, or a `data` node's content,
+is printed as written, and a field with no `expr` does not check its
+`format`. See [content sources](#content-sources).
 
 `evaltime` names a scope whose end the expression's [`FINAL`](expressions.md#final)
 names are read at — this is how a page footer prints the final page count.

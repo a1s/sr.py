@@ -114,7 +114,8 @@ down the document.
 
 What is wrapped is the string the element finally holds: the `expr`
 result with `format` applied, or the `text` or the `data` node's content
-as written, since [`format` applies to nothing else](template.md#field).
+as written, since `format` applies to nothing else
+([content sources](template.md#content-sources)).
 Where a character came from makes no difference to how it is treated.
 
 ### Mandatory breaks

@@ -849,7 +849,7 @@ class Measurer:
             text = self.content(field, context, names)
         else:
             assert field.expr is not None
-            text = self.placeholder(field)
+            text = self.literal(field)
             placed.deferral = Deferral(
                 field,
                 scope_of(field.evaltime),
@@ -864,18 +864,18 @@ class Measurer:
         if field.stretch:
             placed.content_height = round_points(len(wrapped.lines) * metrics.leading)
 
-    def content(self, field: Field, context: Context, names: dict[str, Any]) -> str:
-        """Return the string a `field` finally holds.
+    def content(
+        self, element: Field | Barcode, context: Context, names: dict[str, Any]
+    ) -> str:
+        """Return the string an element holds, where it is not deferred.
 
-        ``format`` applies to what ``expr`` resolves to and to nothing
-        else: doc/template.md#field.  A ``text``, or the content of its
-        ``data`` node, is returned as written, and a format beside one
-        is never applied, so it cannot refuse it.  Where a character
-        came from makes no difference to how doc/layout.md#line-breaking
-        wraps it.
+        ``format`` applies to what ``expr`` resolves to and to
+        nothing else: doc/template.md#content-sources.
+        An element with no ``expr`` holds its literal,
+        and its ``format`` is never applied, so it cannot refuse it.
 
         Args:
-            field: The node.
+            element: The node.
             context: The report as it stands.
             names: The environment its expression is evaluated in.
 
@@ -885,35 +885,56 @@ class Measurer:
                 or the `data` node it names holds no text.
 
         """
-        if field.expr is not None:
-            value = evaluate(field.expr, names, field.path, context, "expr")
-            return self.formatted(field, value, context.record_index)
-        if field.text is not None:
-            return field.text
-        if field.data is not None:
-            return self.blob(field)
-        return ""
+        if element.expr is None:
+            return self.literal(element)
+        value = evaluate(element.expr, names, element.path, context, "expr")
+        return self.formatted(element, value, context.record_index)
 
-    def placeholder(self, field: Field | Barcode) -> str:
-        """Return the string a deferred element is measured from.
+    def resolved(self, deferral: Deferral, final: Namespace) -> str:
+        """Return the string a deferred element holds once its scope ends.
 
-        Its ``text``, or the content of its ``data`` node, as written.
-        ``format`` is applied to what ``expr`` resolves to, and the
-        placeholder stands in for that result rather than feeding it.
-        A field with neither is measured as empty text, one empty line;
-        a barcode always has one, since validation requires it.
+        Its ``expr``, called with its snapshot and ``FINAL``,
+        with ``format`` applied, as `content` applies it.
 
         Args:
-            field: The node.
+            deferral: The element, and what it read where it sat.
+            final: The ``FINAL`` of the scope that ended.
+
+        Raises:
+            BuildError: The expression would not evaluate,
+                or the format does not take its value.
+
+        """
+        element = deferral.element
+        expr = element.expr
+        assert expr is not None
+        names = {**deferral.names, "FINAL": final}
+        record = deferral.record
+        path = element.path
+        value = evaluate_at(expr, names, self.file, path, "expr", record)
+        return self.formatted(element, value, record)
+
+    def literal(self, element: Field | Barcode) -> str:
+        """Return an element's ``text``, or its ``data`` node's content.
+
+        Both are taken as written.  This is the whole content
+        of an element with no ``expr``, and the placeholder of one
+        that is deferred, which stands in for the formatted result
+        rather than feeding ``format``.  A field with neither is
+        empty text, one empty line; a barcode always has one,
+        since validation requires it.
+
+        Args:
+            element: The node.
 
         Raises:
             BuildError: The `data` node it names holds no text.
 
         """
-        if field.text is not None:
-            return field.text
-        if field.data is not None:
-            return self.blob(field)
+        if element.text is not None:
+            return element.text
+        if element.data is not None:
+            return self.blob(element)
         return ""
 
     def blob(self, field: Field | Barcode) -> str:
@@ -945,7 +966,7 @@ class Measurer:
 
         Args:
             field: The node.
-            value: What its content resolved to.
+            value: What its ``expr`` resolved to.
             record: The record it was built for, for a diagnostic.
 
         Raises:
@@ -988,21 +1009,15 @@ class Measurer:
         record = context.record_index
         if barcode.evaltime is not None:
             assert barcode.expr is not None
-            value = self.placeholder(barcode)
+            value = self.literal(barcode)
             placed.deferral = Deferral(
                 barcode,
                 scope_of(barcode.evaltime),
                 snapshot(barcode.expr, names),
                 record,
             )
-        elif barcode.expr is not None:
-            path = barcode.path
-            result = evaluate(barcode.expr, names, path, context, "expr")
-            value = self.formatted(barcode, result, record)
-        elif barcode.text is not None:
-            value = barcode.text
         else:
-            value = self.blob(barcode)
+            value = self.content(barcode, context, names)
         placed.value = value
         placed.symbol = self.encoded(barcode, value, record)
         size = symbol_size(placed.symbol, barcode.module, barcode.vertical)
@@ -1080,13 +1095,8 @@ class Measurer:
         """
         barcode = deferral.element
         assert isinstance(barcode, Barcode)
-        assert barcode.expr is not None
-        names = {**deferral.names, "FINAL": final}
         record = deferral.record
-        result = evaluate_at(
-            barcode.expr, names, self.file, barcode.path, "expr", record
-        )
-        value = self.formatted(barcode, result, record)
+        value = self.resolved(deferral, final)
         symbol = self.encoded(barcode, value, record)
         width, height = symbol_size(symbol, barcode.module, barcode.vertical)
         room = mark.box
@@ -1164,11 +1174,8 @@ class Measurer:
         """
         field = deferral.element
         assert isinstance(field, Field)
-        assert field.expr is not None
-        names = {**deferral.names, "FINAL": final}
         record = deferral.record
-        value = evaluate_at(field.expr, names, self.file, field.path, "expr", record)
-        text = self.formatted(field, value, record)
+        text = self.resolved(deferral, final)
         metrics = self.fonts[mark.font]
         wrapped = wrap(text, mark.box.width, metrics)
         for character in wrapped.missing:
