@@ -29,21 +29,51 @@ the one coercion rule doc/template.md#records writes out.
 
 from __future__ import annotations
 
+import codecs
 import json
 from pathlib import Path
 from typing import Any, TextIO
 
 from sr.errors import BadValue, BuildError, Location
-from sr.expr.values import Record, go_shortest, json_without_surrogates
+from sr.expr.values import (
+    Record,
+    go_shortest,
+    json_without_surrogates,
+    without_surrogates,
+)
 from sr.template.model import Member, Records, freeze, parse_text
 
 __all__ = ["coerce", "read_records", "records_from", "records_in"]
+
+# A byte order mark, which doc/template.md#data-input skips at the start
+# of a JSON text: the whole document, and each line of NDJSON.
+MARK = "\N{BYTE ORDER MARK}"
+
+# A UTF-16 byte order mark, little-endian or big, as reading the records
+# as UTF-8 with ``surrogateescape`` leaves it: two bytes that are not UTF-8.
+UTF16_MARKS = tuple(
+    mark.decode("utf-8", "surrogateescape")
+    for mark in (codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)
+)
 
 
 def read_records(
     source: Path | str | TextIO, declared: Records | None, name: str | None = None
 ) -> tuple[Record, ...]:
     """Return the records a JSON or NDJSON source holds.
+
+    doc/template.md#data-input: the JSON is UTF-8, and a byte that is
+    not part of a valid sequence reads as U+FFFD, one per byte, as the
+    reference reads it.  ``surrogateescape`` keeps each such byte apart
+    as a surrogate, and the surrogates are replaced before anything
+    parses the text.  A stream is decoded by whoever opened it, which
+    for standard input is the command line, with the same two settings.
+
+    Records in UTF-16 are refused in words that say so.  Read as UTF-8
+    they open with two bytes that are not UTF-8, and the JSON parser
+    would say only that it expected a value.  Windows PowerShell 5.1
+    writes UTF-16 for a ``>`` and for ``Out-File``, so this is the likely
+    way to have such a file.  Byte order marks are :func:`json_rows`'s.
 
     Args:
         source: A path to read, or an open stream such as standard input.
@@ -57,11 +87,21 @@ def read_records(
     """
     if isinstance(source, Path | str):
         where = str(source) if name is None else name
-        text = Path(source).read_text(encoding="utf-8")
+        path = Path(source)
+        text = path.read_text(encoding="utf-8", errors="surrogateescape")
+        remedy = "save it as UTF-8"
     else:
         where = "standard input" if name is None else name
         text = source.read()
-    return records_from(text, declared, where)
+        remedy = "send it as UTF-8"
+    # Past any UTF-8 marks: Windows PowerShell 5.1 puts one in front of
+    # what it pipes when the console's input encoding is UTF-8 with one,
+    # whatever ``$OutputEncoding`` encodes the records in.
+    if text.lstrip(MARK).startswith(UTF16_MARKS):
+        raise BuildError(
+            f"not JSON: it is UTF-16; {remedy}", Location(file=where, line=1)
+        )
+    return records_from(without_surrogates(text), declared, where)
 
 
 def records_from(
@@ -107,6 +147,16 @@ def rows_in(text: str, where: str | None) -> list[Any]:
 def json_rows(text: str, where: str | None) -> list[Any]:
     """Return the JSON values a document holds, in order, as parsed.
 
+    Byte order marks at the start of a JSON text are skipped, as many as
+    there are, as RFC 8259 allows and the reference does not.  Windows
+    PowerShell 5.1 can pipe two: one when the console's input encoding
+    is UTF-8, whatever ``$OutputEncoding`` says, and a second when
+    ``$OutputEncoding`` is UTF-8 with one of its own.  Each NDJSON line
+    is a JSON text, so marks at the start of a line are skipped too,
+    and files that each open with one can be joined.  Elsewhere outside
+    a string a mark is a stray character, and the parser refuses it;
+    inside one it is a character like any other.
+
     Args:
         text: The document.
         where: What to call it in a diagnostic.
@@ -115,7 +165,7 @@ def json_rows(text: str, where: str | None) -> list[Any]:
         BuildError: The text is not JSON, or is not an array document.
 
     """
-    stripped = text.lstrip()
+    stripped = text.lstrip(MARK).lstrip()
     if not stripped:
         return []
     if stripped[0] == "[":
@@ -130,7 +180,8 @@ def json_rows(text: str, where: str | None) -> list[Any]:
             )
         return document
     rows: list[Any] = []
-    for index, line in enumerate(text.split("\n")):
+    for index, written in enumerate(text.split("\n")):
+        line = written.lstrip(MARK)
         if not line.strip():
             continue
         try:

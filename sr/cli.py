@@ -30,6 +30,8 @@ template and is caught after.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import sys
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
@@ -122,6 +124,13 @@ FORMATS = {
 # The milestone that brings each output format this one cannot write.
 FORMAT_MILESTONE = {"pdf": "M14", "cbor": "M13"}
 
+# What a printout does with the one thing UTF-8 cannot encode, a lone
+# surrogate from a file name that was not valid text, on either route.
+# The backslash escape it writes is a `u` and four hex digits, which
+# inside a JSON string is the escape for that same code point: so the
+# printout stays JSON, and a font path in it reads back as it was given.
+PRINTOUT_ERRORS = "backslashreplace"
+
 # The exit codes of doc/cli.md#exit-codes.
 OK = 0
 FAILED = 1
@@ -191,14 +200,19 @@ INSPECT_FLAGS = (
 def main(argv: Sequence[str] | None = None, out: TextIO | None = None) -> int:
     """Run one command and return its exit code.
 
+    Before anything else the standard streams are set to UTF-8, all
+    three of them: :func:`utf8_streams` says how.  A caller running this
+    in-process should know that it changes them, standard input included.
+
     Args:
         argv: The arguments after the program name; ``sys.argv[1:]``
             when the caller gives none.
         out: Where the report goes; standard output by default.
+            It is set to write UTF-8 as standard output is.
 
     """
     arguments = list(sys.argv[1:] if argv is None else argv)
-    stream = sys.stdout if out is None else out
+    stream = utf8_streams(out)
     if not arguments:
         print("a command is required; try `sr.py help`", file=sys.stderr)
         return USAGE
@@ -228,6 +242,62 @@ def main(argv: Sequence[str] | None = None, out: TextIO | None = None) -> int:
         return USAGE
     print(f"unknown command {command!r}; try `sr.py help`", file=sys.stderr)
     return USAGE
+
+
+def utf8_streams(out: TextIO | None) -> TextIO:
+    """Set the standard streams to UTF-8, and return where output goes.
+
+    doc/cli.md#streams: what a command writes is UTF-8 on every machine,
+    and records read from standard input are UTF-8, as a data file is.
+    A Windows console takes its text through the console's own API and
+    was never the problem.  A pipe or a file there gets the ANSI code
+    page instead: a dump of a printout holding text outside that page
+    ended in a traceback, and an `é` piped in as a record became two
+    other characters without a word said.
+
+    On the way out, a character that UTF-8 still cannot carry, a lone
+    surrogate from a file name that was not valid text, is written as
+    a backslash escape: nothing a command prints is worth failing the
+    run over.  On the way in, a byte that is not UTF-8 is kept apart
+    by ``surrogateescape``, which is what lets reading the records
+    turn it into U+FFFD, one per byte, exactly as for a file.
+
+    Args:
+        out: Where output goes, where the caller named somewhere;
+            standard output otherwise.
+
+    """
+    stream = reconfigured(
+        sys.stdout if out is None else out,
+        encoding="utf-8",
+        errors="backslashreplace",
+    )
+    reconfigured(sys.stderr, encoding="utf-8", errors="backslashreplace")
+    reconfigured(sys.stdin, encoding="utf-8", errors="surrogateescape")
+    return stream
+
+
+def reconfigured(stream: TextIO, **settings: str) -> TextIO:
+    """Return a stream with its text settings changed, where it allows it.
+
+    A stream that cannot be reconfigured is returned as it is: a test's
+    buffer, which encodes nothing, or ``None``, which is what Python
+    leaves in place of a standard stream the process was started without.
+    So is one that refuses, as standard input does once a caller running
+    :func:`main` in-process has read part of it.  That caller keeps the
+    encoding it was reading in, rather than every command failing at
+    its first line.
+
+    Args:
+        stream: The stream to change.
+        **settings: What :meth:`io.TextIOWrapper.reconfigure` takes.
+
+    """
+    reconfigure = getattr(stream, "reconfigure", None)
+    if reconfigure is not None:
+        with contextlib.suppress(io.UnsupportedOperation):
+            reconfigure(**settings)
+    return stream
 
 
 def version(arguments: Sequence[str], out: TextIO) -> int:
@@ -365,6 +435,11 @@ def build(arguments: Sequence[str], out: TextIO) -> int:
 def data_source(given: Arguments) -> Path | TextIO | None:
     """Return where the records come from.
 
+    Standard input was set to read UTF-8 by :func:`utf8_streams`,
+    so that it reads as a data file does.  That is :func:`main`'s doing:
+    a caller that runs :func:`build` directly, without it, gets standard
+    input as Python set it up.
+
     Args:
         given: The arguments, for ``--data``.
 
@@ -450,30 +525,37 @@ def write_printout(result: api.Result, target: str, out: TextIO) -> None:
     base = path.parent
     # newline="": doc/printout.md#encoding ends every line with U+000A,
     # and a platform whose text mode translates that would write CRLF
-    # and make the same document two different files.
-    with path.open("w", encoding="utf-8", newline="") as handle:
+    # and make the same document two different files.  The handler
+    # is the one standard output gets, so the two routes stay one.
+    with path.open(
+        "w",
+        encoding="utf-8",
+        errors=PRINTOUT_ERRORS,
+        newline="",
+    ) as handle:
         write_jsonl(result.printout, handle, base)
 
 
 def as_written(out: TextIO) -> TextIO:
     """Return a stream that writes a printout as the format spells it.
 
-    Standard output is a text stream the platform set up,
-    and on Windows that means it translates U+000A into two bytes
-    and encodes in the console's codepage.  A printout is
-    [LF-terminated UTF-8](doc/printout.md#encoding) wherever it
-    is written, so the stream is reconfigured where it can be.
-    A stream that cannot be -- a test's buffer, which
-    translates nothing -- is returned as it is.
+    A printout is [LF-terminated UTF-8](doc/printout.md#encoding)
+    wherever it is written, and on Windows standard output translates
+    U+000A into two bytes, so the line ending is set here.  The encoding
+    is set with it, because this is also handed streams :func:`main`
+    never saw, and so is the error handler: Python resets that to
+    ``strict`` whenever the encoding is set and the handler is not.
 
     Args:
         out: Where a document written to standard output goes.
 
     """
-    reconfigure = getattr(out, "reconfigure", None)
-    if reconfigure is not None:
-        reconfigure(encoding="utf-8", newline="")
-    return out
+    return reconfigured(
+        out,
+        encoding="utf-8",
+        errors=PRINTOUT_ERRORS,
+        newline="",
+    )
 
 
 def counted(result: api.Result) -> str:

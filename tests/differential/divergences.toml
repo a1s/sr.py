@@ -27,7 +27,8 @@
 # decisions, `final-vertical`, `final-at-a-group-break`, and
 # `footer-deferral-balance`.  M10 added two defects in the reference's
 # barcodes, `code93-check-k`, `barcode-lengths-unrounded`, and
-# `qr-numeric-plus`, and one decision, `barcode-charset`.
+# `qr-numeric-plus`, and one decision, `barcode-charset`.  After M10
+# came one decision about reading the records, `records-byte-order-mark`.
 #
 # The milestone numbers:
 #   M0: Scaffold and oracle
@@ -782,3 +783,24 @@ changes.\
 ticket = "M10: QR Code, barcode.md#qr-code; filed against the Go engine"
 since = "2026-10-05"
 affects = ["probe/barcode/qr-plus"]
+
+[[divergence]]
+id = "records-byte-order-mark"
+summary = "records that open with a byte order mark are read here; the reference refuses them"
+reason = """\
+RFC 8259 lets a parser ignore a byte order mark at the start of JSON \
+text, and the reference refuses one as a stray character.  On Windows \
+that refusal is hard to avoid.  Windows PowerShell 5.1 saves UTF-8 with \
+a mark, and it puts one in front of everything it pipes into a program \
+when the console's input encoding is UTF-8, whatever `$OutputEncoding` \
+says, and a second when `$OutputEncoding` is UTF-8 with a mark of its \
+own, which is the setting most advice gives.  doc/template.md#data-input \
+skips every mark at the start of the records, from a file or from \
+standard input alike, and at the start of each NDJSON line, so that \
+files that each open with one can be joined.  Anywhere else outside \
+a string a mark is still a stray character, and refused.  \
+The reference is the side that changes.\
+"""
+ticket = "M15: data input, template.md#data-input"
+since = "2026-10-10"
+affects = ["probe/records/byte-order-mark"]

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import codecs
+import io
 from pathlib import Path
 from typing import Any
 
@@ -81,6 +83,107 @@ def test_a_path_is_read(tmp_path: Path) -> None:
     path = tmp_path / "rows.jsonl"
     path.write_text('{"a":1}\n', encoding="utf-8")
     assert len(read_records(path, None)) == 1
+
+
+def test_a_byte_that_is_not_utf8_reads_as_one_replacement_each(
+    tmp_path: Path,
+) -> None:
+    # doc/template.md#data-input, as the reference reads it.  `\xe2\x82`
+    # starts a sequence that never finishes, and is two U+FFFD rather
+    # than the one that a decoder's own "replace" would make of it.
+    path = tmp_path / "rows.jsonl"
+    path.write_bytes(b'{"a":"Caf\xe2\x82A\xe9!"}\n')
+    assert read_records(path, None)[0]["a"] == "Caf\ufffd\ufffdA\ufffd!"
+
+
+@pytest.mark.parametrize("marks", [1, 2])
+def test_byte_order_marks_at_the_start_are_skipped(
+    tmp_path: Path,
+    marks: int,
+) -> None:
+    # Two is what Windows PowerShell 5.1 pipes when the console's
+    # input encoding and `$OutputEncoding` are both UTF-8 with a mark.
+    path = tmp_path / "rows.jsonl"
+    path.write_bytes(b"\xef\xbb\xbf" * marks + b'{"a":1}\n')
+    assert read_records(path, None)[0]["a"] == 1
+
+
+def test_files_that_each_open_with_a_mark_can_be_joined(
+    tmp_path: Path,
+) -> None:
+    # Each NDJSON line is a JSON text, and a mark at its start is skipped.
+    path = tmp_path / "rows.jsonl"
+    path.write_bytes(b'\xef\xbb\xbf{"a":1}\n\xef\xbb\xbf{"a":2}\n')
+    assert [row["a"] for row in read_records(path, None)] == [1, 2]
+
+
+@pytest.mark.parametrize(
+    ("written", "line"),
+    [
+        (b'{"a":1}\xef\xbb\xbf\n', 1),
+        (b'{"a":1}\n{"a":\xef\xbb\xbf2}\n', 2),
+        (b'[\xef\xbb\xbf{"a":1}]', None),
+    ],
+)
+def test_a_mark_anywhere_else_outside_a_string_is_refused(
+    tmp_path: Path, written: bytes, line: int | None
+) -> None:
+    path = tmp_path / "rows.jsonl"
+    path.write_bytes(written)
+    with pytest.raises(BuildError) as refused:
+        read_records(path, None)
+    at = f"{path}:{line}" if line else str(path)
+    assert str(refused.value).startswith(f"{at}: not JSON")
+
+
+def test_a_mark_inside_a_string_is_a_character(tmp_path: Path) -> None:
+    path = tmp_path / "rows.jsonl"
+    path.write_bytes(b'{"a":"x\xef\xbb\xbfy"}\n')
+    value = read_records(path, None)[0]["a"]
+    assert value == "x\N{BYTE ORDER MARK}y"
+
+
+@pytest.mark.parametrize(
+    "mark",
+    [codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE],
+    ids=["little-endian", "big-endian"],
+)
+def test_utf16_is_refused_in_words_that_say_so(
+    tmp_path: Path,
+    mark: bytes,
+) -> None:
+    # What Windows PowerShell 5.1 writes for `>`.
+    # Read as UTF-8 it would be refused with only "Expecting value" to go on.
+    codec = "utf-16-le" if mark == codecs.BOM_UTF16_LE else "utf-16-be"
+    path = tmp_path / "rows.jsonl"
+    path.write_bytes(mark + '{"a":1}\n'.encode(codec))
+    with pytest.raises(BuildError) as refused:
+        read_records(path, None)
+    want = f"{path}:1: not JSON: it is UTF-16; save it as UTF-8"
+    assert str(refused.value) == want
+
+
+@pytest.mark.parametrize(
+    "before",
+    [b"", codecs.BOM_UTF8],
+    ids=["bare", "after-a-utf-8-mark"],
+)
+def test_utf16_on_a_stream_asks_for_it_to_be_sent_as_utf8(
+    before: bytes,
+) -> None:
+    # Standard input as the command line sets it up.  A pipe is not
+    # a file, so there is nothing to save.  Windows PowerShell 5.1 puts
+    # a UTF-8 mark in front when the console's input encoding has one,
+    # even of records that `$OutputEncoding` sends as UTF-16.
+    utf16 = codecs.BOM_UTF16_LE + '{"a":1}\n'.encode("utf-16-le")
+    written = before + utf16
+    stream = io.TextIOWrapper(
+        io.BytesIO(written), encoding="utf-8", errors="surrogateescape"
+    )
+    with pytest.raises(BuildError) as refused:
+        read_records(stream, None)
+    want = "standard input:1: not JSON: it is UTF-16; send it as UTF-8"
+    assert str(refused.value) == want
 
 
 # -- coercion ---------------------------------------------------------

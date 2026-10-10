@@ -701,11 +701,21 @@ is string repetition rather than arithmetic.
 ### Data input
 
 Records come from JSON: either a single array document, or NDJSON with
-one record per line. A `\u` escape that spells half a surrogate pair
-on its own reads as U+FFFD; see [strings](expressions.md#strings).
-The engine buffers the whole dataset — `DATA_COUNT`, report-scoped
-aggregates, and [keep-together](layout.md#keeping-content-together)
-lookahead all require the full sequence.
+one record per line. The JSON is UTF-8, whether it comes from a file or
+from standard input. A byte that is not part of a valid UTF-8 sequence
+reads as U+FFFD, one per byte, as it does everywhere a string is made.
+Byte order marks at the start are skipped, as many as there are, since
+Windows PowerShell 5.1 can pipe two. So are those at the start of each
+NDJSON line, which is a JSON text of its own, so that files that each
+open with one can be joined. Anywhere else outside a string, a byte
+order mark is a stray character, and refused; inside a string it is
+a character like any other. UTF-16, which Windows PowerShell 5.1 writes
+for a `>`, is refused with a message that says so. A `\u` escape that
+spells half a surrogate pair on its own reads as U+FFFD;
+see [strings](expressions.md#strings). The engine buffers the whole
+dataset: `DATA_COUNT`, report-scoped aggregates, and
+[keep-together](layout.md#keeping-content-together) lookahead all
+require the full sequence.
 
 The library API takes a Go slice directly; JSON is the CLI's front end.
 

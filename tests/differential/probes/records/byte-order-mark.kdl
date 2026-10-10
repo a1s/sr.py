@@ -1,0 +1,26 @@
+// probes/records/byte-order-mark.kdl -- records that open with a byte order mark.
+//
+// A registered divergence: built here, refused by the reference,
+// which reads the mark as a stray character before the first record.
+// See `divergences.toml`, entry `records-byte-order-mark`.
+//
+// doc/template.md#data-input: byte order marks at the start of the records
+// are skipped, as RFC 8259 allows, and so are those at the start of each
+// NDJSON line.  Windows PowerShell 5.1 saves UTF-8 with one, and puts one
+// or two in front of what it pipes into a program.  The records are two
+// such files joined, each line opening with a mark, and the values are
+// outside ASCII, so the printout also shows that what follows a mark
+// was read as UTF-8.
+
+report name="records/byte-order-mark" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  records {
+    member "title" type="string"
+  }
+  layout pagesize="A4" {
+    style font="body" color="black"
+    detail height=20 {
+      field expr="title" left=0 top=0 width=100 height=10
+    }
+  }
+}

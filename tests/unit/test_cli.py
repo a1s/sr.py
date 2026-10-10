@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import base64
 import io
+import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -818,6 +820,209 @@ def test_a_stream_is_reconfigured_for_the_formats_own_line_ending() -> None:
 def test_a_stream_that_cannot_be_reconfigured_is_left_alone() -> None:
     held = io.StringIO()
     assert as_written(held) is held
+
+
+# -- the streams' encoding --------------------------------------------
+#
+# doc/cli.md#streams: both streams are UTF-8, under any code page.
+# On Windows a pipe or a file gets the ANSI code page, and text that
+# page cannot hold stopped `inspect` at a traceback.  The stand-ins
+# below encode as cp1252, the Western European page and the commonest.
+
+# Text the stand-ins cannot hold.  `ķ` and `ū` are in neither cp1252
+# nor cp1251: of the Windows ANSI code pages, only the Baltic cp1257
+# has them.  An `é` would not do: cp1252 has one, and the crash would
+# go untested.
+LATVIAN = "Šķūnis"
+
+
+def accented(tmp_path: Path) -> Path:
+    """Write a template whose name and header hold text outside cp1252.
+
+    Args:
+        tmp_path: Where to write it.
+
+    """
+    template = tmp_path / "latvian.kdl"
+    template.write_text(
+        f"""
+report name="{LATVIAN}" {{
+  font "body" file="{FACE}" size=9
+  layout pagesize="A4" {{
+    style font="body" color="black"
+    header {{ field text="{LATVIAN}" left=0 top=0 width=50 height=12 }}
+    detail height=20 {{ field text="x" left=0 top=0 width=50 height=12 }}
+  }}
+}}
+""",
+        encoding="utf-8",
+    )
+    return template
+
+
+def in_codepage(*argv: str) -> tuple[int, str]:
+    """Run one command into a cp1252 stream and return what it wrote.
+
+    The stream stands in for standard output on a Windows machine
+    whose ANSI code page is cp1252.  What it wrote is decoded as UTF-8,
+    so a stream left in its own encoding fails here rather than passing.
+
+    Args:
+        *argv: The arguments after the program name.
+
+    """
+    raw = io.BytesIO()
+    stream = io.TextIOWrapper(raw, encoding="cp1252")
+    code = main(list(argv), stream)
+    stream.flush()
+    return code, raw.getvalue().decode("utf-8")
+
+
+def test_inspect_writes_utf8_where_the_code_page_cannot_hold_the_text(
+    tmp_path: Path,
+) -> None:
+    out = tmp_path / "latvian.srp.jsonl"
+    code, _ = run("build", "-t", str(accented(tmp_path)), "-o", str(out))
+    assert code == 0
+    code, said = in_codepage("inspect", str(out))
+    assert code == 0
+    assert f'"{LATVIAN}"' in [one.strip() for one in said.splitlines()]
+
+
+def test_validate_writes_utf8_where_the_code_page_cannot_hold_the_text(
+    tmp_path: Path,
+) -> None:
+    code, said = in_codepage("validate", str(accented(tmp_path)))
+    assert code == 0
+    assert f'  report "{LATVIAN}"' in said.splitlines()
+
+
+def test_a_diagnostic_on_standard_error_is_utf8_too(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Python's own standard error escapes what its encoding cannot hold
+    # rather than failing, so the stand-in does too: left alone,
+    # it would write the `Š` as cp1252 and escape the `ķ` and the `ū`,
+    # and the decode below is what catches that.
+    raw = io.BytesIO()
+    held = io.TextIOWrapper(raw, encoding="cp1252", errors="backslashreplace")
+    monkeypatch.setattr(sys, "stderr", held)
+    code, _ = run("validate", str(SAKILA), "--param", f"{LATVIAN}=1", "-q")
+    held.flush()
+    assert code == 1
+    assert f"--param {LATVIAN}: " in raw.getvalue().decode("utf-8")
+
+
+def test_a_path_that_is_not_text_is_escaped_alike_on_both_routes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A lone surrogate is what Python makes of a file name that is not
+    # valid text, and UTF-8 cannot encode one.  A printout writes it as
+    # JSON's escape for that code point, to a file and to standard output
+    # alike, so the build succeeds and the path reads back as it was.
+    odd = "fonts" + chr(0xDCFF)
+    try:
+        (tmp_path / odd).mkdir()
+    except (OSError, UnicodeEncodeError):
+        pytest.skip("this file system takes only names that are text")
+    face = (FONTS / "Go-Regular.ttf").read_bytes()
+    (tmp_path / odd / "Go.ttf").write_bytes(face)
+    template = tmp_path / odd / "odd.kdl"
+    template.write_text(
+        """
+report name="odd" {
+  font "body" file="Go.ttf" size=9
+  layout pagesize="A4" {
+    style font="body" color="black"
+    header { field text="h" left=0 top=0 width=50 height=12 }
+    detail height=20 { field text="x" left=0 top=0 width=50 height=12 }
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    # From the printout's own directory, so that the two routes
+    # write the path relative to the same place.
+    monkeypatch.chdir(tmp_path)
+    argv = ("build", "-t", str(template), *REPRODUCIBLE)
+    code, _ = run(*argv, "-o", "odd.srp.jsonl")
+    assert code == 0
+    raw = io.BytesIO()
+    stream = io.TextIOWrapper(raw, encoding="cp1252")
+    code = main([*argv, "-o", "-", "--format", "jsonl"], stream)
+    stream.flush()
+    assert code == 0
+    written = (tmp_path / "odd.srp.jsonl").read_bytes()
+    assert raw.getvalue() == written
+    header = json.loads(written.decode("utf-8").splitlines()[0])
+    assert header["fonts"][0]["resolvedFile"] == f"{odd}/Go.ttf"
+
+
+# -- records on standard input ----------------------------------------
+#
+# doc/cli.md: records on standard input are UTF-8, as they are in a file.
+# On Windows a pipe arrives decoded with the ANSI code page, and the
+# stand-in below decodes the way a cp1252 machine would.
+
+
+def built_from_stdin(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, records: bytes
+) -> list[str]:
+    """Build the minimal example from standard input and return its dump.
+
+    Args:
+        monkeypatch: To put the records on standard input.
+        tmp_path: Where to write the printout.
+        records: What standard input holds.
+
+    """
+    stdin = io.TextIOWrapper(io.BytesIO(records), encoding="cp1252")
+    monkeypatch.setattr(sys, "stdin", stdin)
+    out = tmp_path / "out.srp.jsonl"
+    argv = ("build", "-t", str(MINIMAL), "-d", "-", "-o", str(out))
+    code, _ = run(*argv, *REPRODUCIBLE)
+    assert code == 0
+    code, said = run("inspect", str(out))
+    assert code == 0
+    return [one.strip() for one in said.splitlines()]
+
+
+def test_records_on_standard_input_are_read_as_utf8(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    records = f'{{"title":"{LATVIAN}"}}\n'.encode()
+    assert f'"{LATVIAN}"' in built_from_stdin(monkeypatch, tmp_path, records)
+
+
+def test_byte_order_marks_on_standard_input_are_skipped(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # What Windows PowerShell 5.1 pipes in when the console's input
+    # encoding and `$OutputEncoding` are both UTF-8 with a mark:
+    # two marks, then the records, with its own line endings.
+    record = f'{{"title":"{LATVIAN}"}}\r\n'.encode()
+    records = b"\xef\xbb\xbf" * 2 + record
+    assert f'"{LATVIAN}"' in built_from_stdin(monkeypatch, tmp_path, records)
+
+
+def test_standard_input_already_read_from_is_left_as_it_is(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A caller running main in-process may have read part of standard
+    # input, after which it cannot be reconfigured.  A command that
+    # does not read it should not fail over it at its first line.
+    stdin = io.TextIOWrapper(io.BytesIO(b"one\ntwo\n"), encoding="cp1252")
+    stdin.readline()
+    monkeypatch.setattr(sys, "stdin", stdin)
+    assert run("version") == (0, meta.engine() + "\n")
+    assert stdin.encoding == "cp1252"
+
+
+def test_a_byte_on_standard_input_that_is_not_utf8_reads_as_in_a_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    records = b'{"title":"Caf\xe9"}\n'
+    assert '"Caf\ufffd"' in built_from_stdin(monkeypatch, tmp_path, records)
 
 
 def test_an_output_directory_that_is_not_there_is_a_diagnostic(

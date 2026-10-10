@@ -82,6 +82,12 @@ here instead, for the reason the numbers are:
 - **U+2028 and U+2029** are `\u2028` and `\u2029`, for a reason of the same
   shape: both are legal in a JSON string and neither is legal in a JavaScript
   one, so a reader that is a JavaScript parser would refuse the file.
+- A **lone surrogate** has no UTF-8 encoding, and is written as JSON's escape
+  for the same code point, in lower-case hexadecimal: `\udcff`. In
+  practice only a path brings one, from a file name that is not valid
+  Unicode, and the escape leaves the path able to find its file. The
+  reference writes U+FFFD for each byte of such a name instead, so a byte
+  comparison of the two engines differs on that path.
 - Everything else is written as itself, in UTF-8. Non-ASCII is not escaped,
   `/` is not escaped, and U+007F is an ordinary character.
 
