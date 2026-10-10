@@ -716,11 +716,13 @@ def content_source(visit: Visit, space: Space, element: Field | Barcode) -> None
             prop="evaltime",
         )
     elif not element.expr.uses_final:
+        # Named against evaltime rather than expr: an expr without FINAL
+        # is the ordinary case, and it is the deferral that is wrong.
         visit.diagnostics.error(
-            "this expr never names FINAL, so deferring it would give"
-            " the same answer in place",
+            "evaltime defers an expr that never names FINAL, so it would"
+            " give the same answer in place",
             path=element.path,
-            prop="expr",
+            prop="evaltime",
         )
     else:
         final_scope(visit, space, element)

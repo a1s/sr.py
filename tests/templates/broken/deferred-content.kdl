@@ -1,7 +1,7 @@
 // broken/deferred-content.kdl -- the rules that tie evaltime, FINAL and a placeholder together.
 //
 // expect: evaltime defers the expr, so there has to be one
-// expect: this expr never names FINAL
+// expect: evaltime defers an expr that never names FINAL
 // expect: at most one placeholder
 // expect: so a deferred one needs a text or data placeholder
 

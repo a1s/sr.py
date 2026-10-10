@@ -1883,8 +1883,13 @@ Validation runs once, at load, before any data is read. It checks:
   `report`, `page`, `column`, or a defined group.
 - `FINAL` appears **only in the `expr` of a `field` or `barcode` that has
   an `evaltime`**, and such an element's `expr` names `FINAL` at least once.
-  Each without the other is a mistake rather than a no-op — the first has no scope to
-  read from, the second defers an expression that would give the same answer in place.
+  Each without the other is a mistake rather than a no-op: the first
+  has no scope to read from, the second defers an expression that would
+  give the same answer in place. Each diagnostic names the half that is
+  there without the other: the first names `expr`, where `FINAL` is
+  written, and the second names `evaltime`. An `expr` without `FINAL`
+  is the ordinary case, so it is the deferral that is wrong, as it is
+  for an `evaltime` with no `expr`.
 - `FINAL` in any other property is an error, including in the same element's
   `printwhen` or a `style when` beneath it. `expr` is the only property whose
   evaluation is deferred; everything else on the element is evaluated when the band
