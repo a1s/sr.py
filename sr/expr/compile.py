@@ -7,8 +7,10 @@ that build it.
 1. **Parse** with ``ast.parse(source, mode="eval")``.  Python's
    expression grammar is a superset of Starlark's, so precedence,
    associativity and comprehension scoping are correct for free.
-   Its literals are not, so :mod:`sr.expr.literals` reads those first,
-   by Starlark's rules, and the parser gets the text with them blanked.
+   Its literals are not, and nor is its tokenizer, which skips
+   a form feed between tokens where Starlark's refuses one.
+   So :mod:`sr.expr.literals` reads the tokens first, by Starlark's
+   rules, and the parser gets the text with the literals blanked.
 2. **Reject** every node kind the dialect does not have.  This is what
    makes the superset a subset again: no ``**``, no lambda, no f-string,
    no walrus, no chained comparison, no starred argument, no ``is``.
@@ -501,15 +503,51 @@ def parse(lexed: Lexed) -> ast.Expression:
         raise ExpressionError(f"{error.msg}", offset=offset) from None
     except ValueError as error:
         raise ExpressionError(str(error)) from None
-    # Each blanked literal is a constant where the literal began, and
-    # what it holds is what the literals pass read.  A constant it has
-    # no value for is part of an f-string, which the rejection refuses.
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Constant) and isinstance(node.value, str | bytes):
-            value = lexed.values.get((node.lineno, node.col_offset))
-            if value is not None:
-                node.value = value
+    if lexed.unread is not None:
+        # The tokenizer refused what the parser took, so no literal
+        # in it was read by Starlark's rules.
+        raise ExpressionError(lexed.unread)
+    Literals(lexed).visit(tree)
     return tree
+
+
+class Literals(ast.NodeVisitor):
+    """The pass that gives each literal what Starlark reads in it.
+
+    Each blanked literal is a constant where the literal began, and
+    what it holds is what :func:`sr.expr.literals.lex` read there.
+
+    Attributes:
+        lexed: The expression with its literals read and blanked.
+
+    """
+
+    def __init__(self, lexed: Lexed) -> None:
+        """Prepare to fill in one expression's literals.
+
+        Args:
+            lexed: The expression with its literals read and blanked.
+
+        """
+        self.lexed = lexed
+
+    def visit_JoinedStr(self, node: ast.JoinedStr) -> None:
+        """Pass over an f-string, which was not read: it is refused."""
+
+    def visit_TemplateStr(self, node: ast.AST) -> None:
+        """Pass over a t-string, which was not read: it is refused."""
+
+    def visit_Constant(self, node: ast.Constant) -> None:
+        """Give a string or bytes constant the value read for it."""
+        if not isinstance(node.value, str | bytes):
+            return
+        at = offset_of(node, self.lexed.text)
+        if at is None or at not in self.lexed.values:
+            raise ExpressionError(
+                "internal error: this literal was not read by Starlark's rules",
+                offset=at,
+            )
+        node.value = self.lexed.values[at]
 
 
 def build(

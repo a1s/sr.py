@@ -7,15 +7,21 @@ such as ``\d`` and ``\N{...}``, prefixes Starlark has not got, such as
 ``\xff`` in a string as a character, where Starlark reads a byte.
 And it refuses a bytes literal holding a character that is not ASCII,
 or keeps a ``\u`` escape in one as six characters, where Starlark writes
-the character's UTF-8 encoding. Each of those is a different answer
+the character's UTF-8 encoding.  Each of those is a different answer
 to the same template.
 
 So the literals are read here first, from the tokens, and the parser
 is handed the expression with each literal's contents blanked: the same
 characters in the same places, none of them an escape.  What each literal
 holds is put into the tree afterwards, found by where the literal begins.
-Since the parser never sees an escape, it never warns about one either,
+An f-string or a t-string is blanked as well, unread, for the tree to
+refuse.  Since the parser never sees an escape, it never warns about one,
 and its warnings stay off standard error without any warning filter.
+
+The tokens also show what lies between them, where Python's tokenizer
+takes one character Starlark's does not: a form feed, which Python skips
+as it skips a space.  One outside a literal or a comment is refused here,
+at its own offset, as the reference refuses it.
 
 doc/expressions.md#literals is the specification.
 
@@ -28,12 +34,13 @@ import re
 import string
 import tokenize
 from dataclasses import dataclass
+from itertools import accumulate
 from typing import Final
 
 from sr.errors import ExpressionError
 from sr.expr.values import SURROGATE
 
-__all__ = ["Lexed", "lex", "read"]
+__all__ = ["Lexed", "lex"]
 
 # The prefixes Starlark has, in the one case it has them in.
 PREFIXES: Final = frozenset({"", "r", "b", "rb"})
@@ -88,6 +95,27 @@ BREAKS: Final = ("\n", "\r")
 # into the token that follows, and numbers every later line one short.
 LONE_RETURN: Final = re.compile(r"\r(?!\n)")
 
+# The one character Python's tokenizer skips between tokens
+# and Starlark's does not, and what the reference says about one.
+FORM_FEED: Final = "\f"
+STRAY_FORM_FEED: Final = "unexpected input character '\\f'"
+
+# What the tokenizer skips before a token.
+BLANKS: Final = " \t\f"
+
+# The tokens whose text is the template's rather than the language's,
+# where a form feed is a character like any other: a literal and
+# a comment.  The text of an f-string is one too, on the Pythons whose
+# tokenizer takes an f-string apart, and the tree refuses the f-string.
+VERBATIM: Final = frozenset(
+    {tokenize.STRING, tokenize.COMMENT}
+    | {
+        getattr(tokenize, name)
+        for name in ("FSTRING_MIDDLE", "TSTRING_MIDDLE")
+        if hasattr(tokenize, name)
+    }
+)
+
 # What two literals in a row are told.  Python joins them into one,
 # and Starlark has no such rule.
 ADJACENT: Final = "two literals in a row are not joined; write + between them"
@@ -102,14 +130,17 @@ class Lexed:
             character for character, by characters that are not escapes,
             and each carriage return that ends a line on its own
             replaced by a newline.
-        values: What each literal holds, by where it begins
-            as the parser reports it: its line, and its column
-            in UTF-8 bytes.
+        values: What each literal holds, by the offset where it begins.
+        unread: Why the tokenizer refused the text, when it did.
+            Then no literal was read, and the parser is expected to
+            refuse the text as well and to say better why; if it takes it,
+            this is the error, rather than Python's reading of them.
 
     """
 
     text: str
-    values: dict[tuple[int, int], str | bytes]
+    values: dict[int, str | bytes]
+    unread: str | None = None
 
 
 def prefix_of(written: str) -> str:
@@ -152,59 +183,157 @@ def formatted(written: str) -> bool:
 def lex(source: str) -> Lexed:
     """Read every literal in an expression, and blank each for the parser.
 
+    An f-string or a t-string is blanked whole and not read: the tree
+    refuses it, and blanked, it holds no escape for the parser to warn of.
+
     Args:
         source: The expression, as the template wrote it.
 
     Raises:
-        ExpressionError: A literal is not one Starlark has, or two stand
-            in a row.
+        ExpressionError: A literal is not one Starlark has,
+            two stand in a row, a form feed stands between two tokens,
+            or the text holds a surrogate.
 
     """
+    # No string holds a surrogate, doc/expressions.md#strings, and
+    # from Python 3.12 on, the tokenizer cannot so much as encode one.
+    found = SURROGATE.search(source)
+    if found is not None:
+        code = ord(found.group())
+        message = f"invalid Unicode code point U+{code:04X}"
+        raise ExpressionError(message, offset=found.start())
     # Every line ends in a newline from here on, one character for one,
     # so that the tokenizer and the parser count the same lines and
     # every character stays where the template wrote it.
-    lined = LONE_RETURN.sub("\n", source)
-    lines = io.StringIO(lined).readlines()
-    try:
-        tokens = list(tokenize.generate_tokens(io.StringIO(lined).readline))
-    except (SyntaxError, tokenize.TokenError):
-        # Not even Python's tokens, and the parser will say why.
-        return Lexed(lined, {})
-    starts = [0]
-    for line in lines:
-        starts.append(starts[-1] + len(line))
-    blanked = list(lined)
-    found: list[tuple[int, int, str | bytes]] = []
-    last: tokenize.TokenInfo | None = None
-    depth = 0
-    for token in tokens:
+    return Lexer(LONE_RETURN.sub("\n", source)).run()
+
+
+class Lexer:
+    """One pass over an expression's tokens, in the order they come.
+
+    Attributes:
+        lined: The expression, every line ending in a newline.
+        starts: Where each line begins in it.
+        blanked: The text for the parser, one character for each.
+        values: What each literal read so far holds, by its offset.
+        scanned: Where the last token ended.
+        last: The last token that is not a line break or a comment.
+        depth: How many f-strings or t-strings the token is inside.
+        opened: Where the outermost of those began.
+
+    """
+
+    def __init__(self, lined: str) -> None:
+        """Prepare to read one expression.
+
+        Args:
+            lined: The expression, every line ending in a newline.
+
+        """
+        self.lined = lined
+        self.starts = [0, *accumulate(len(line) for line in io.StringIO(lined))]
+        self.blanked = list(lined)
+        self.values: dict[int, str | bytes] = {}
+        self.scanned = 0
+        self.last: tokenize.TokenInfo | None = None
+        self.depth = 0
+        self.opened = 0
+
+    def run(self) -> Lexed:
+        """Read every token, and return the text and what its literals hold."""
+        tokens = tokenize.generate_tokens(io.StringIO(self.lined).readline)
+        try:
+            for token in tokens:
+                if token.type == tokenize.ERRORTOKEN:
+                    # Python 3.11's tokenizer gives up this way,
+                    # and later ones by raising.
+                    found = token.string
+                    return self.unread(f"unexpected input character {found!r}")
+                self.take(token)
+        except (SyntaxError, tokenize.TokenError) as error:
+            return self.unread(str(error.args[0]))
+        return Lexed("".join(self.blanked), self.values)
+
+    def unread(self, reason: str) -> Lexed:
+        """Return the text as far as it was read, and why the rest was not.
+
+        The parser is left to say what is wrong where the tokenizer gave
+        up, but a form feed in the blanks before that place comes first.
+
+        Args:
+            reason: Why the tokenizer gave up.
+
+        """
+        rest = self.lined[self.scanned :]
+        blanks = len(rest) - len(rest.lstrip(BLANKS))
+        self.stray(self.scanned, self.scanned + blanks)
+        return Lexed("".join(self.blanked), {}, reason)
+
+    def offset(self, position: tuple[int, int]) -> int:
+        """Return a token's line and column as an offset into the text.
+
+        Args:
+            position: The line, from 1, and the column, in characters.
+
+        """
+        return self.starts[position[0] - 1] + position[1]
+
+    def stray(self, start: int, end: int) -> None:
+        """Refuse a form feed between two offsets, where none may be.
+
+        Args:
+            start: Where the stretch begins.
+            end: Where it ends.
+
+        """
+        found = self.lined.find(FORM_FEED, start, end)
+        if found >= 0:
+            raise ExpressionError(STRAY_FORM_FEED, offset=found)
+
+    def hide(self, start: int, end: int) -> None:
+        """Blank the literal between two offsets.
+
+        Args:
+            start: Where the literal begins.
+            end: Where it ends.
+
+        """
+        self.blanked[start:end] = blank(self.lined[start:end])
+
+    def take(self, token: tokenize.TokenInfo) -> None:
+        """Read one token.
+
+        Args:
+            token: The token, which the tokenizer has just given.
+
+        """
+        begin, end = self.offset(token.start), self.offset(token.end)
+        # Python's tokenizer skips a form feed as it skips a space, and
+        # Starlark's refuses one, doc/expressions.md#language.  Outside
+        # a literal or a comment, the token's own text is checked too.
+        self.stray(self.scanned, begin if token.type in VERBATIM else end)
+        self.scanned = max(self.scanned, end)
         if token.type in BETWEEN:
-            continue
+            return
         if token.type in OPENING:
-            depth += 1
+            if not self.depth:
+                self.opened = begin
+            self.depth += 1
         elif token.type in CLOSING:
-            depth -= 1
-        elif token.type == tokenize.STRING and not depth:
-            written = token.string
-            if not formatted(written):
-                row, column = token.start
-                at = starts[row - 1] + column
+            self.depth -= 1
+            if not self.depth:
+                self.hide(self.opened, end)
+        elif token.type == tokenize.STRING and not self.depth:
+            if not formatted(token.string):
                 if (
-                    last is not None
-                    and last.type == tokenize.STRING
-                    and not formatted(last.string)
+                    self.last is not None
+                    and self.last.type == tokenize.STRING
+                    and not formatted(self.last.string)
                 ):
-                    raise ExpressionError(ADJACENT, offset=at)
-                found.append((row, column, read(written, at)))
-                blanked[at : at + len(written)] = blank(written)
-        last = token
-    text = "".join(blanked)
-    rows = io.StringIO(text).readlines()
-    values = {
-        (row, len(rows[row - 1][:column].encode())): value
-        for row, column, value in found
-    }
-    return Lexed(text, values)
+                    raise ExpressionError(ADJACENT, offset=begin)
+                self.values[begin] = read(token.string, begin)
+            self.hide(begin, end)
+        self.last = token
 
 
 def blank(written: str) -> str:
@@ -327,11 +456,6 @@ class Reader:
             end: Where it ends.
 
         """
-        found = SURROGATE.search(self.body, start, end)
-        if found is not None:
-            code = ord(found.group())
-            message = f"invalid Unicode code point U+{code:04X}"
-            raise self.refuse(found.start(), message)
         # A line break written into a literal is a newline, however
         # the text spells it; a lone carriage return is one already.
         self.put(self.body[start:end].replace("\r\n", "\n"))

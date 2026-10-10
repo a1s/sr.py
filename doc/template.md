@@ -296,6 +296,13 @@ A string holding a Starlark expression. See [expressions.md](expressions.md).
 A string literal inside an expression needs its own quotes: `target="'top'"`,
 not `target="top"`.
 
+KDL reads its own escapes before Starlark reads any. In a quoted KDL string,
+`\\` is one backslash, so each backslash the expression holds is written
+twice: the expression `'C:\\data'` is `expr="'C:\\\\data'"`. A raw KDL
+string reads no escapes, so the expression goes in as Starlark writes it:
+`expr=#"'C:\\data'"#`. That is the easier spelling wherever an expression
+holds a backslash. See [Literals](expressions.md#literals) for the escapes.
+
 ### Enumerations
 
 | Type | Values |

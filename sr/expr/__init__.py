@@ -7,7 +7,7 @@ Seven modules, layered downward and importing in that order:
 ``values``       the value model: decimal, time, duration, record, set
 ``fmt``          the two percent formatters
 ``builtins``     the names in scope, the method tables, the resolvers
-``literals``     string and bytes literals, read by Starlark's rules
+``literals``     the tokens: literals by Starlark's rules, no stray form feed
 ``compile``      Python's parser, restricted and rewritten into a callable
 ``calc``         the twelve accumulator modes a `variable` folds with
 ===============  ==========================================================

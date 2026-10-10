@@ -42,6 +42,11 @@ Starlark is Python-like, not Python. What matters for templates:
   are escapes. See [Literals](#literals).
 - **`%` interpolation has no flags, width, or precision.** See
   [Formatting](#formatting).
+- **Tokens are separated by spaces, tabs, and line breaks only.** Python
+  also skips a form feed (U+000C) between two tokens, and Starlark does not.
+  A form feed outside a literal or a comment is an error,
+  `unexpected input character '\f'`, at the form feed's own offset.
+  Inside a literal or a comment it is a character like any other.
 
 ## Determinism
 
@@ -407,8 +412,11 @@ Any other backslash is an error, and so is an escape cut short:
 '\x4'              # truncated escape sequence \x4
 ```
 
-A Windows path is the usual way to meet the first: write `'C:\\data'`
-or `r'C:\data'`. `\N{...}` is Python's, and Starlark has no named escapes.
+A Windows path is the usual way to meet the first: the expression wants
+`'C:\\data'` or `r'C:\data'`. In a template, KDL reads its own escapes
+before Starlark does, so that is `expr="'C:\\\\data'"`, or in a raw KDL
+string `expr=#"'C:\\data'"#`; see [Expression](template.md#expression).
+`\N{...}` is Python's, and Starlark has no named escapes.
 A raw literal has no escapes at all, so a backslash in one is a backslash.
 A line break written into a triple-quoted literal is a newline in its value,
 whether the text spells it `\r\n`, `\r`, or `\n`.

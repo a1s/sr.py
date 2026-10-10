@@ -8,7 +8,8 @@ from typing import Any
 import pytest
 
 from sr.errors import ExpressionError
-from sr.expr.compile import RUNTIME, compile_expression, evaluate
+from sr.expr.compile import RUNTIME, compile_expression, evaluate, parse
+from sr.expr.literals import Lexed
 from sr.expr.values import Decimal, Namespace, Record, Time
 
 # Every predefined name of doc/expressions.md#predefined-variables,
@@ -158,11 +159,15 @@ def test_a_refusal_on_a_later_line_counts_the_lines_before() -> None:
     "source",
     [
         "('a\u2028b' +\n2 ** 3)",
-        "(1 +\x0c\n2 ** 3)",
+        "(1 +  # \u2028\n2 ** 3)",
+        "(1 +  # \x0c\n2 ** 3)",
     ],
 )
 def test_a_line_ends_only_where_the_parser_ends_one(source: str) -> None:
     # str.splitlines would also break at the U+2028 and the form feed.
+    # A literal's contents are blanked before the parse, so the comments
+    # are what keep each character in the text the parser counts in;
+    # a form feed outside a literal or a comment is refused besides.
     with pytest.raises(ExpressionError) as raised:
         compile_expression(source)
     assert raised.value.offset == source.index("2 **")
@@ -179,6 +184,43 @@ def test_a_syntax_error_after_non_ascii_text_counts_characters() -> None:
     with pytest.raises(ExpressionError) as raised:
         compile_expression("Šķ + )")
     assert raised.value.offset == 5
+
+
+@pytest.mark.parametrize(
+    ("source", "at"),
+    [
+        ("1 +\f 2", 3),
+        ("\f1 + 2", 0),
+        ("1 + 2\f", 5),
+        ("(1 +\n\f 2)", 5),
+        ("(1 +\r\f 2)", 5),
+        ("(1 +\r\n\f 2)", 6),
+        ("1 +\\\n\f 2", 5),
+        ("Šķ +\f 2", 4),
+        ("(1 +\f 2", 4),
+        ("1 +\f\v 2", 3),
+    ],
+)
+def test_a_form_feed_between_tokens_is_refused(source: str, at: int) -> None:
+    """Python's tokenizer skips one like a space, and Starlark's does not.
+
+    The last two do not parse either, and the form feed comes first.
+    The offset counts characters, so the name before the third from
+    the end puts it at 4 rather than at 6, where UTF-8 bytes would.
+    """
+    with pytest.raises(ExpressionError) as raised:
+        compile_expression(source)
+    assert raised.value.message == "unexpected input character '\\f'"
+    assert raised.value.offset == at
+
+
+@pytest.mark.parametrize(
+    "source",
+    ["'a\fb'", "b'a\fb'", "r'a\fb'", "'''a\fb'''", "1 # a\fb", "1 +\t2"],
+)
+def test_a_form_feed_in_a_literal_or_a_comment_compiles(source: str) -> None:
+    """The reference takes each of these, and the tab between tokens too."""
+    compile_expression(source)
 
 
 # ------------------------------------------------------------ the sandbox
@@ -413,12 +455,40 @@ def test_a_literal_refusal_says_where_it_is(source: str, offset: int) -> None:
 def test_the_parser_never_sees_an_escape() -> None:
     """Python warns about an escape it has not got, and nothing should.
 
-    An error filter would turn the warning into Python's own diagnostic,
-    so under one, this is what holds the literals' to theirs.
+    An error filter turns such a warning into Python's own diagnostic,
+    so this runs under one.  An f-string is blanked whole, unread.
     """
     assert evaluate("b'\\u00ff'") == b"\xc3\xbf"
     with pytest.raises(ExpressionError, match="invalid escape sequence \\\\d"):
         compile_expression("'\\d'")
+    for source in ("f'\\d{1}'", "f'{\"\\d\"}'", "rf'''a\n\\d'''"):
+        with pytest.raises(ExpressionError, match="no f-strings"):
+            compile_expression(source)
+
+
+@pytest.mark.parametrize(
+    ("source", "offset"),
+    [("'a" + chr(0xD800) + "'", 2), ("a" + chr(0xDFFF), 1)],
+)
+def test_a_surrogate_in_the_text_is_refused(source: str, offset: int) -> None:
+    """From Python 3.12, the tokenizer cannot so much as encode one."""
+    with pytest.raises(ExpressionError, match=r"invalid Unicode code point U\+D"):
+        compile_expression(source)
+    with pytest.raises(ExpressionError) as raised:
+        compile_expression(source)
+    assert raised.value.offset == offset
+
+
+def test_text_the_tokenizer_refused_is_not_read_by_pythons_rules() -> None:
+    """Were the parser to take it, its literals would be Python's."""
+    with pytest.raises(ExpressionError, match=r"^why$"):
+        parse(Lexed("b'_'", {}, unread="why"))
+
+
+def test_a_literal_the_lexer_did_not_read_is_refused() -> None:
+    """Its blanked value would otherwise reach the printout."""
+    with pytest.raises(ExpressionError, match="internal error"):
+        parse(Lexed("b'_'", {}))
 
 
 def evaluate_with(source: str, environment: dict[str, Any]) -> Any:
