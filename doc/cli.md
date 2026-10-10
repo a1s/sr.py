@@ -70,11 +70,26 @@ sr inspect report.srp.jsonl | less
 pages through the dump and nothing else, and a warning is still visible on the
 terminal.
 
+Both streams are **UTF-8**, on every machine and under any console code page.
+A printout's text is Unicode, and a dump whose bytes changed with the machine
+it ran on could not be diffed against one made on another. A Windows console
+shows the text as it should. A pipe or a file there gets UTF-8 too, rather
+than the legacy code page Windows would otherwise pick, so a `validate` report
+or a dump holding a character outside that code page is written, not refused.
+Text that cannot be encoded at all, such as a file name that is not valid
+Unicode, is written as a backslash escape rather than ending the run.
+No environment variable changes this, `PYTHONIOENCODING` included.
+
 ### `-` for a stream
 
 `--data -` reads records from standard input. `--out -` writes to standard
 output; for `sr.py build` that also requires `--format`, because there is no
 extension left to read the format from.
+
+Records on standard input are [UTF-8](template.md#data-input), as they are
+in a file, and are read the same way. On Windows a pipe would otherwise be
+decoded with the legacy code page, and an `é` in the data would arrive as
+two other characters with nothing said about it.
 
 A printout being *read* is always a file. Relative paths in a printout (a font,
 an image with `embed=#false`) resolve against the directory it was read from,

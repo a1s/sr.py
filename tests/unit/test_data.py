@@ -83,6 +83,24 @@ def test_a_path_is_read(tmp_path: Path) -> None:
     assert len(read_records(path, None)) == 1
 
 
+def test_a_byte_that_is_not_utf8_reads_as_one_replacement_each(
+    tmp_path: Path,
+) -> None:
+    # doc/template.md#data-input, as the reference reads it.  `\xe2\x82`
+    # starts a sequence that never finishes, and is two U+FFFD rather
+    # than the one that a decoder's own "replace" would make of it.
+    path = tmp_path / "rows.jsonl"
+    path.write_bytes(b'{"a":"Caf\xe2\x82A\xe9!"}\n')
+    assert read_records(path, None)[0]["a"] == "Caf\ufffd\ufffdA\ufffd!"
+
+
+def test_a_byte_order_mark_is_refused(tmp_path: Path) -> None:
+    path = tmp_path / "rows.jsonl"
+    path.write_bytes(b'\xef\xbb\xbf{"a":1}\n')
+    with pytest.raises(BuildError):
+        read_records(path, None)
+
+
 # -- coercion ---------------------------------------------------------
 
 

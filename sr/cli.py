@@ -195,10 +195,12 @@ def main(argv: Sequence[str] | None = None, out: TextIO | None = None) -> int:
         argv: The arguments after the program name; ``sys.argv[1:]``
             when the caller gives none.
         out: Where the report goes; standard output by default.
+            It is set to write UTF-8, and so is standard error.
 
     """
     arguments = list(sys.argv[1:] if argv is None else argv)
-    stream = sys.stdout if out is None else out
+    stream = as_utf8(sys.stdout if out is None else out)
+    as_utf8(sys.stderr)
     if not arguments:
         print("a command is required; try `sr.py help`", file=sys.stderr)
         return USAGE
@@ -228,6 +230,29 @@ def main(argv: Sequence[str] | None = None, out: TextIO | None = None) -> int:
         return USAGE
     print(f"unknown command {command!r}; try `sr.py help`", file=sys.stderr)
     return USAGE
+
+
+def as_utf8(stream: TextIO) -> TextIO:
+    """Return a stream that writes UTF-8, whatever the platform set up.
+
+    doc/cli.md#streams: both streams are UTF-8 on every machine.
+    A Windows console takes its text through the console's own API and
+    was never the problem.  A pipe or a file there gets the ANSI code
+    page instead, and a dump of a printout holding text outside that
+    page ended in a traceback.  A character that UTF-8 still cannot carry,
+    a lone surrogate from a file name that was not valid text, is written
+    as a backslash escape: nothing a command prints is worth failing
+    the run over.  A stream that cannot be reconfigured, a test's buffer
+    that encodes nothing, is returned as it is.
+
+    Args:
+        stream: Standard output or standard error, or what stands in for it.
+
+    """
+    reconfigure = getattr(stream, "reconfigure", None)
+    if reconfigure is not None:
+        reconfigure(encoding="utf-8", errors="backslashreplace")
+    return stream
 
 
 def version(arguments: Sequence[str], out: TextIO) -> int:
@@ -365,6 +390,13 @@ def build(arguments: Sequence[str], out: TextIO) -> int:
 def data_source(given: Arguments) -> Path | TextIO | None:
     """Return where the records come from.
 
+    Standard input is read as UTF-8, as a data file is.  On Windows
+    a pipe arrives decoded with the ANSI code page, and an `é` in
+    the records became two other characters without a word said.
+    A byte that is not UTF-8 is kept apart by ``surrogateescape``,
+    which is what lets reading the records turn it into U+FFFD,
+    one per byte, exactly as for a file.
+
     Args:
         given: The arguments, for ``--data``.
 
@@ -372,7 +404,12 @@ def data_source(given: Arguments) -> Path | TextIO | None:
     data = given.flags.get("data")
     if data is None:
         return None
-    return sys.stdin if data == "-" else Path(str(data))
+    if data != "-":
+        return Path(str(data))
+    reconfigure = getattr(sys.stdin, "reconfigure", None)
+    if reconfigure is not None:
+        reconfigure(encoding="utf-8", errors="surrogateescape")
+    return sys.stdin
 
 
 def format_of(target: str, asked: str | bool | None) -> str:

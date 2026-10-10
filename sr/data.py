@@ -34,7 +34,12 @@ from pathlib import Path
 from typing import Any, TextIO
 
 from sr.errors import BadValue, BuildError, Location
-from sr.expr.values import Record, go_shortest, json_without_surrogates
+from sr.expr.values import (
+    Record,
+    go_shortest,
+    json_without_surrogates,
+    without_surrogates,
+)
 from sr.template.model import Member, Records, freeze, parse_text
 
 __all__ = ["coerce", "read_records", "records_from", "records_in"]
@@ -44,6 +49,13 @@ def read_records(
     source: Path | str | TextIO, declared: Records | None, name: str | None = None
 ) -> tuple[Record, ...]:
     """Return the records a JSON or NDJSON source holds.
+
+    doc/template.md#data-input: the JSON is UTF-8, and a byte that is
+    not part of a valid sequence reads as U+FFFD, one per byte, as the
+    reference reads it.  ``surrogateescape`` keeps each such byte apart
+    as a surrogate, and the surrogates are replaced before anything
+    parses the text.  A stream is decoded by whoever opened it, which
+    for standard input is the command line, with the same two settings.
 
     Args:
         source: A path to read, or an open stream such as standard input.
@@ -57,11 +69,12 @@ def read_records(
     """
     if isinstance(source, Path | str):
         where = str(source) if name is None else name
-        text = Path(source).read_text(encoding="utf-8")
+        path = Path(source)
+        text = path.read_text(encoding="utf-8", errors="surrogateescape")
     else:
         where = "standard input" if name is None else name
         text = source.read()
-    return records_from(text, declared, where)
+    return records_from(without_surrogates(text), declared, where)
 
 
 def records_from(
