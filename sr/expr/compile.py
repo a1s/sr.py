@@ -7,6 +7,10 @@ that build it.
 1. **Parse** with ``ast.parse(source, mode="eval")``.  Python's
    expression grammar is a superset of Starlark's, so precedence,
    associativity and comprehension scoping are correct for free.
+   Its literals are not, and nor is its tokenizer, which skips
+   a form feed between tokens where Starlark's refuses one.
+   So :mod:`sr.expr.literals` reads the tokens first, by Starlark's
+   rules, and the parser gets the text with the literals blanked.
 2. **Reject** every node kind the dialect does not have.  This is what
    makes the superset a subset again: no ``**``, no lambda, no f-string,
    no walrus, no chained comparison, no starred argument, no ``is``.
@@ -34,13 +38,14 @@ rather than a lookup that might find something.
 from __future__ import annotations
 
 import ast
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Final
 
 from sr.errors import ExpressionError
 from sr.expr.builtins import GLOBALS, getattr_, getitem_, getslice_, mod_
-from sr.expr.values import SURROGATE
+from sr.expr.literals import Lexed, lex
 
 __all__ = ["Expression", "compile_expression", "evaluate"]
 
@@ -71,6 +76,10 @@ RUNTIME: Final[dict[str, Any]] = {
 # free name nothing defines: undefined.
 DEFINED: Final[frozenset[str]] = frozenset(RUNTIME) - {"__builtins__"}
 
+# What ends a line for Python's tokenizer, and so for a line number
+# that `ast` or a SyntaxError gives.
+LINE_END: Final = re.compile(r"\r\n|\r|\n")
+
 # Node kinds the dialect does not have, and what to say about each.
 # The message names the Starlark spelling wherever there is one, because
 # a template author reading it wants the alternative rather than the rule.
@@ -87,6 +96,15 @@ REFUSED: Final[dict[type[ast.AST], str]] = {
     ast.Yield: "there is no yield",
     ast.YieldFrom: "there is no yield",
     ast.Slice: "a slice is only valid inside a subscript",
+    # Python 3.14's template strings, on the Pythons that have them.
+    **{
+        kind: "there are no t-strings; use the format() builtin"
+        for kind in (
+            getattr(ast, "TemplateStr", None),
+            getattr(ast, "Interpolation", None),
+        )
+        if kind is not None
+    },
 }
 
 # Operators the dialect does not have.  `**` is the interesting one: it
@@ -101,11 +119,32 @@ REFUSED_OPERATORS: Final[dict[type[ast.AST], str]] = {
 }
 
 
+def line_start(source: str, line: int) -> int:
+    r"""Return the character offset where a 1-based line begins.
+
+    A line ends where Python's tokenizer ends one: at ``\n``,
+    ``\r\n``, or ``\r``.  :meth:`str.splitlines` also ends one at
+    a form feed, U+2028, and the rest, which a string literal may hold,
+    and counting those would put every later line too far down.
+
+    Args:
+        source: The expression.
+        line: The line number, as :mod:`ast` and :exc:`SyntaxError`
+            give it.
+
+    """
+    starts = [0, *(found.end() for found in LINE_END.finditer(source))]
+    return starts[line - 1] if line <= len(starts) else len(source)
+
+
 def offset_of(node: ast.AST, source: str) -> int | None:
     """Return where a node begins, as an offset into the whole expression.
 
     An expression is usually one line, but a KDL property may hold
     a newline, so the line is folded in rather than assumed away.
+    :mod:`ast` counts the column in UTF-8 bytes and the offset counts
+    characters, so the column is turned back into characters through
+    the line's encoding: after 'Šķ' the two differ by two.
 
     Args:
         node: The node to locate.
@@ -116,15 +155,17 @@ def offset_of(node: ast.AST, source: str) -> int | None:
     column = getattr(node, "col_offset", None)
     if line is None or column is None:
         return None
-    lines = source.splitlines(keepends=True)
-    return int(sum(len(one) for one in lines[: line - 1]) + column)
+    start = line_start(source, line)
+    head = source[start:].encode("utf-8")[:column].decode("utf-8")
+    return start + len(head)
 
 
 class Rejector(ast.NodeVisitor):
     """The pass that turns Python's grammar back into Starlark's.
 
     Attributes:
-        source: The expression, for locating a diagnostic in it.
+        source: The text the tree was parsed from,
+            for locating a diagnostic in it.
 
     """
 
@@ -132,7 +173,9 @@ class Rejector(ast.NodeVisitor):
         """Prepare to check one expression.
 
         Args:
-            source: The expression's text.
+            source: The text the tree was parsed from,
+                which is the expression with its literals blanked.
+                Every character is where the template wrote it.
 
         """
         self.source = source
@@ -205,19 +248,14 @@ class Rejector(ast.NodeVisitor):
     def visit_Constant(self, node: ast.Constant) -> None:
         """Refuse the literal kinds the language has no values for.
 
-        A string literal whose escape names a surrogate is one:
-        no string holds a surrogate, doc/expressions.md#strings.
+        A string or bytes literal Starlark has not got never reaches
+        the tree: :mod:`sr.expr.literals` refuses it first.
 
         """
         if isinstance(node.value, complex):
             raise self.refuse(node, "there are no complex numbers")
         if node.value is Ellipsis:
             raise self.refuse(node, "there is no ...")
-        if isinstance(node.value, str):
-            found = SURROGATE.search(node.value)
-            if found is not None:
-                code = ord(found.group())
-                raise self.refuse(node, f"invalid Unicode code point U+{code:04X}")
 
     def visit_comprehension(self, node: ast.comprehension) -> None:
         """Refuse an asynchronous comprehension, and check the rest."""
@@ -429,8 +467,9 @@ def compile_expression(
             the dialect lacks, or names something not in scope.
 
     """
-    tree = parse(source)
-    Rejector(source).visit(tree)
+    lexed = lex(source)
+    tree = parse(lexed)
+    Rejector(lexed.text).visit(tree)
     finder = Names()
     finder.visit(tree)
     free = tuple(name for name in finder.found if name not in DEFINED)
@@ -442,28 +481,73 @@ def compile_expression(
     return Expression(source, free, build(rewritten, free, source))
 
 
-def parse(source: str) -> ast.Expression:
-    """Return the syntax tree of an expression.
+def parse(lexed: Lexed) -> ast.Expression:
+    """Return the syntax tree of an expression, holding Starlark's literals.
 
     Args:
-        source: The expression's text.
+        lexed: The expression with its literals read and blanked.
 
     Raises:
         ExpressionError: The text does not parse.
 
     """
+    source = lexed.text
     try:
-        return ast.parse(source, mode="eval")
+        tree = ast.parse(source, mode="eval")
     except SyntaxError as error:
-        lines = source.splitlines(keepends=True)
+        # Unlike a node's column, the error's
+        # is in characters already, and 1-based.
         offset = None
         if error.lineno is not None and error.offset is not None:
-            offset = sum(len(one) for one in lines[: error.lineno - 1]) + (
-                error.offset - 1
-            )
+            offset = line_start(source, error.lineno) + error.offset - 1
         raise ExpressionError(f"{error.msg}", offset=offset) from None
     except ValueError as error:
         raise ExpressionError(str(error)) from None
+    if lexed.unread is not None:
+        # The tokenizer refused what the parser took, so no literal
+        # in it was read by Starlark's rules.
+        raise ExpressionError(lexed.unread)
+    Literals(lexed).visit(tree)
+    return tree
+
+
+class Literals(ast.NodeVisitor):
+    """The pass that gives each literal what Starlark reads in it.
+
+    Each blanked literal is a constant where the literal began, and
+    what it holds is what :func:`sr.expr.literals.lex` read there.
+
+    Attributes:
+        lexed: The expression with its literals read and blanked.
+
+    """
+
+    def __init__(self, lexed: Lexed) -> None:
+        """Prepare to fill in one expression's literals.
+
+        Args:
+            lexed: The expression with its literals read and blanked.
+
+        """
+        self.lexed = lexed
+
+    def visit_JoinedStr(self, node: ast.JoinedStr) -> None:
+        """Pass over an f-string, which was not read: it is refused."""
+
+    def visit_TemplateStr(self, node: ast.AST) -> None:
+        """Pass over a t-string, which was not read: it is refused."""
+
+    def visit_Constant(self, node: ast.Constant) -> None:
+        """Give a string or bytes constant the value read for it."""
+        if not isinstance(node.value, str | bytes):
+            return
+        at = offset_of(node, self.lexed.text)
+        if at is None or at not in self.lexed.values:
+            raise ExpressionError(
+                "internal error: this literal was not read by Starlark's rules",
+                offset=at,
+            )
+        node.value = self.lexed.values[at]
 
 
 def build(

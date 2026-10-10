@@ -2,6 +2,10 @@
 //
 // expect: there are no lambdas
 // expect: there are no f-strings
+// expect: unexpected input character '\f' at offset 3
+// expect: non-ASCII hex escape \xff (use \u00FF for the UTF-8 encoding of U+00FF)
+// expect: invalid escape sequence \d
+// expect: two literals in a row are not joined; write + between them
 
 report name="probe" {
   font "body" file="../../../example/fonts/Go-Regular.ttf" size=10
@@ -10,6 +14,10 @@ report name="probe" {
     detail height=20 {
       field expr="lambda: 1"
       field expr="f'{1}'"
+      field expr="1 +\f 2"
+      field expr="'A\\xffB'"
+      field expr="'C:\\data'"
+      field expr="'A' 'B'"
     }
   }
 }
