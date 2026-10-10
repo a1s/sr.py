@@ -130,6 +130,7 @@ the reference gave, and names the section of `doc/` that answer became.
 | `printout/font-warning` | the warning a substituted typeface gives |
 | `layout/band-height` | the two maxima a band's height is |
 | `layout/alignment` | where a field's content sits in its box |
+| `layout/field-format` | what a field's `format` applies to |
 | `layout/reserved-bands` | what a header and a footer are measured against |
 | `layout/guarded-footer` | a footer whose `printwhen` reserves nothing |
 | `layout/content-height` | which elements have a height of their own |

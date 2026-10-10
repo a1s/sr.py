@@ -867,10 +867,12 @@ class Measurer:
     def content(self, field: Field, context: Context, names: dict[str, Any]) -> str:
         """Return the string a `field` finally holds.
 
-        doc/layout.md#line-breaking wraps the string the element holds
-        once ``expr``, ``text`` or ``data`` has been resolved and
-        ``format`` applied.  Where a character came from makes no
-        difference to how it is treated.
+        ``format`` applies to what ``expr`` resolves to and to nothing
+        else: doc/template.md#field.  A ``text``, or the content of its
+        ``data`` node, is returned as written, and a format beside one
+        is never applied, so it cannot refuse it.  Where a character
+        came from makes no difference to how doc/layout.md#line-breaking
+        wraps it.
 
         Args:
             field: The node.
@@ -879,17 +881,17 @@ class Measurer:
 
         Raises:
             BuildError: The expression would not evaluate,
+                the format does not take its value,
                 or the `data` node it names holds no text.
 
         """
-        record = context.record_index
         if field.expr is not None:
             value = evaluate(field.expr, names, field.path, context, "expr")
-            return self.formatted(field, value, record)
+            return self.formatted(field, value, context.record_index)
         if field.text is not None:
-            return self.formatted(field, field.text, record)
+            return field.text
         if field.data is not None:
-            return self.formatted(field, self.blob(field), record)
+            return self.blob(field)
         return ""
 
     def placeholder(self, field: Field | Barcode) -> str:

@@ -374,6 +374,35 @@ def test_a_field_takes_its_text_from_a_data_node(tmp_path: Path) -> None:
     assert mark.lines == ("from a blob",)
 
 
+def test_format_applies_to_expr_and_nothing_else(tmp_path: Path) -> None:
+    # A format beside a literal is never applied,
+    # so one the literal would refuse is not an error either.
+    template = tmp_path / "format.kdl"
+    template.write_text(
+        'report name="Format" {\n'
+        '  font "body" file="' + REGULAR + '" size=10\n'
+        '  data "note" { content "7" }\n'
+        "  layout width=300 height=800 {\n"
+        '    style font="body" color="black"\n'
+        "    detail {\n"
+        '      field expr="5" format="[%s]" left=0 top=0 width=100\n'
+        '      field text="5" format="[%s]" left=0 top=15 width=100\n'
+        '      field data="note" format="[%s]" left=0 top=30 width=100\n'
+        '      field text="abc" format="%d" left=0 top=45 width=100\n'
+        "    }\n"
+        "  }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    rows = tmp_path / "rows.jsonl"
+    rows.write_text(ONE_ROW, encoding="utf-8")
+    printout = build(
+        template, rows, Options(build_time="2026-08-04T09:12:44Z", strict_fonts=True)
+    ).printout
+    said = [one.lines for one in marks(printout) if isinstance(one, Text)]
+    assert said == [("[5]",), ("5",), ("7",), ("abc",)]
+
+
 # -- styles and printwhen ---------------------------------------------
 
 

@@ -1120,6 +1120,12 @@ field expr="(customer.last_name, customer.first_name, customer_amount)"
       format="Total for %s, %s: %.2f"
 ```
 
+It is applied to nothing else, as for a [`barcode`](#barcode): a `text`,
+or a `data` node's content, is printed as written. A `format` beside one
+is never applied, so it is not checked either, and a conversion
+the literal would refuse, or a specification that would not parse,
+is not an error.
+
 `evaltime` names a scope whose end the expression's [`FINAL`](expressions.md#final)
 names are read at — this is how a page footer prints the final page count.
 See [layout.md](layout.md#deferred-evaluation).
