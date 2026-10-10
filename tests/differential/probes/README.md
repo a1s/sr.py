@@ -227,6 +227,7 @@ the reference gave, and names the section of `doc/` that answer became.
 | `data/declared-names` | a declared name against an identical file |
 | `expressions/strings` | `len`, indexing and slicing over non-ASCII text |
 | `expressions/string-methods` | the string type's iteration methods |
+| `expressions/escapes` | what a literal's escapes name, where Python's and Starlark's part |
 | `expressions/round` | the `round` builtin |
 | `expressions/decimal-int` | comparing a decimal with an int |
 | `expressions/decimal-abs` | the one builtin that will not take a decimal |

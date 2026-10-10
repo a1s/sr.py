@@ -1,12 +1,13 @@
 """The expression engine: the dialect of doc/expressions.md, compiled.
 
-Six modules, layered downward and importing in that order:
+Seven modules, layered downward and importing in that order:
 
 ===============  ==========================================================
 ``golayout``     Go reference-time layouts, for ``.format`` and for parsing
 ``values``       the value model: decimal, time, duration, record, set
 ``fmt``          the two percent formatters
 ``builtins``     the names in scope, the method tables, the resolvers
+``literals``     string and bytes literals, read by Starlark's rules
 ``compile``      Python's parser, restricted and rewritten into a callable
 ``calc``         the twelve accumulator modes a `variable` folds with
 ===============  ==========================================================

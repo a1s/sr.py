@@ -1,0 +1,36 @@
+// probes/expressions/escapes.kdl -- what a literal's escapes name, where Python's and Starlark's part.
+//
+// A literal is read by Starlark's rules, and Python's differ at the edges.
+// Python refuses a character above ASCII in a bytes literal, and keeps
+// `\u` in one as six characters, where Starlark writes UTF-8 for both.
+// And in a string literal, a `\x` or octal escape names a byte only up
+// to 0x7F: past that the reference refuses the template at load, with
+// "non-ASCII hex escape \xff (use \u00FF for the UTF-8 encoding of U+00FF)",
+// or "octal" for `\377`, and so does this engine.
+//
+// The escapes Starlark lacks, the prefixes it lacks, and two literals
+// in a row are refused by both engines too.  A probe either engine refuses
+// measures nothing, so that side is held in tests/unit/test_compile.py and
+// in tests/templates/broken/expression-syntax.kdl.  This is the other side:
+// the spellings at the edges that both take, and what each names.
+//
+// See doc/expressions.md#literals.
+
+report name="expressions/escapes" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=200 {
+      field expr="'%r' % ('\\x7f',)" left=0 top=0 width=400 height=12 stretch=#true       // the last hex escape: "\x7f"
+      field expr="'%r' % ('\\177',)" left=0 top=20 width=400 height=12 stretch=#true      // the last octal escape: "\x7f"
+      field expr="'%r' % ('\\u00ff',)" left=0 top=40 width=400 height=12 stretch=#true    // the character past it, spelt as one: "ÿ"
+      field expr="'%r' % (b'\\xff\\377',)" left=0 top=60 width=400 height=12 stretch=#true // a bytes literal takes any byte: b"\xff\xff"
+      field expr="'%r' % (r'\\xff',)" left=0 top=80 width=400 height=12 stretch=#true     // a raw literal has no escapes: "\\xff"
+      field expr="'%r' % ('\\\\xff',)" left=0 top=100 width=400 height=12 stretch=#true   // nor has an escaped backslash: "\\xff"
+      field expr="'%r' % (b'\\u00ff',)" left=0 top=120 width=400 height=12 stretch=#true  // a character in a bytes literal is its UTF-8: b"ÿ"
+      field expr="'%r' % (b'ÿ',)" left=0 top=140 width=400 height=12 stretch=#true        // whether escaped or not: b"ÿ"
+      field expr="str(len(b'\\U0001F600'))" left=0 top=160 width=400 height=12 stretch=#true // four bytes, one character: 4
+      field expr="'%r' % ('\\101\\x41\\u0041\\\nB',)" left=0 top=180 width=400 height=12 stretch=#true // three spellings of A, and a line that goes on: "AAAB"
+    }
+  }
+}

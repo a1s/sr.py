@@ -37,6 +37,9 @@ Starlark is Python-like, not Python. What matters for templates:
 - **`set` is available**, which `calc="set"` uses. Sets are a dialect option
   in Starlark rather than part of the core language; the engine enables them
   explicitly and does not rely on the host default.
+- **Literals are Starlark's.** The prefixes are `r`, `b`, and `rb`;
+  two literals in a row are not joined; and only Starlark's escapes
+  are escapes. See [Literals](#literals).
 - **`%` interpolation has no flags, width, or precision.** See
   [Formatting](#formatting).
 
@@ -357,8 +360,8 @@ and no string holds one:
   of a valid sequence becomes U+FFFD, one per byte: `str(b'\xe2\x82A')` is
   two U+FFFD and an `A`.
 - `chr` and `%c` give U+FFFD for a surrogate's code point.
-- A string literal whose escape names one is an error: `'\ud800'`
-  does not compile.
+- A string or bytes literal whose escape names one is an error:
+  `'\ud800'` does not compile. See [Literals](#literals).
 - A JSON record or parameter value whose `\u` escape spells half
   a surrogate pair on its own reads it as U+FFFD.
 
@@ -374,6 +377,62 @@ This is a departure from `starlark-go`, whose string is a Go string and
 therefore a sequence of bytes. It is not a departure from Starlark: the Rust and
 Java implementations both count codepoints, and the byte reading is an artifact
 of one host language rather than a property of the language being hosted.
+
+### Literals
+
+A string or bytes literal is read by Starlark's rules,
+and where Python's differ, an expression gets Starlark's answer.
+
+The prefixes are `r`, `b`, and `rb`, in lower case. Python's others do
+not compile: `u'A'` is an error, and so are `R'A'`, `B'A'`, and `br'A'`.
+Two literals in a row are an error too, where Python would join them:
+`'A' 'B'` does not compile, and `'A' + 'B'` is the spelling.
+
+These are the escapes, in a string literal and a bytes literal alike:
+
+| Escape | Stands for |
+|---|---|
+| `\\`, `\'`, and `\"` | the character after the backslash |
+| `\a`, `\b`, `\f`, `\n`, `\r`, `\t`, and `\v` | bell, backspace, form feed, newline, carriage return, tab, and vertical tab |
+| `\` and one to three octal digits, as in `\101` | a byte, by its value |
+| `\x` and two hexadecimal digits, as in `\x41` | a byte, by its value |
+| `\u` and four hexadecimal digits, or `\U` and eight | a character, by its code point |
+| `\` at the end of a line | nothing: the literal goes on |
+
+Any other backslash is an error, and so is an escape cut short:
+
+```
+'C:\data'          # invalid escape sequence \d
+'\N{DIGIT ONE}'    # invalid escape sequence \N
+'\x4'              # truncated escape sequence \x4
+```
+
+A Windows path is the usual way to meet the first: write `'C:\\data'`
+or `r'C:\data'`. `\N{...}` is Python's, and Starlark has no named escapes.
+A raw literal has no escapes at all, so a backslash in one is a backslash.
+A line break written into a triple-quoted literal is a newline in its value,
+whether the text spells it `\r\n`, `\r`, or `\n`.
+
+**A string literal names a byte only up to 0x7F.** In a string literal,
+a `\x` or octal escape may name 0x7F at most: `'\x7f'` and `'\177'`
+compile, and `'\x80'`, `'\377'`, and `'\400'` do not. The error names
+the escape and the `\u` spelling of its character, `\u00FF` for `'\xff'`.
+Write that, or the character itself. The rule holds where the bytes
+would spell a valid character, too: `'\xc3\xa9'` does not compile,
+and `'\u00e9'` and `'é'` do.
+
+Starlark reads a `\x` or octal escape as a byte, which is what it is
+in a bytes literal. Below 0x80 a byte and a codepoint are the same thing.
+Above it they are not, and a string holds codepoints, so its byte escapes
+stop there. A bytes literal takes any byte, as in `b'\xff'`, and `r'\xff'`
+is the four characters it shows.
+
+**A bytes literal holds a character as its UTF-8.** A character above ASCII,
+written as itself or with `\u` or `\U`, stands for the bytes of its UTF-8
+encoding: `b'ÿ'` and `b'\u00ff'` are both `b"\xc3\xbf"`. An octal escape
+in a bytes literal stops at `\377`, the largest byte, and a `\u` or `\U`
+escape that names a surrogate, or a code point above `\U0010FFFF`, is
+an error, as it is in a string literal.
 
 ## The `decimal` type
 
