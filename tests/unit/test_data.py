@@ -94,11 +94,19 @@ def test_a_byte_that_is_not_utf8_reads_as_one_replacement_each(
     assert read_records(path, None)[0]["a"] == "Caf\ufffd\ufffdA\ufffd!"
 
 
-def test_a_byte_order_mark_is_refused(tmp_path: Path) -> None:
+def test_a_byte_order_mark_is_refused_in_words_a_user_can_act_on(
+    tmp_path: Path,
+) -> None:
+    # The JSON parser's own message names a Python codec to decode with,
+    # which is advice for the programmer rather than for the user.
     path = tmp_path / "rows.jsonl"
     path.write_bytes(b'\xef\xbb\xbf{"a":1}\n')
-    with pytest.raises(BuildError):
+    with pytest.raises(BuildError) as refused:
         read_records(path, None)
+    assert str(refused.value) == (
+        f"{path}:1: not JSON: it opens with a byte order mark; "
+        "save it as UTF-8 without one"
+    )
 
 
 # -- coercion ---------------------------------------------------------

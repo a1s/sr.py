@@ -72,13 +72,24 @@ terminal.
 
 Both streams are **UTF-8**, on every machine and under any console code page.
 A printout's text is Unicode, and a dump whose bytes changed with the machine
-it ran on could not be diffed against one made on another. A Windows console
-shows the text as it should. A pipe or a file there gets UTF-8 too, rather
-than the legacy code page Windows would otherwise pick, so a `validate` report
-or a dump holding a character outside that code page is written, not refused.
-Text that cannot be encoded at all, such as a file name that is not valid
-Unicode, is written as a backslash escape rather than ending the run.
-No environment variable changes this, `PYTHONIOENCODING` included.
+it ran on could not be diffed against one made on another. Text that cannot
+be encoded at all, such as a file name that is not valid Unicode, is written
+as a backslash escape rather than ending the run; in a printout, written to
+a file or to standard output, that escape is JSON's own. No environment
+variable changes the bytes, `PYTHONIOENCODING` included.
+
+On Windows this settles what `sr.py` writes, not what the next program
+makes of it:
+
+- **A console** shows the text as it should. Python writes to it through
+  the console's own interface, and the code page does not come into it.
+  Python's legacy console mode, `PYTHONLEGACYWINDOWSSTDIO`, turns that off,
+  and the console then shows the UTF-8 bytes in its own code page, garbled.
+- **A pipe or a file** gets UTF-8, rather than the legacy code page Windows
+  would otherwise pick, so a `validate` report or a dump holding a character
+  outside that page is written, not refused. Windows PowerShell 5.1 decodes
+  a program's output with `[Console]::OutputEncoding` before a pipe or a `>`
+  passes it on, and keeps the text only where that is UTF-8.
 
 ### `-` for a stream
 
@@ -90,6 +101,18 @@ Records on standard input are [UTF-8](template.md#data-input), as they are
 in a file, and are read the same way. On Windows a pipe would otherwise be
 decoded with the legacy code page, and an `é` in the data would arrive as
 two other characters with nothing said about it.
+
+Windows PowerShell 5.1 needs two settings before it pipes records in intact.
+It encodes them with `$OutputEncoding`, which is ASCII by default and turns
+every other character into `?`. When `[Console]::InputEncoding` is UTF-8,
+it also puts a byte order mark first, which is
+[refused](template.md#data-input). UTF-8 without a byte order mark,
+for both, is what works:
+
+```powershell
+$utf8 = New-Object Text.UTF8Encoding $false
+$OutputEncoding = [Console]::InputEncoding = $utf8
+```
 
 A printout being *read* is always a file. Relative paths in a printout (a font,
 an image with `embed=#false`) resolve against the directory it was read from,

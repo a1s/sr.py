@@ -57,6 +57,12 @@ def read_records(
     parses the text.  A stream is decoded by whoever opened it, which
     for standard input is the command line, with the same two settings.
 
+    A byte order mark is refused, as the reference refuses it, but
+    in words a user can act on.  The JSON parser's own message tells
+    a Python programmer which codec to use.  A file saved by Windows
+    PowerShell 5.1 often starts with one, and so does what it pipes
+    into a program when the console's input encoding is UTF-8.
+
     Args:
         source: A path to read, or an open stream such as standard input.
         declared: The template's `records` node, where it has one.
@@ -74,6 +80,9 @@ def read_records(
     else:
         where = "standard input" if name is None else name
         text = source.read()
+    if text.startswith("\N{BYTE ORDER MARK}"):
+        why = "it opens with a byte order mark; save it as UTF-8 without one"
+        raise BuildError(f"not JSON: {why}", Location(file=where, line=1))
     return records_from(without_surrogates(text), declared, where)
 
 

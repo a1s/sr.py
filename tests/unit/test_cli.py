@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 import sys
 from pathlib import Path
 
@@ -828,9 +829,10 @@ def test_a_stream_that_cannot_be_reconfigured_is_left_alone() -> None:
 # page cannot hold stopped `inspect` at a traceback.  The stand-ins
 # below encode as cp1252, the Western European page and the commonest.
 
-# Text the stand-ins cannot hold.  `ķ` and `ū` are neither
-# in cp1252 nor in cp1251, and only the Baltic cp1257 has them.
-# An `é` would not do: cp1252 has one, and the crash would go untested.
+# Text the stand-ins cannot hold.  `ķ` and `ū` are in neither cp1252
+# nor cp1251: of the Windows ANSI code pages, only the Baltic cp1257
+# has them.  An `é` would not do: cp1252 has one, and the crash would
+# go untested.
 LATVIAN = "Šķūnis"
 
 
@@ -909,6 +911,51 @@ def test_a_diagnostic_on_standard_error_is_utf8_too(
     held.flush()
     assert code == 1
     assert f"--param {LATVIAN}: " in raw.getvalue().decode("utf-8")
+
+
+def test_a_path_that_is_not_text_is_escaped_alike_on_both_routes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A lone surrogate is what Python makes of a file name that is not
+    # valid text, and UTF-8 cannot encode one.  A printout writes it as
+    # JSON's escape for that code point, to a file and to standard output
+    # alike, so the build succeeds and the path reads back as it was.
+    odd = "fonts" + chr(0xDCFF)
+    try:
+        (tmp_path / odd).mkdir()
+    except (OSError, UnicodeEncodeError):
+        pytest.skip("this file system takes only names that are text")
+    face = (FONTS / "Go-Regular.ttf").read_bytes()
+    (tmp_path / odd / "Go.ttf").write_bytes(face)
+    template = tmp_path / odd / "odd.kdl"
+    template.write_text(
+        """
+report name="odd" {
+  font "body" file="Go.ttf" size=9
+  layout pagesize="A4" {
+    style font="body" color="black"
+    header { field text="h" left=0 top=0 width=50 height=12 }
+    detail height=20 { field text="x" left=0 top=0 width=50 height=12 }
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    # From the printout's own directory, so that the two routes
+    # write the path relative to the same place.
+    monkeypatch.chdir(tmp_path)
+    argv = ("build", "-t", str(template), *REPRODUCIBLE)
+    code, _ = run(*argv, "-o", "odd.srp.jsonl")
+    assert code == 0
+    raw = io.BytesIO()
+    stream = io.TextIOWrapper(raw, encoding="cp1252")
+    code = main([*argv, "-o", "-", "--format", "jsonl"], stream)
+    stream.flush()
+    assert code == 0
+    written = (tmp_path / "odd.srp.jsonl").read_bytes()
+    assert raw.getvalue() == written
+    header = json.loads(written.decode("utf-8").splitlines()[0])
+    assert header["fonts"][0]["resolvedFile"] == f"{odd}/Go.ttf"
 
 
 # -- records on standard input ----------------------------------------
