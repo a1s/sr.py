@@ -112,9 +112,11 @@ of its band, and therefore where the page breaks. So this is normative to the
 character, and two engines that wrap differently agree about nothing further
 down the document.
 
-What is wrapped is the string the element finally holds: `expr`, `text`
-or `data` resolved, and `format` applied. Where a character came from
-makes no difference to how it is treated.
+What is wrapped is the string the element finally holds: the `expr`
+result with `format` applied, or the `text` or the `data` node's content
+as written, since `format` applies to nothing else
+([content sources](template.md#content-sources)).
+Where a character came from makes no difference to how it is treated.
 
 ### Mandatory breaks
 
@@ -547,8 +549,9 @@ Given a band template and a context, measurement proceeds:
       clamps. In a band whose height is still unsettled, an extent that depends on
       the band's bottom edge is left for step 6.
    4. **Resolve its content:**
-      - `field`: evaluate `expr` (or take `text` / `data`), apply `format`,
-        wrap to the box width by the rule in [Line breaking](#line-breaking).
+      - `field`: evaluate `expr` and apply `format` to its result,
+        or take `text` / `data` as written, then wrap to the box
+        width by the rule in [Line breaking](#line-breaking).
         With `stretch`, the box height grows to the wrapped text;
         without it, lines beyond the box are dropped at a line boundary.
         A stretch field that is [container-dependent](#building-a-band)

@@ -32,6 +32,7 @@ ONE_ROW = '{"n":1}\n'
 HEAD = """
 report name="Layout" {
   font "body" file="FACE" size=10
+NODES
   layout width=300 height=800 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
     style font="body" color="black"
 BANDS
@@ -41,7 +42,11 @@ BANDS
 
 
 def built(
-    tmp_path: Path, body: str, data: str | None = ONE_ROW, **options: Any
+    tmp_path: Path,
+    body: str,
+    data: str | None = ONE_ROW,
+    nodes: str = "",
+    **options: Any,
 ) -> Printout:
     """Build a one-layout report and return its printout.
 
@@ -49,13 +54,14 @@ def built(
         tmp_path: Where to write the template and the data.
         body: The bands, as KDL, indented under `layout`.
         data: The records, or ``None`` for a report with none.
+        nodes: More of the report's own nodes, such as a `data` node,
+            as KDL, indented under `report`.
         **options: What to pass to the build.
 
     """
+    filled = HEAD.replace("FACE", REGULAR).replace("NODES", nodes)
     template = tmp_path / "report.kdl"
-    template.write_text(
-        HEAD.replace("FACE", REGULAR).replace("BANDS", body), encoding="utf-8"
-    )
+    template.write_text(filled.replace("BANDS", body), encoding="utf-8")
     rows = None
     if data is not None:
         rows = tmp_path / "rows.jsonl"
@@ -352,26 +358,31 @@ def test_a_text_mark_keeps_the_boxs_width(tmp_path: Path) -> None:
 
 
 def test_a_field_takes_its_text_from_a_data_node(tmp_path: Path) -> None:
-    template = tmp_path / "blob.kdl"
-    template.write_text(
-        'report name="Blob" {\n'
-        '  font "body" file="' + REGULAR + '" size=10\n'
-        '  data "note" { content "from a blob" }\n'
-        "  layout width=300 height=800 {\n"
-        '    style font="body" color="black"\n'
-        '    detail { field data="note" left=0 top=0 width=200 }\n'
-        "  }\n"
-        "}\n",
-        encoding="utf-8",
+    printout = built(
+        tmp_path,
+        '    detail { field data="note" left=0 top=0 width=200 }',
+        nodes='  data "note" { content "from a blob" }',
     )
-    rows = tmp_path / "rows.jsonl"
-    rows.write_text(ONE_ROW, encoding="utf-8")
-    printout = build(
-        template, rows, Options(build_time="2026-08-04T09:12:44Z", strict_fonts=True)
-    ).printout
-    mark = printout.pages[0].marks[0]
+    mark = marks(printout)[0]
     assert isinstance(mark, Text)
     assert mark.lines == ("from a blob",)
+
+
+def test_format_applies_to_expr_and_nothing_else(tmp_path: Path) -> None:
+    # A field with no `expr` never applies its format,
+    # so one the literal would refuse is not an error either.
+    printout = built(
+        tmp_path,
+        "    detail {\n"
+        '      field expr="5" format="[%s]" left=0 top=0 width=100\n'
+        '      field text="5" format="[%s]" left=0 top=15 width=100\n'
+        '      field data="note" format="[%s]" left=0 top=30 width=100\n'
+        '      field text="abc" format="%d" left=0 top=45 width=100\n'
+        "    }",
+        nodes='  data "note" { content "7" }',
+    )
+    said = [one.lines for one in marks(printout) if isinstance(one, Text)]
+    assert said == [("[5]",), ("5",), ("7",), ("abc",)]
 
 
 # -- styles and printwhen ---------------------------------------------

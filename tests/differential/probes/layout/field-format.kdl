@@ -1,0 +1,39 @@
+// probes/layout/field-format.kdl -- what a field's `format` applies to.
+//
+// doc/template.md said `format` is applied to the `expr` result,
+// while doc/layout.md#line-breaking wrapped `expr`, `text`, or `data`
+// "resolved, and `format` applied", which reads as all three.
+// The reference applies it to the `expr` result and to nothing else,
+// as it does for a barcode: a `text` or a `data` node's content
+// prints as written.
+//
+// It does not look at a format beside a literal at all.  A `%d` that
+// a string would refuse, two conversions for one value, a truncated `%`,
+// and an unknown `%z` all build, and print the literal.  The third row
+// is the control: the same format on an expression does apply.
+// The two barcodes show that a barcode's literal is not checked either.
+//
+// A deferred field is not in question here.  Its `format` applies
+// to the resolved `expr`, and its placeholder is measured as written;
+// deferred/page-count holds that.
+//
+// doc/template.md#content-sources is what this became.
+
+report name="layout/field-format" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  data "blob" { content "7"; }
+  layout width=300 height=200 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=110 {
+      field text="5" format="[%s]" left=0 top=0 width=100 height=12        // -> "5"
+      field data="blob" format="[%s]" left=0 top=15 width=100 height=12    // -> "7"
+      field expr="5" format="[%s]" left=0 top=30 width=100 height=12       // -> "[5]"
+      field text="abc" format="%d" left=0 top=45 width=100 height=12       // not refused
+      field data="blob" format="%s %s" left=0 top=60 width=100 height=12   // nor here
+      field text="x" format="%" left=0 top=75 width=100 height=12          // nor a truncated conversion
+      field text="y" format="%z" left=0 top=90 width=100 height=12         // nor an unknown one
+      barcode type="Code128" text="abc" format="%d" module=1 left=150 top=0   // -> "abc"
+      barcode type="Code128" data="blob" format="%z" module=1 left=150 top=40 // -> "7"
+    }
+  }
+}

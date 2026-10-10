@@ -189,10 +189,10 @@ def wrap(text: str, width: float, metrics: Metrics) -> Wrapped:
     """Return the lines a string breaks into inside a box.
 
     Args:
-        text: What the element finally holds.
-            ``expr``, ``text`` or ``data`` resolved, and ``format`` applied.
-             Where a character came from makes no difference
-             to how it is treated.
+        text: What the element finally holds:
+            the ``expr`` result with ``format`` applied, or the ``text``
+            or the ``data`` node's content as written.  Where a character
+            came from makes no difference to how it is treated.
         width: The box's width in points, already rounded.
         metrics: The face and size to measure with.
 
