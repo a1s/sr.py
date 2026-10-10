@@ -94,7 +94,10 @@ def read_records(
         where = "standard input" if name is None else name
         text = source.read()
         remedy = "send it as UTF-8"
-    if text.startswith(UTF16_MARKS):
+    # Past any UTF-8 marks: Windows PowerShell 5.1 puts one in front of
+    # what it pipes when the console's input encoding is UTF-8 with one,
+    # whatever ``$OutputEncoding`` encodes the records in.
+    if text.lstrip(MARK).startswith(UTF16_MARKS):
         raise BuildError(
             f"not JSON: it is UTF-16; {remedy}", Location(file=where, line=1)
         )

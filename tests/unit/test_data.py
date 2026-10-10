@@ -163,10 +163,20 @@ def test_utf16_is_refused_in_words_that_say_so(
     assert str(refused.value) == want
 
 
-def test_utf16_on_a_stream_asks_for_it_to_be_sent_as_utf8() -> None:
-    # Standard input as the command line sets it up.
-    # A pipe is not a file, so there is nothing to save.
-    written = codecs.BOM_UTF16_LE + '{"a":1}\n'.encode("utf-16-le")
+@pytest.mark.parametrize(
+    "before",
+    [b"", codecs.BOM_UTF8],
+    ids=["bare", "after-a-utf-8-mark"],
+)
+def test_utf16_on_a_stream_asks_for_it_to_be_sent_as_utf8(
+    before: bytes,
+) -> None:
+    # Standard input as the command line sets it up.  A pipe is not
+    # a file, so there is nothing to save.  Windows PowerShell 5.1 puts
+    # a UTF-8 mark in front when the console's input encoding has one,
+    # even of records that `$OutputEncoding` sends as UTF-16.
+    utf16 = codecs.BOM_UTF16_LE + '{"a":1}\n'.encode("utf-16-le")
+    written = before + utf16
     stream = io.TextIOWrapper(
         io.BytesIO(written), encoding="utf-8", errors="surrogateescape"
     )
