@@ -30,6 +30,8 @@ template and is caught after.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import sys
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
@@ -281,6 +283,10 @@ def reconfigured(stream: TextIO, **settings: str) -> TextIO:
     A stream that cannot be reconfigured is returned as it is: a test's
     buffer, which encodes nothing, or ``None``, which is what Python
     leaves in place of a standard stream the process was started without.
+    So is one that refuses, as standard input does once a caller running
+    :func:`main` in-process has read part of it.  That caller keeps the
+    encoding it was reading in, rather than every command failing at
+    its first line.
 
     Args:
         stream: The stream to change.
@@ -289,7 +295,8 @@ def reconfigured(stream: TextIO, **settings: str) -> TextIO:
     """
     reconfigure = getattr(stream, "reconfigure", None)
     if reconfigure is not None:
-        reconfigure(**settings)
+        with contextlib.suppress(io.UnsupportedOperation):
+            reconfigure(**settings)
     return stream
 
 
@@ -429,7 +436,9 @@ def data_source(given: Arguments) -> Path | TextIO | None:
     """Return where the records come from.
 
     Standard input was set to read UTF-8 by :func:`utf8_streams`,
-    so that it reads as a data file does.
+    so that it reads as a data file does.  That is :func:`main`'s doing:
+    a caller that runs :func:`build` directly, without it, gets standard
+    input as Python set it up.
 
     Args:
         given: The arguments, for ``--data``.

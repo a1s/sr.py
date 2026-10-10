@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import codecs
+import io
 from pathlib import Path
 from typing import Any
 
@@ -106,12 +108,72 @@ def test_byte_order_marks_at_the_start_are_skipped(
     assert read_records(path, None)[0]["a"] == 1
 
 
-def test_a_byte_order_mark_after_the_start_is_refused(tmp_path: Path) -> None:
+def test_files_that_each_open_with_a_mark_can_be_joined(
+    tmp_path: Path,
+) -> None:
+    # Each NDJSON line is a JSON text, and a mark at its start is skipped.
     path = tmp_path / "rows.jsonl"
-    path.write_bytes(b'{"a":1}\n\xef\xbb\xbf{"a":2}\n')
+    path.write_bytes(b'\xef\xbb\xbf{"a":1}\n\xef\xbb\xbf{"a":2}\n')
+    assert [row["a"] for row in read_records(path, None)] == [1, 2]
+
+
+@pytest.mark.parametrize(
+    ("written", "line"),
+    [
+        (b'{"a":1}\xef\xbb\xbf\n', 1),
+        (b'{"a":1}\n{"a":\xef\xbb\xbf2}\n', 2),
+        (b'[\xef\xbb\xbf{"a":1}]', None),
+    ],
+)
+def test_a_mark_anywhere_else_outside_a_string_is_refused(
+    tmp_path: Path, written: bytes, line: int | None
+) -> None:
+    path = tmp_path / "rows.jsonl"
+    path.write_bytes(written)
     with pytest.raises(BuildError) as refused:
         read_records(path, None)
-    assert str(refused.value).startswith(f"{path}:2: not JSON")
+    at = f"{path}:{line}" if line else str(path)
+    assert str(refused.value).startswith(f"{at}: not JSON")
+
+
+def test_a_mark_inside_a_string_is_a_character(tmp_path: Path) -> None:
+    path = tmp_path / "rows.jsonl"
+    path.write_bytes(b'{"a":"x\xef\xbb\xbfy"}\n')
+    value = read_records(path, None)[0]["a"]
+    assert value == "x\N{BYTE ORDER MARK}y"
+
+
+@pytest.mark.parametrize(
+    "mark",
+    [codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE],
+    ids=["little-endian", "big-endian"],
+)
+def test_utf16_is_refused_in_words_that_say_so(
+    tmp_path: Path,
+    mark: bytes,
+) -> None:
+    # What Windows PowerShell 5.1 writes for `>`.
+    # Read as UTF-8 it would be refused with only "Expecting value" to go on.
+    codec = "utf-16-le" if mark == codecs.BOM_UTF16_LE else "utf-16-be"
+    path = tmp_path / "rows.jsonl"
+    path.write_bytes(mark + '{"a":1}\n'.encode(codec))
+    with pytest.raises(BuildError) as refused:
+        read_records(path, None)
+    want = f"{path}:1: not JSON: it is UTF-16; save it as UTF-8"
+    assert str(refused.value) == want
+
+
+def test_utf16_on_a_stream_asks_for_it_to_be_sent_as_utf8() -> None:
+    # Standard input as the command line sets it up.
+    # A pipe is not a file, so there is nothing to save.
+    written = codecs.BOM_UTF16_LE + '{"a":1}\n'.encode("utf-16-le")
+    stream = io.TextIOWrapper(
+        io.BytesIO(written), encoding="utf-8", errors="surrogateescape"
+    )
+    with pytest.raises(BuildError) as refused:
+        read_records(stream, None)
+    want = "standard input:1: not JSON: it is UTF-16; send it as UTF-8"
+    assert str(refused.value) == want
 
 
 # -- coercion ---------------------------------------------------------

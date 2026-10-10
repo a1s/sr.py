@@ -1005,6 +1005,19 @@ def test_byte_order_marks_on_standard_input_are_skipped(
     assert f'"{LATVIAN}"' in built_from_stdin(monkeypatch, tmp_path, records)
 
 
+def test_standard_input_already_read_from_is_left_as_it_is(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A caller running main in-process may have read part of standard
+    # input, after which it cannot be reconfigured.  A command that
+    # does not read it should not fail over it at its first line.
+    stdin = io.TextIOWrapper(io.BytesIO(b"one\ntwo\n"), encoding="cp1252")
+    stdin.readline()
+    monkeypatch.setattr(sys, "stdin", stdin)
+    assert run("version") == (0, meta.engine() + "\n")
+    assert stdin.encoding == "cp1252"
+
+
 def test_a_byte_on_standard_input_that_is_not_utf8_reads_as_in_a_file(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
