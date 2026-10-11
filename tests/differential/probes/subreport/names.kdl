@@ -1,0 +1,45 @@
+// probes/subreport/names.kdl -- two templates' fonts, data and groups.
+//
+// names.inc.kdl is a document of its own, with a font and a `data` node
+// of the host's names but different definitions, a font of its own,
+// an image file whose base name the host's image has too, and a group
+// of the host's group's name.
+//
+// The reference: a font of one name and one entry is one entry, `body`;
+// a font of one name and two entries is published twice, the second as `big-2`.
+// The child's `data` node `shared` holds other bytes than the host's
+// and becomes `shared-2`, and its `pic.png` becomes `pic.png-2`.
+// The two groups called `g` are counted together, every invocation's
+// runs with the host's, and their keys are one set.
+//
+// doc/printout.md#fonts, doc/printout.md#data and doc/printout.md#header-line.
+
+report name="subreport/names" {
+  records {
+    member "k" type="string"
+    member "rows" type="list"
+  }
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  font "big" file="../../../../example/fonts/Go-Bold.ttf" size=9
+  data "shared" encoding="base64" {
+    content "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAF0lEQVR42mP4////fwYGTJKJAQcYnBIAwx0P/9iojwYAAAAASUVORK5CYII="
+  }
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    group "g" expr="k" {
+      title height=10 {
+        field expr="'host group %s' % k" left=0 top=0 height=8 {
+          style font="big"
+        }
+      }
+      detail height=8 {
+        field expr="'host row %s' % k" left=0 top=0 height=6
+        image data="shared" left=100 top=0 width=4 height=4
+        image file="../data/one/pic.png" left=110 top=0 width=4 height=4
+        subreport template="names.inc.kdl" seq=1 data="rows" inline=#true {
+          arg "who" value="k"
+        }
+      }
+    }
+  }
+}

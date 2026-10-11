@@ -1,0 +1,44 @@
+// probes/subreport/coercion.kdl -- values that arrive typed.
+//
+// A subreport's data built by an expression, so its fields are a decimal,
+// a time, a tuple, a dict, a record and None as well as strings and numbers.
+//
+// The reference reads each by the declared type, as a JSON value: a decimal
+// reaches an `int` member as its digits and a `string` member as its text,
+// and a time a `string` as RFC 3339.  A time stays a time in a `datetime`
+// member and starts its day in a `date` one; a tuple is a list, a dict
+// and a record are records, and None is None in a `nullable` member.
+//
+// doc/layout.md#names-and-values.
+
+report name="subreport/coercion" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "price" type="decimal"
+  }
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    embedded "typed" {
+      records {
+        member "d" type="decimal"
+        member "i" type="int"
+        member "s" type="string"
+        member "t" type="datetime"
+        member "day" type="date"
+        member "f" type="float"
+        member "l" type="list"
+        member "o" type="object"
+        member "n" type="string" nullable=#true
+      }
+      detail height=8 {
+        field expr="'%s %s | %s %s | %s %s | %s' % (type(d), d, type(i), i, type(s), s, t)" left=0 top=0 height=4
+        field expr="'%s | %s %s | %s %s | %s %s | %s' % (day, type(f), f, type(l), l, type(o), o.x, n)" left=0 top=4 height=4
+      }
+    }
+    detail height=6 {
+      field expr="'host %s' % price" left=0 top=0 height=6
+      subreport embedded="typed" seq=1 inline=#true \
+        data="[{'d': price * 2, 'i': decimal('3'), 's': price, 't': BUILD_TIME, 'day': BUILD_TIME, 'f': 2, 'l': (1, 2), 'o': {'x': 'rec'}, 'n': None, 'extra': [1]}, {'d': 7, 'i': '8', 's': BUILD_TIME, 't': '2026-01-02T03:04:05Z', 'day': '2026-01-02', 'f': price, 'l': [3], 'o': THIS, 'n': 'here'}]"
+    }
+  }
+}

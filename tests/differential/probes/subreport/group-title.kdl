@@ -1,0 +1,51 @@
+// probes/subreport/group-title.kdl -- an inline subreport on a group's title.
+//
+// The group opens two columns with a header and a footer, and
+// its title carries an inline subreport.  The title belongs to
+// the frame holding the columns, and so do the subreport's bands.
+//
+// The reference runs them down to the page frame's bottom, over
+// the columns' footer.  doc/layout.md#extent-and-fill stops a band
+// in a frame with columns inside it above their footers, and the
+// subreport's bands are bands of that frame.
+//
+// Registered under the divergence `column-footer-strip`.
+
+report name="subreport/group-title" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "g" type="string"
+    member "n" type="int"
+  }
+  layout width=100 height=70 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    embedded "notes" {
+      parameter "tag" type="string"
+      title height=6 {
+        field expr="'%s title cn %d vp %s vs %s' % (tag, COLUMN_NUMBER, VERTICAL_POSITION, VERTICAL_SPACE)" left=0 top=0 height=6
+      }
+      detail height=6 {
+        field expr="'%s %d cn %d vp %s' % (tag, ITEM_NUMBER, COLUMN_NUMBER, VERTICAL_POSITION)" left=0 top=0 height=6
+      }
+    }
+    group "grp" expr="g" {
+      columns count=2 gap=10 {
+        header height=6 {
+          field expr="'colhead cn %d' % COLUMN_NUMBER" left=0 top=0 height=6
+        }
+        footer height=6 {
+          field expr="'colfoot cn %d' % COLUMN_NUMBER" left=0 top=0 height=6
+        }
+      }
+      title height=6 {
+        field expr="'group %s cn %d vp %s vs %s' % (g, COLUMN_NUMBER, VERTICAL_POSITION, VERTICAL_SPACE)" left=0 top=0 height=6
+        subreport embedded="notes" seq=1 data="[{}] * 8" inline=#true {
+          arg "tag" value="g"
+        }
+      }
+      detail height=6 {
+        field expr="'row %d cn %d vp %s' % (n, COLUMN_NUMBER, VERTICAL_POSITION)" left=0 top=0 height=6
+      }
+    }
+  }
+}

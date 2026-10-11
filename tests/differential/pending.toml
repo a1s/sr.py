@@ -40,14 +40,19 @@ affects = ["example/sakila", "example/sakila-june"]
 
 [[pending]]
 id = "example-invoices"
-summary = "the invoices report is built out of subreports"
+summary = "the invoices report differs only in its QR symbol's box, which the reference does not round"
 reason = """
-An inline `embedded` subreport with an `arg` and its own `records`, a \
-`template=` subreport that paginates itself onto landscape pages, a \
-group using `keeptogether` with `minrows` and `mintailrows`, and a \
-`summary` with `swapfooter`.  Subreports are the last of those to \
-arrive.\
+An inline `embedded` subreport with an `arg` and its own `records`, \
+a `template=` subreport that paginates itself onto landscape pages, \
+a group using `keeptogether` with `minrows` and `mintailrows`, and \
+a `summary` with `swapfooter`, all built since M12 and agreeing with the \
+reference mark for mark.  What keeps the two apart is the QR-H symbol \
+in the title, which `grow` fills into an 18mm box at a module of \
+1.1338666666666666: the reference writes its box as binary64 left it, and \
+doc/ rounds it to three decimals.  That is `barcode-lengths-unrounded` in \
+divergences.toml, which an example may not be covered by, so the example \
+waits here for the reference's fix.\
 """
-ticket = "M12: subreports, layout.md#subreports"
+ticket = "barcode-lengths-unrounded: filed against the Go engine"
 since = "2026-09-20"
 affects = ["example/invoices"]

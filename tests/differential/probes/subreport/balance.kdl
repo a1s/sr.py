@@ -1,0 +1,27 @@
+// probes/subreport/balance.kdl -- a subreport in a balanced block of columns.
+//
+// Six rows in a balanced block of two, the second of them
+// carrying an inline subreport.
+//
+// The reference leaves the block as the fill put it, all in the first column:
+// the subreport's band is the child's, and balancing could not carry it along.
+// Without the subreport the rows balance three and three.
+//
+// doc/layout.md#what-is-left-where-the-fill-put-it.
+
+report name="subreport/balance" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=100 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    embedded "note" {
+      detail height=6 {
+        field expr="'note cn %d' % COLUMN_NUMBER" left=0 top=0 height=6
+      }
+    }
+    columns count=2 gap=10 balance=#true
+    detail height=6 {
+      field expr="'row %d cn %d' % (ITEM_NUMBER, COLUMN_NUMBER)" left=0 top=0 height=6
+      subreport embedded="note" seq=1 data="[{}]" when="ITEM_NUMBER == 2" inline=#true
+    }
+  }
+}

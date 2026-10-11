@@ -1,0 +1,40 @@
+// probes/subreport/host-columns.kdl -- an inline subreport in the host's columns.
+//
+// The host's detail band is in a block of two columns, and its
+// subreport's rows fill the column and go on to the next one with it.
+//
+// The reference: a column eject inside the child is the host's.
+// The column footer is built in the host's context, the child's column-scoped
+// total resets, and COLUMN_NUMBER in the child is the host's column from its
+// first row, the second invocation starting in the second column.
+//
+// doc/layout.md#subreports.
+
+report name="subreport/host-columns" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "name" type="string"
+    member "rows" type="int"
+  }
+  layout width=100 height=50 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    embedded "notes" {
+      parameter "tag" type="string"
+      variable "here" expr="1" calc="count" reset="column"
+      detail height=6 {
+        field expr="'%s %d cn %d here %d' % (tag, ITEM_NUMBER, COLUMN_NUMBER, here)" left=0 top=0 height=6
+      }
+    }
+    columns count=2 gap=10 {
+      footer height=6 {
+        field expr="'colfoot cn %d this %s' % (COLUMN_NUMBER, THIS.name if THIS else None)" left=0 top=0 height=6
+      }
+    }
+    detail height=6 {
+      field expr="'host %s cn %d pn %d' % (name, COLUMN_NUMBER, PAGE_NUMBER)" left=0 top=0 height=6
+      subreport embedded="notes" seq=1 data="[{}] * rows" inline=#true {
+        arg "tag" value="name"
+      }
+    }
+  }
+}

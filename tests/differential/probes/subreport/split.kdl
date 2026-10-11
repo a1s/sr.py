@@ -1,0 +1,34 @@
+// probes/subreport/split.kdl -- a host band that splits.
+//
+// A detail band too tall for the page, with a subreport on each side.
+//
+// The reference: the negative-seq subreport goes before the head
+// and the positive one after the tail, never between the two.
+//
+// doc/layout.md#where-a-subreports-bands-go.
+
+report name="subreport/split" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "name" type="string"
+    member "text" type="string"
+  }
+  layout width=60 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    embedded "note" {
+      parameter "tag" type="string"
+      detail height=6 {
+        field expr="'%s pn %d vp %s' % (tag, PAGE_NUMBER, VERTICAL_POSITION)" left=0 top=0 height=6
+      }
+    }
+    detail height=6 split=#true orphans=1 widows=1 {
+      field expr="text" left=0 top=0 width=50 stretch=#true
+      subreport embedded="note" seq=-1 data="[{}]" inline=#true {
+        arg "tag" value="'before ' + name"
+      }
+      subreport embedded="note" seq=2 data="[{}]" inline=#true {
+        arg "tag" value="'after ' + name"
+      }
+    }
+  }
+}

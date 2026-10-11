@@ -64,6 +64,23 @@ Three orders are settled here and each was read off the reference.
 * **Variables iterate before the band that reads them**, per
   doc/expressions.md#ordering-against-section-printing.
 
+A [subreport](doc/layout.md#subreports) is another :class:`Builder`
+with its own context, run from the middle of placing its host band:
+its `eject` nodes first, then the subreports of negative ``seq``, the
+band, and those of non-negative ``seq``; a report's own title tests its
+`eject` nodes last, after both.  A subreport with **pages of its own**
+gets a :class:`Sheet` of its own: the host's page is ended first, the
+child's pages follow it into the one list of pages every builder of the
+run shares, and the host resumes on a fresh page.  An **inline** one
+prints on its host's sheet, in the frame its host band belongs to, and
+an eject in it is an eject of every builder printing on that sheet: each
+frame's footer and header is built by the builder that owns the frame,
+in that builder's context, and each builder's scopes end with the page
+or column its bands were in.  The host band's own fold rolls back around
+such an eject as it does around one the band causes, since the band is
+not placed yet: a page-scoped total neither counts it on the page it
+leaves nor loses it to the reset.
+
 """
 
 from __future__ import annotations
@@ -72,14 +89,13 @@ import math
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
-from pathlib import Path
 from typing import Any
 
 from sr import meta
 from sr.errors import BuildError, BuildWarning, Location
 from sr.expr import Record, Time
 from sr.expr.golayout import RFC3339
-from sr.fonts.resolve import Resolution
+from sr.fonts.resolve import Resolution, Resolver
 from sr.fonts.text import Metrics
 from sr.layout.blobs import DataTable
 from sr.layout.columns import Fragment, balance
@@ -96,19 +112,30 @@ from sr.layout.defer import (
 )
 from sr.layout.frame import Frame, Window
 from sr.layout.images import Pictures
-from sr.layout.measure import Measurement, Measurer
+from sr.layout.measure import Measurement, Measurer, Shared
 from sr.layout.place import choose, split
+from sr.layout.subreport import DEPTH, Walk, arguments, records_of, target_of
 from sr.layout.variables import Variables
-from sr.printout.model import FontEntry, Image, Mark, Page, Paper, Printout, Xref
+from sr.printout.model import Image, Mark, Page, Paper, Printout, Xref
 from sr.printout.model import Report as ReportMeta
 from sr.printout.write import number
-from sr.template.model import Eject, Group, Layout, Nesting, Report, Section, Style
+from sr.settle import blob_bytes, resolve_fonts
+from sr.template.load import subreports_of
+from sr.template.model import (
+    Eject,
+    Embedded,
+    Group,
+    Layout,
+    Nesting,
+    Report,
+    Section,
+    Subreport,
+    Variable,
+)
+from sr.template.model import Paper as Geometry
 from sr.units import fits, round_points
 
 __all__ = ["Build", "Builder"]
-
-# A `style` walk: one tuple of nodes per scope, innermost first.
-Walk = tuple[tuple[Style, ...], ...]
 
 
 @dataclass(frozen=True)
@@ -127,6 +154,8 @@ class Build:
             rather than an error.
         warnings: What loading had to say.  What resolving each font
             had to say stays on its resolution in ``fonts``.
+        resolver: The chain the template's fonts were resolved with,
+            which resolves a subreport's when it first runs.
 
     """
 
@@ -139,6 +168,7 @@ class Build:
     strict_fonts: bool = False
     allow_overflow: bool = False
     warnings: tuple[BuildWarning, ...] = ()
+    resolver: Resolver | None = None
 
 
 @dataclass
@@ -146,7 +176,7 @@ class Level:
     """One level of the band tree: the layout, or one group.
 
     Attributes:
-        nesting: The node: the `layout`, or a `group`.
+        nesting: The node: the `layout`, an `embedded` layout, or a `group`.
         outer: The frame its title and summary belong to,
             which is the one that contains its columns.
         inner: The frame what is inside it fills: its own columns'
@@ -227,28 +257,44 @@ class Keys:
 
 
 @dataclass
+class Tally:
+    """How often a group name has opened, and on how many keys.
+
+    doc/printout.md#header-line counts by name, for the document: a host
+    and a subreport that both call a group `region` are counted together,
+    and so are the runs of every invocation of one subreport.
+
+    Attributes:
+        runs: How many times a group of the name has opened.
+        keys: The distinct keys groups of the name have seen.
+
+    """
+
+    runs: int = 0
+    keys: Keys = field(default_factory=Keys)
+
+
+@dataclass
 class Run:
     """A group as the record loop stands: its key and its counts.
 
     Attributes:
         level: The level the group is.
+        tally: What its name has counted, every report's.
         key: Its key for the current run, once it has opened.
         opening: Whether the run has begun with nothing of it placed:
             from the break until a band of it is committed, its title or
             a band inside it.  An eject then does not advance its page
             number, since the run begins on the page that band lands on.
         tailed: Whether the current run has had its ``mintailrows`` test.
-        runs: How many times it has opened.
-        keys: The distinct keys it has seen.
 
     """
 
     level: Level
+    tally: Tally
     key: Any = None
     opening: bool = False
     tailed: bool = False
-    runs: int = 0
-    keys: Keys = field(default_factory=Keys)
 
 
 @dataclass
@@ -258,11 +304,22 @@ class Fold:
     Attributes:
         before: The accumulators before the fold.
         apply: What folds them, run again after the eject.
+        variables: The accumulators it folds, which are its own report's.
 
     """
 
     before: dict[str, Any]
     apply: Callable[[], None]
+    variables: Variables
+
+    def undo(self) -> None:
+        """Roll the fold back."""
+        self.variables.restore(self.before)
+
+    def redo(self) -> None:
+        """Apply the fold again, evaluated afresh."""
+        self.before = self.variables.snapshot()
+        self.apply()
 
 
 class Enough(Exception):
@@ -315,85 +372,326 @@ class Ahead:
             raise Enough
 
 
+@dataclass
+class Template:
+    """One template document, as the run measures against it.
+
+    An `embedded` layout is measured against the document it is
+    written in, and a layout named by ``template=`` against its own.
+
+    Attributes:
+        report: The document.
+        measurer: What measures its bands, against its fonts and blobs.
+
+    """
+
+    report: Report
+    measurer: Measurer
+
+
+class Document:
+    """What every builder of one run shares: the pages, and the tables.
+
+    doc/layout.md#subreports: whatever templates take part, the printout
+    carries one font table, one data table and one sequence of pages.
+
+    Attributes:
+        build: What the run was asked for.
+        pages: The finished pages in output order, every builder's.
+        shared: What every template's measurer shares, the font table
+            and the `glyph` warnings among it.
+        table: The printout's `data` table.
+        warnings: What laying out had to say, in the order found.
+        tallies: Each group name's openings and keys.
+        paper: The document's own page geometry, against which
+            a page of a subreport's carries an override.
+        templates: Each document measured so far, by its `report`.
+        resolver: The font resolution chain, for a subreport's document.
+
+    """
+
+    def __init__(self, build: Build, paper: Geometry) -> None:
+        """Prepare what a run shares, and the report's own template.
+
+        Every document a ``template=`` reaches has its declared `data`
+        names reserved now, before anything is built, so that which
+        names are free does not depend on which subreport runs first.
+
+        Args:
+            build: What the run was asked for.
+            paper: The report's own page geometry.
+
+        """
+        self.build = build
+        self.pages: list[Page] = []
+        self.shared = Shared()
+        self.table = DataTable(build.blobs)
+        for report in referenced(build.report):
+            self.table.reserve(
+                (one.name for one in report.data),
+                {
+                    one.name: one.content
+                    for one in report.data
+                    if one.content is not None
+                },
+            )
+        self.warnings: list[BuildWarning] = []
+        self.tallies: dict[str, Tally] = {}
+        self.paper = paper
+        self.resolver = build.resolver
+        self.templates: dict[int, Template] = {}
+        self.templates[id(build.report)] = self.template(
+            build.report, build.fonts, build.blobs
+        )
+
+    def template(
+        self,
+        report: Report,
+        fonts: tuple[Resolution, ...],
+        blobs: dict[str, bytes],
+    ) -> Template:
+        """Return a document ready to measure against.
+
+        Args:
+            report: The document.
+            fonts: Its fonts, resolved.
+            blobs: Its `data` nodes' contents, by name.
+
+        """
+        measurer = Measurer(
+            {one.font.name: Metrics(one.face, one.font.size) for one in fonts},
+            text_blobs(blobs),
+            Pictures(report.basedir, blobs, self.table, report.file),
+            {one.font.name: one for one in fonts},
+            report.file,
+            self.shared,
+        )
+        return Template(report, measurer)
+
+    def template_of(self, report: Report, parameters: dict[str, Any]) -> Template:
+        """Return a subreport's document, settled the first time it runs.
+
+        Its `data` nodes are produced and its fonts resolved then,
+        against the parameters of that first invocation, and kept
+        for the rest of the run: a document that never runs
+        resolves nothing.
+
+        Args:
+            report: The document.
+            parameters: The parameters its first invocation was given.
+
+        Raises:
+            BuildError: A blob would not evaluate, or a font not resolve.
+
+        """
+        found = self.templates.get(id(report))
+        if found is None:
+            blobs = blob_bytes(report, parameters)
+            fonts, self.resolver = resolve_fonts(
+                report,
+                blobs,
+                strict=self.build.strict_fonts,
+                resolver=self.resolver,
+            )
+            found = self.templates[id(report)] = self.template(report, fonts, blobs)
+        return found
+
+    def tally(self, name: str) -> Tally:
+        """Return what a group name has counted.
+
+        Args:
+            name: The group's name.
+
+        """
+        return self.tallies.setdefault(name, Tally())
+
+
+@dataclass(eq=False)
+class Sheet:
+    """The page being built, and what every builder printing on it shares.
+
+    A report has one, and so has a subreport with pages of its own.
+    An inline subreport prints on its host's.
+
+    Attributes:
+        page: The page frame, the root of the frame tree.
+        paper: The page geometry.
+        owners: The builder each frame belongs to, which builds its header
+            and its footer in its own context.
+        marks: The marks so far, in paint order.
+        fragments: What each balanced frame was given since the page opened.
+        placed_on: The page the last band was committed to, the first
+            before any has been: a band that fits nowhere is carried from it once.
+
+    """
+
+    page: Frame
+    paper: Geometry
+    owners: dict[Frame, Builder] = field(default_factory=dict)
+    marks: list[Mark] = field(default_factory=list)
+    fragments: dict[Frame, Fragment] = field(default_factory=dict)
+    placed_on: int = 1
+
+
+@dataclass(frozen=True)
+class Nested:
+    """What a subreport's builder runs, settled in its host's context.
+
+    Attributes:
+        document: What every builder of the run shares.
+        template: The document its layout is written in.
+        nesting: Its layout.
+        outward: The `style` scopes outward of its layout.
+        records: Its records, coerced.
+        parameters: Its parameter values, by name.
+        variables: Its accumulators.
+        paper: The page geometry it paginates at.
+        host: The builder it prints inline with, where it is inline.
+        base: The frame its host band belongs to, where it is inline.
+        page_number: Its first ``PAGE_NUMBER``.
+        depth: How deep it is nested, from 1.
+
+    """
+
+    document: Document
+    template: Template
+    nesting: Layout | Embedded
+    outward: Walk
+    records: tuple[Record, ...]
+    parameters: dict[str, Any]
+    variables: tuple[Variable, ...]
+    paper: Geometry
+    host: Builder | None
+    base: Frame | None
+    page_number: int
+    depth: int
+
+
 class Builder:
     """Applies one template to one sequence of records.
 
     Attributes:
         build: What the run was asked for.
-        layout: The template's `layout` node.
+        document: What every builder of the run shares.
+        nesting: The root of its band tree: the template's `layout`,
+            or a subreport's layout.
         context: The names in scope, as the report stands.
         measurer: What turns a band into marks.
-        table: The printout's `data` table, as the build names its blobs.
         variables: The accumulators.
-        page: The page frame, the root of the frame tree.
+        sheet: The page it prints on.
         levels: The layout and its groups, outermost first.
         runs: The groups' state, outermost first.
+        host: The builder it prints inline with, for an inline subreport.
+        base: The host's frame it prints in, for an inline subreport.
+        grafted: The first frame of its own an inline subreport opens,
+            which is grafted onto ``base`` while it runs.
+        pending: The fold of a band whose negative-seq subreports are
+            running, which rolls back around an eject one of them causes.
 
     """
 
-    def __init__(self, build: Build) -> None:
-        """Prepare a run.
+    def __init__(self, build: Build, nested: Nested | None = None) -> None:
+        """Prepare a run, or a subreport's invocation.
 
         Args:
             build: What the run was asked for.
+            nested: What a subreport runs; ``None`` for the report.
 
         Raises:
             BuildError: The template has no layout.
 
         """
         self.build = build
-        report = build.report
-        if report.layout is None:
-            raise BuildError("the template has no layout", Location(file=report.file))
-        self.layout: Layout = report.layout
-        self.file = report.file
-        self.metrics = {
-            one.font.name: Metrics(one.face, one.font.size) for one in build.fonts
-        }
-        self.table = DataTable(build.blobs)
-        self.measurer = Measurer(
-            self.metrics,
-            self.text_blobs(),
-            Pictures(report.basedir, build.blobs, self.table, report.file),
-            {
-                one.font.name: one.origin.data
-                for one in build.fonts
-                if one.origin.data is not None
-            },
-            report.file,
-        )
+        if nested is None:
+            report = build.report
+            if report.layout is None:
+                raise BuildError(
+                    "the template has no layout", Location(file=report.file)
+                )
+            self.document = Document(build, report.layout.paper)
+            self.template = self.document.templates[id(report)]
+            self.nesting: Layout | Embedded = report.layout
+            self.outward: Walk = ()
+            self.paper: Geometry = report.layout.paper
+            self.records = build.records
+            parameters = build.parameters
+            declared = report.variables
+            self.host: Builder | None = None
+            self.base: Frame | None = None
+            self.depth = 0
+            first = 1
+        else:
+            self.document = nested.document
+            self.template = nested.template
+            self.nesting = nested.nesting
+            self.outward = nested.outward
+            self.paper = nested.paper
+            self.records = nested.records
+            parameters = nested.parameters
+            declared = nested.variables
+            self.host = nested.host
+            self.base = nested.base
+            self.depth = nested.depth
+            first = nested.page_number
+        self.file = self.template.report.file
+        self.measurer = self.template.measurer
         self.context = Context(
-            parameters=dict(build.parameters),
-            data_count=len(build.records),
+            parameters=dict(parameters),
+            data_count=len(self.records),
             build_time=build.built,
-            file=report.file,
+            file=self.file,
+            page_number=first,
         )
-        self.variables = Variables(report.variables, self.context)
-        self.page = Frame(
-            header=self.layout.header,
-            footer=self.layout.footer,
-            path=self.layout.path,
-        )
+        self.variables = Variables(declared, self.context)
+        if self.host is None:
+            page = Frame(
+                header=self.nesting.header,
+                footer=self.nesting.footer,
+                path=self.nesting.path,
+            )
+            self.sheet = Sheet(page, self.paper, placed_on=first)
+            self.sheet.owners[page] = self
+        else:
+            self.sheet = self.host.sheet
+            self.context.column_number = self.host.context.column_number
+        self.grafted: Frame | None = None
+        self.own: list[Frame] = []
         self.levels = self.tree()
-        self.runs = [Run(level) for level in self.levels[1:]]
+        self.runs = [
+            Run(level, self.document.tally(level.group.name))
+            for level in self.levels[1:]
+            if level.group is not None
+        ]
         for run in self.runs:
             name = self.name(run)
             self.context.group_counts[name] = 0
             self.context.group_pages[name] = 1
-        self.pages: list[Page] = []
-        self.marks: list[Mark] = []
         self.deferred = Register()
-        self.warnings: list[BuildWarning] = []
         self.previous: tuple[Record, int] | None = None
         self.ahead: Ahead | None = None
-        self.fragments: dict[Frame, Fragment] = {}
         # What a footer at a group break is built against, until a band
         # of the new record is committed, and the runs such a band begins.
         self.outgoing: tuple[Any, ...] | None = None
         self.beginning: list[Run] = []
-        # The page the last band was committed to, the first before any
-        # has been: a band that fits nowhere is carried from it once.
-        self.placed_on = 1
+        self.pending: Fold | None = None
+        # Where the last band measured for placing was measured, as its
+        # `VERTICAL_POSITION` and `VERTICAL_SPACE`.
+        self.position = (0.0, 0.0)
+
+    @property
+    def pages(self) -> list[Page]:
+        """Return the finished pages, every builder's."""
+        return self.document.pages
+
+    @property
+    def marks(self) -> list[Mark]:
+        """Return the marks of the page being built."""
+        return self.sheet.marks
+
+    @property
+    def warnings(self) -> list[BuildWarning]:
+        """Return what laying out has had to say, every builder's."""
+        return self.document.warnings
 
     # -- the tree ---------------------------------------------------------
 
@@ -404,11 +702,15 @@ class Builder:
         for each `columns` node from the layout inward.  A level's title
         and summary belong to the frame that contains its columns.
 
+        An inline subreport's tree begins at its host's frame instead
+        of a page, and the first frame it opens there is grafted onto
+        the host's when the invocation begins, not now.
+
         """
         levels: list[Level] = []
-        nesting: Nesting | None = self.layout
-        frame = self.page
-        walk: Walk = ()
+        nesting: Nesting | None = self.nesting
+        frame = self.sheet.page if self.base is None else self.base
+        walk: Walk = self.outward
         while nesting is not None:
             outer = frame
             outer_walk = (nesting.styles, *walk)
@@ -425,7 +727,13 @@ class Builder:
                     path=columns.path,
                     parent=outer,
                 )
-                outer.child = frame
+                self.own.append(frame)
+                self.sheet.owners[frame] = self
+                if outer is self.base:
+                    frame.grafted = True
+                    self.grafted = frame
+                else:
+                    outer.graft(frame)
                 inner_walk = (columns.styles, *outer_walk)
             levels.append(Level(nesting, outer, frame, outer_walk, inner_walk))
             walk = inner_walk
@@ -433,8 +741,31 @@ class Builder:
         return levels
 
     def frames(self) -> list[Frame]:
-        """Return every frame, outermost first."""
-        return [self.page, *self.page.descendants()]
+        """Return every frame on the sheet, outermost first."""
+        return [self.sheet.page, *self.sheet.page.descendants()]
+
+    def owner(self, frame: Frame) -> Builder:
+        """Return the builder a frame on the sheet belongs to.
+
+        Args:
+            frame: The frame.
+
+        """
+        return self.sheet.owners[frame]
+
+    def chain(self) -> list[Builder]:
+        """Return the builders printing on the sheet, its owner first.
+
+        The last is this one: an inline subreport's hosts are each
+        in the middle of placing the band that invoked the next.
+
+        """
+        found: list[Builder] = [self]
+        while found[-1].host is not None:
+            host = found[-1].host
+            assert host is not None
+            found.append(host)
+        return found[::-1]
 
     @staticmethod
     def name(run: Run) -> str:
@@ -447,10 +778,10 @@ class Builder:
         """Return the `style` walk of a header or footer of this frame.
 
         Args:
-            frame: The frame whose band it is.
+            frame: The frame whose band it is, which is this builder's.
 
         """
-        if frame is self.page:
+        if frame is self.sheet.page:
             return self.levels[0].outer_walk
         for level in self.levels:
             if level.inner is frame:
@@ -466,21 +797,40 @@ class Builder:
             BuildError: A band would not fit, or an expression failed.
 
         """
+        self.invocation()
+        return self.printout()
+
+    def invocation(self) -> None:
+        """Format every record: the report, or one subreport's invocation.
+
+        Raises:
+            BuildError: A band would not fit, or an expression failed.
+
+        """
         # doc/expressions.md#the-report-boundary fires the report scope
         # "once, before the title band is built", and seeds every variable,
         # which reserving a header needs: a header may read one.
         self.variables.iterate("report")
         self.begin()
-        for index, record in enumerate(self.build.records):
+        for index, record in enumerate(self.records):
             self.row(index, record)
         self.end()
-        return self.printout()
 
     def begin(self) -> None:
-        """Open the first page, and place the report's title on it."""
-        self.new_page()
-        title = self.layout.title
+        """Open the first page, and place the report's title on it.
+
+        An inline subreport opens no page: it grafts its columns,
+        where it has some, onto its host's frame where the host is filled.
+
+        """
+        title = self.nesting.title
         root = self.levels[0]
+        if self.host is not None:
+            self.graft()
+            if title is not None:
+                self.place(title, root.outer, self.walk(title, root), last=True)
+            return
+        self.new_page()
         if title is not None and title.swapheader:
             self.swapped_title(title)
             return
@@ -494,20 +844,62 @@ class Builder:
         Every deferral still waiting resolves after the last page's
         footers, whatever its scope: the last page, the last column and
         the last run of each group end here without an eject or a break,
-        and the report ends with them.
+        and the report ends with them.  An inline subreport's end is
+        not its host's page's: its deferrals resolve as its summary is
+        placed, and its columns come off the host's frame without the
+        last one's footer, since that column does not end.
 
         """
         self.close(0)
-        self.settle_columns()
-        summary = self.layout.summary
+        self.settle_columns(self.own if self.host is not None else None)
+        summary = self.nesting.summary
         root = self.levels[0]
         if summary is not None:
             if summary.swapfooter:
                 self.swapped_summary(summary)
             else:
                 self.place(summary, root.outer, self.walk(summary, root))
-        self.footers(self.frames(), None)
-        self.pages.append(Page(self.context.page_number, tuple(self.marks)))
+        if self.host is not None:
+            self.resolve(None)
+            self.ungraft()
+            return
+        self.footers(self.frames(), None, self.chain())
+        self.close_page()
+
+    def graft(self) -> None:
+        """Put an inline subreport's columns onto its host's frame, and open them.
+
+        doc/layout.md#pages: the frames begin where the host is filled,
+        and stay there for the rest of that page.
+
+        """
+        frame = self.grafted
+        if frame is None:
+            return
+        assert self.base is not None
+        frame.begins = self.base.fill
+        self.base.graft(frame)
+        self.open_columns([frame, *frame.descendants()])
+        self.set_column_number()
+
+    def ungraft(self) -> None:
+        """Take an inline subreport's columns off its host's frame.
+
+        Whatever the host's own frame holds below it continues below
+        the invocation, as it continues below any band placed across it.
+
+        """
+        frame = self.grafted
+        if frame is None:
+            return
+        assert self.base is not None
+        self.base.prune(frame)
+        for one in self.own:
+            self.sheet.owners.pop(one, None)
+            self.sheet.fragments.pop(one, None)
+        frame.begins = None
+        self.base.advance(self.base.fill)
+        self.set_column_number()
 
     # -- the record loop --------------------------------------------------
 
@@ -616,8 +1008,8 @@ class Builder:
         name = self.name(run)
         run.opening = True
         run.tailed = False
-        run.runs += 1
-        run.keys.add(run.key)
+        run.tally.runs += 1
+        run.tally.keys.add(run.key)
         self.context.group_counts[name] = 0
         self.context.group_pages[name] = 1
 
@@ -702,15 +1094,26 @@ class Builder:
             (section.styles, *level.inner_walk),
             printing=True,
             fold=fold,
+            committed=self.count_detail,
         )
         self.beginning = []
+        if self.ahead is not None:
+            self.ahead.row()
+
+    def count_detail(self) -> None:
+        """Count a detail band that is on the page.
+
+        The counters count what has been printed, so this
+        is done once the band is committed, and before its
+        subreports of non-negative ``seq`` run: they print after it,
+        and a footer an eject of theirs builds counts it.
+
+        """
         self.context.report_count += 1
         self.context.page_count += 1
         self.context.column_count += 1
         for run in self.runs:
             self.context.group_counts[self.name(run)] += 1
-        if self.ahead is not None:
-            self.ahead.row()
 
     def fold_detail(self, printing: bool) -> None:
         """Fold the `item`-scoped variables, and the `detail`-scoped ones.
@@ -735,7 +1138,7 @@ class Builder:
         """
         before = self.variables.snapshot()
         apply()
-        return Fold(before, apply)
+        return Fold(before, apply, self.variables)
 
     def walk(self, section: Section, level: Level) -> Walk:
         """Return the `style` walk of a level's title or summary.
@@ -883,7 +1286,7 @@ class Builder:
             summary: Whether the summaries that close the run are measured.
 
         """
-        records = self.build.records
+        records = self.records
         assert self.context.record is not None
         self.previous = (self.context.record, self.context.item_number)
         for later in range(index + 1, len(records)):
@@ -904,7 +1307,8 @@ class Builder:
         Everything a band's measurement reads is put back afterwards --
         the accumulators, the counters, the record, the groups' keys --
         and nothing is committed while it runs: :meth:`place` measures
-        and adds up instead.
+        and adds up instead.  A subreport is not run: its bands are not
+        measured in advance, per doc/layout.md#what-the-lookahead-does-not-see.
 
         Args:
             cap: The height it stops at.
@@ -936,7 +1340,13 @@ class Builder:
                 group_pages=dict(context.group_pages),
             ),
             [
-                (run.key, run.opening, run.tailed, run.runs, run.keys.mark())
+                (
+                    run.key,
+                    run.opening,
+                    run.tailed,
+                    run.tally.runs,
+                    run.tally.keys.mark(),
+                )
                 for run in self.runs
             ],
             self.previous,
@@ -966,8 +1376,9 @@ class Builder:
         for run, (key, opening, tailed, count, mark) in zip(
             self.runs, runs, strict=True
         ):
-            run.key, run.opening, run.tailed, run.runs = key, opening, tailed, count
-            run.keys.rewind(mark)
+            run.key, run.opening, run.tailed = key, opening, tailed
+            run.tally.runs = count
+            run.tally.keys.rewind(mark)
         self.previous = previous
 
     # -- placing a band ---------------------------------------------------
@@ -982,8 +1393,17 @@ class Builder:
         fold: Fold | None = None,
         eject: bool = True,
         last: bool = False,
+        committed: Callable[[], None] | None = None,
     ) -> bool:
         """Measure a band, decide where it goes, and commit it.
+
+        Its `eject` nodes are tested first, and then its subreports
+        of negative ``seq`` run, so that it follows them; those of
+        non-negative ``seq`` run once it is committed.  A report's
+        own title tests its `eject` nodes after all of that, giving
+        the title and its subreports a page of their own.
+        The ``printwhen`` is answered once, before any of it, and that
+        answer stands for the band and for every subreport it carries.
 
         Args:
             section: The band.
@@ -995,6 +1415,7 @@ class Builder:
             eject: Whether its `eject` nodes are tested before it.
             last: Whether they are tested after it instead,
                 as a report's own title's are.
+            committed: What to do once it is on the page.
 
         Returns:
             Whether the band printed.
@@ -1008,10 +1429,26 @@ class Builder:
             if self.ahead.measuring:
                 measured = self.measure(section, frame, walk)
                 self.ahead.add(measured.height)
+            if committed is not None:
+                committed()
             return True
         if eject and not last:
             self.ejects(section, frame, fold)
+        before = [one for one in section.subreports if one.seq < 0]
+        if before:
+            self.pending = fold
+            try:
+                for subreport in before:
+                    self.invoke(subreport, frame)
+            finally:
+                self.pending = None
         self.fit(section, frame, walk, fold)
+        if committed is not None:
+            committed()
+        position = self.position
+        for subreport in section.subreports:
+            if subreport.seq >= 0:
+                self.invoke(subreport, frame, position)
         if last:
             self.ejects(section, frame)
         return True
@@ -1025,8 +1462,10 @@ class Builder:
             walk: Its `style` walk.
 
         """
+        window = frame.window()
+        self.position = (round_points(window.fill - window.top), window.available)
         measured = self.measurer.band(
-            section, frame.window(), self.context, walk, printing=True
+            section, window, self.context, walk, printing=True
         )
         assert measured is not None
         return measured
@@ -1091,7 +1530,7 @@ class Builder:
                     measured = self.cut(measured, cut, frame)
                     whole = False
                     continue
-            if self.context.page_number == self.placed_on:
+            if self.context.page_number == self.sheet.placed_on:
                 # Only another page's headers can make more room: every
                 # column left on this one begins no higher than this one.
                 self.eject(frame, "page", fold if whole else None)
@@ -1173,6 +1612,10 @@ class Builder:
         invariant makes, so it arrives with the invariant run rather
         than being written twice.
 
+        A band an inline subreport commits is something of its host's
+        band on the page too, so each host in the chain begins the runs
+        its band begins, as it would on committing a band of its own.
+
         Args:
             measured: What measuring the band produced.
             frame: The frame it goes in.
@@ -1182,8 +1625,9 @@ class Builder:
         start = self.emit(measured, frame, frame.x, down)
         self.record(frame, start, down, measured.height)
         frame.advance(round_points(down + measured.height))
-        self.placed_on = self.context.page_number
-        self.begun(self.beginning)
+        self.sheet.placed_on = self.context.page_number
+        for builder in self.chain():
+            builder.begun(builder.beginning)
 
     def emit(
         self, measured: Measurement, frame: Frame, across: float, down: float
@@ -1289,6 +1733,103 @@ class Builder:
                 return node
         return None
 
+    # -- subreports -------------------------------------------------------
+
+    def invoke(
+        self,
+        subreport: Subreport,
+        frame: Frame,
+        position: tuple[float, float] | None = None,
+    ) -> None:
+        """Run one subreport of the band being placed.
+
+        Everything it is given is evaluated in this builder's context
+        as it stands, per doc/layout.md#names-and-values: its ``when``,
+        its ``data``, and its `arg` nodes.  ``VERTICAL_POSITION`` and
+        ``VERTICAL_SPACE`` there are the host band's: as it was measured,
+        once it is committed, and where it would begin, before.
+
+        Args:
+            subreport: The node.
+            frame: The frame the host band belongs to.
+            position: ``VERTICAL_POSITION`` and ``VERTICAL_SPACE`` as the
+                host band was measured, once it is; the frame's otherwise.
+
+        Raises:
+            BuildError: Its data is not a sequence of records, an `arg`
+                is not of its parameter's type, or it is nested too deep.
+
+        """
+        if position is None:
+            names = self.measurer.names(frame.window(), self.context)
+        else:
+            names = self.context.environment(*position)
+        if not condition(subreport.when, names, subreport.path, self.context, "when"):
+            return
+        if self.depth >= DEPTH:
+            raise BuildError(
+                f"subreports are nested {DEPTH} deep,"
+                " which is as far as this engine goes",
+                Location(
+                    file=self.file,
+                    path=subreport.path,
+                    record=self.context.record_index,
+                ),
+            )
+        where = Location(
+            file=self.file,
+            path=subreport.path,
+            prop="data",
+            record=self.context.record_index,
+        )
+        assert subreport.data is not None
+        target = target_of(self.template.report, subreport)
+        data = evaluate(subreport.data, names, subreport.path, self.context, "data")
+        records = records_of(data, target.records, where)
+        parameters = arguments(subreport, target.parameters, names, self.context)
+        template = (
+            self.template
+            if subreport.report is None
+            else self.document.template_of(target.report, parameters)
+        )
+        assert target.report.layout is not None
+
+        def nested(host: Builder | None, base: Frame | None, first: int) -> Nested:
+            assert target.report.layout is not None
+            return Nested(
+                document=self.document,
+                template=template,
+                nesting=target.nesting,
+                outward=target.outward,
+                records=records,
+                parameters=parameters,
+                variables=target.variables,
+                paper=target.report.layout.paper,
+                host=host,
+                base=base,
+                page_number=first,
+                depth=self.depth + 1,
+            )
+
+        if subreport.inline:
+            child = Builder(self.build, nested(self, frame, self.context.page_number))
+            child.invocation()
+            return
+        folds = [one.pending for one in self.chain() if one.pending is not None]
+        for one in folds:
+            one.undo()
+        self.left_alone(frame)
+        self.end_page()
+        first = 1 if subreport.ownpageno else self.context.page_number + 1
+        child = Builder(self.build, nested(None, None, first))
+        child.invocation()
+        resumed = self.context.page_number + 1
+        if not subreport.ownpageno:
+            resumed = child.context.page_number + 1
+        self.start_page(resumed)
+        for one in folds:
+            one.redo()
+
     # -- the report's own title and summary, swapped ----------------------
 
     def swapped_title(self, section: Section) -> None:
@@ -1309,8 +1850,8 @@ class Builder:
             section: The title.
 
         """
-        paper = self.layout.paper
-        page = self.page
+        paper = self.paper
+        page = self.sheet.page
         window = Window(page.x, page.width, paper.top, page.outer_bottom)
         if not self.measurer.prints(section, window, self.context):
             self.open_frames()
@@ -1351,13 +1892,13 @@ class Builder:
             section: The summary.
 
         """
-        page = self.page
+        page = self.sheet.page
         walk = self.walk(section, self.levels[0])
         if not self.measurer.prints(section, page.window(), self.context):
             return
         self.ejects(section, page)
         measured = self.measure(section, page, walk)
-        placed = self.context.page_number == self.placed_on
+        placed = self.context.page_number == self.sheet.placed_on
         if not page.accepts(measured.height) and placed:
             self.eject(page, "page", None)
             measured = self.measure(section, page, walk)
@@ -1395,6 +1936,10 @@ class Builder:
         this one, whichever is lower, so it gains nothing where its column
         is filled no lower than that.
 
+        The walk goes on into the host's frames from an inline subreport's,
+        and the host bands whose negative-seq subreports are running
+        roll back with the band, since none of them is placed yet.
+
         Args:
             frame: The frame of the band that triggered it.
             kind: ``column`` or ``page``.
@@ -1405,8 +1950,11 @@ class Builder:
                 except an `eject` node's without a ``require``.
 
         """
+        folds = [one.pending for one in self.chain() if one.pending is not None]
         if fold is not None:
-            self.variables.restore(fold.before)
+            folds.append(fold)
+        for one in folds:
+            one.undo()
         ejecting: Frame | None = frame
         if kind == "column":
             while ejecting is not None and not (
@@ -1420,9 +1968,8 @@ class Builder:
             if deliberate:
                 self.left_alone(frame)
             self.column_eject(ejecting)
-        if fold is not None:
-            fold.before = self.variables.snapshot()
-            fold.apply()
+        for one in folds:
+            one.redo()
 
     def column_eject(self, ejecting: Frame) -> None:
         """Advance a frame to its next column.
@@ -1432,15 +1979,23 @@ class Builder:
         moves one column across and every frame inside it starts again
         in its first; then the headers, outermost first.
 
+        The scopes that end are those of the frame's owner and of
+        every inline subreport printing inside it, which is each
+        builder in the chain from that owner on: a subreport's
+        own columns move on without its host's.
+
         Args:
             ejecting: The frame that has a column left.
 
         """
         participants = [ejecting, *ejecting.descendants()]
-        self.footers(participants, [COLUMN])
-        self.context.column_count = 0
-        self.variables.clear("column")
-        self.variables.iterate("column")
+        chain = self.chain()
+        ended = chain[chain.index(self.owner(ejecting)) :]
+        self.footers(participants, [COLUMN], ended)
+        for builder in ended:
+            builder.context.column_count = 0
+            builder.variables.clear("column")
+            builder.variables.iterate("column")
         ejecting.column += 1
         for frame in ejecting.descendants():
             frame.column = 0
@@ -1457,28 +2012,74 @@ class Builder:
         its run begins on the page its first band lands on.
 
         """
+        self.end_page()
+        self.start_page(self.context.page_number + 1)
+
+    def end_page(self) -> None:
+        """End the page: its footers, its scopes, and its marks.
+
+        The first half of a page eject, and all of it that comes before
+        a subreport with pages of its own, which the page ends for.
+
+        """
+        chain = self.chain()
         self.settle_columns()
-        self.footers(self.frames(), [COLUMN, PAGE])
-        self.context.column_count = 0
-        self.variables.clear("column")
-        self.variables.iterate("column")
-        self.pages.append(Page(self.context.page_number, tuple(self.marks)))
-        self.context.page_number += 1
-        self.context.page_count = 0
-        self.variables.clear("page")
-        self.variables.iterate("page")
-        for run in self.runs:
-            if not run.opening:
-                self.context.group_pages[self.name(run)] += 1
+        self.footers(self.frames(), [COLUMN, PAGE], chain)
+        for builder in chain:
+            builder.context.column_count = 0
+            builder.variables.clear("column")
+            builder.variables.iterate("column")
+        self.close_page()
+
+    def start_page(self, page_number: int) -> None:
+        """Start the next page: its number, its scopes, and its headers.
+
+        The second half of a page eject, and the page a
+        host resumes on after a subreport with pages of its own.
+
+        Args:
+            page_number: Its ``PAGE_NUMBER``.
+
+        """
+        for builder in self.chain():
+            context = builder.context
+            context.page_number = page_number
+            context.page_count = 0
+            builder.variables.clear("page")
+            builder.variables.iterate("page")
+            for run in builder.runs:
+                if not run.opening:
+                    context.group_pages[builder.name(run)] += 1
         self.new_page()
         self.open_frames()
 
+    def close_page(self) -> None:
+        """Add the page being built to the document.
+
+        A page carries the geometry it runs at where that is not
+        the document's own, as a subreport's with pages of its own can.
+
+        """
+        paper = self.sheet.paper
+        override = None
+        if paper != self.document.paper:
+            override = Paper(
+                paper.width,
+                paper.height,
+                paper.left,
+                paper.right,
+                paper.top,
+                paper.bottom,
+            )
+        self.pages.append(Page(self.context.page_number, tuple(self.marks), override))
+
     def new_page(self) -> None:
         """Start an empty page, every frame back at its first column."""
-        self.marks = []
-        self.fragments = {}
-        paper = self.layout.paper
-        page = self.page
+        sheet = self.sheet
+        sheet.marks = []
+        sheet.fragments = {}
+        paper = sheet.paper
+        page = sheet.page
         page.x = paper.left
         page.width = round_points(paper.width - paper.left - paper.right)
         page.outer_top = paper.top
@@ -1487,6 +2088,7 @@ class Builder:
             frame.column = 0
             frame.floor = 0.0
             frame.lead = 0.0
+            frame.begins = None
         self.set_column_number()
 
     def open_frames(self) -> None:
@@ -1501,13 +2103,18 @@ class Builder:
         where a header measured taller when it was built than when it was
         reserved: doc/layout.md#extent-and-fill.
 
+        Each is opened by the builder it belongs to, in that one's context.
+
         Args:
             frames: A frame and every frame inside it, outermost first.
 
         """
-        drawn = [self.open_column(frame) for frame in frames]
-        for position, frame in enumerate(frames):
-            frame.start = max([frame.top, *drawn[position + 1 :]])
+        drawn = {}
+        for frame in frames:
+            drawn[frame] = self.owner(frame).open_column(frame)
+        for frame in frames:
+            inside = [drawn[one] for one in frame.descendants() if one in drawn]
+            frame.start = max([frame.top, *inside])
 
     def open_column(self, frame: Frame) -> float:
         """Reserve a column's header and footer, and place its header.
@@ -1515,6 +2122,11 @@ class Builder:
         doc/layout.md#headerfooter-reservation measures both bands against
         the context as it stands when the column begins, which is when
         they are reserved.  The header is then built again and placed.
+
+        A grafted frame is placed where a band of its parent would be:
+        below whatever else its parent holds has drawn above it, or
+        where its parent was filled when the invocation began, and
+        above whatever else its parent holds draws below.
 
         Args:
             frame: The frame whose current column opens.
@@ -1527,10 +2139,26 @@ class Builder:
             BuildError: The two reservations together exceed the column.
 
         """
-        if frame.parent is not None:
+        parent = frame.parent
+        if parent is not None:
             frame.place_across()
-            frame.outer_top = frame.parent.top
-            frame.outer_bottom = frame.parent.bottom
+            frame.outer_top = parent.top
+            frame.outer_bottom = parent.bottom
+            if frame.grafted:
+                beside = [
+                    inner
+                    for one in parent.children
+                    if one is not frame
+                    for inner in (one, *one.descendants())
+                ]
+                frame.outer_top = (
+                    frame.begins
+                    if frame.begins is not None
+                    else max([parent.top, *(one.drawn for one in beside)])
+                )
+                frame.outer_bottom = min(
+                    [parent.bottom, *(one.bottom for one in beside)]
+                )
         whole = Window(frame.x, frame.width, frame.outer_top, frame.outer_bottom)
         walk = self.walk_of(frame)
         header = self.reserve(frame.header, whole, walk)
@@ -1541,6 +2169,7 @@ class Builder:
                 Location(file=self.file, path=frame.path),
             )
         frame.settle(header, footer)
+        frame.drawn = frame.outer_top
         if frame.header is None:
             return frame.outer_top
         above = Window(frame.x, frame.width, frame.outer_top, frame.bottom)
@@ -1552,6 +2181,7 @@ class Builder:
         self.emit(measured, frame, frame.x, frame.outer_top)
         drawn = round_points(frame.outer_top + measured.height)
         frame.reach(drawn)
+        frame.drawn = drawn
         return drawn
 
     def reserve(self, section: Section | None, window: Window, walk: Walk) -> float:
@@ -1570,7 +2200,12 @@ class Builder:
         )
         return 0.0 if measured is None else measured.height
 
-    def footers(self, frames: list[Frame], ended: list[Scope] | None) -> None:
+    def footers(
+        self,
+        frames: list[Frame],
+        ended: list[Scope] | None,
+        builders: list[Builder],
+    ) -> None:
         """Build the footers of these frames and place them, innermost first.
 
         A footer's space is settled when its column opens and its content
@@ -1593,45 +2228,53 @@ class Builder:
         and against the same context: ``FINAL`` reads
         what the footers read.
 
+        Each footer is built by the builder its frame belongs to,
+        and each builder whose scopes end resolves its own deferrals,
+        innermost first as the footers are.
+
         Args:
             frames: The participating frames, outermost first.
             ended: The scopes the eject ends, or ``None`` for every
                 scope, at the end of the report.
-
-        """
-        with self.before_the_break():
-            self.build_footers(frames)
-            self.resolve(ended)
-
-    def build_footers(self, frames: list[Frame]) -> None:
-        """Build the footers of these frames and place them, innermost first.
-
-        Args:
-            frames: The participating frames, outermost first.
+            builders: Those whose scopes end, outermost first.
 
         """
         for frame in reversed(frames):
-            section = frame.footer
-            if section is None:
-                continue
-            below = Window(
-                frame.x,
-                frame.width,
-                frame.top,
-                round_points(frame.fill + frame.reserved_footer),
-            )
-            below.fill = frame.fill
-            measured = self.measurer.band(
-                section,
-                below,
-                self.context,
-                (section.styles, *self.walk_of(frame)),
-            )
-            if measured is None:
-                continue
-            down = round_points(frame.outer_bottom - measured.height)
-            self.emit(measured, frame, frame.x, down)
-            frame.reach(frame.outer_bottom)
+            owner = self.owner(frame)
+            with owner.before_the_break():
+                owner.build_footer(frame)
+        for builder in reversed(builders):
+            with builder.before_the_break():
+                builder.resolve(ended)
+
+    def build_footer(self, frame: Frame) -> None:
+        """Build one frame's footer and place it.
+
+        Args:
+            frame: The frame, which is this builder's.
+
+        """
+        section = frame.footer
+        if section is None:
+            return
+        below = Window(
+            frame.x,
+            frame.width,
+            frame.top,
+            round_points(frame.fill + frame.reserved_footer),
+        )
+        below.fill = frame.fill
+        measured = self.measurer.band(
+            section,
+            below,
+            self.context,
+            (section.styles, *self.walk_of(frame)),
+        )
+        if measured is None:
+            return
+        down = round_points(frame.outer_bottom - measured.height)
+        self.emit(measured, frame, frame.x, down)
+        frame.reach(frame.outer_bottom)
 
     def state(self) -> tuple[Any, ...]:
         """Return the context a footer at a group break is built against.
@@ -1677,12 +2320,27 @@ class Builder:
             self.put(now)
 
     def set_column_number(self) -> None:
-        """Set ``COLUMN_NUMBER`` from the innermost frame with columns."""
-        number = 1
-        for frame in self.frames():
-            if frame.count > 1:
-                number = frame.column + 1
-        self.context.column_number = number
+        """Set ``COLUMN_NUMBER``: the current column among all the page's.
+
+        doc/expressions.md#predefined-variables counts every column on the
+        page from the left.  A block inside another block's columns repeats
+        in each of them and is numbered on across them, so its first column
+        in its parent's second column is its own column count plus one.
+        The walk goes down the frames being filled, which is the last frame
+        at each level: a subreport's grafted columns, while they are there.
+
+        Every builder printing on the sheet reads the same, since the
+        frames are one tree: inside a subreport's grafted columns, a host
+        footer built at an eject reports the column the subreport was in.
+
+        """
+        frame = self.sheet.page
+        number = frame.column
+        while frame.children:
+            frame = frame.children[-1]
+            number = number * frame.count + frame.column
+        for builder in self.chain():
+            builder.context.column_number = number + 1
 
     # -- balancing --------------------------------------------------------
 
@@ -1694,6 +2352,10 @@ class Builder:
         the innermost balanced frame above it; one placed in a frame outside
         it, once the fragment has begun, leaves the fragment where it is.
 
+        A band of an inline subreport leaves every balanced frame of its
+        host's that holds it where it is, since the host has no way to carry
+        it along: it is the subreport's band and not one of the host's.
+
         Args:
             frame: The frame the band went in.
             start: The index of its first mark on the page.
@@ -1701,10 +2363,13 @@ class Builder:
             height: Its height.
 
         """
+        if self.base is not None:
+            self.left_alone(self.base)
+        fragments = self.sheet.fragments
         for balanced in self.frames():
             if not (balanced.balance and balanced.count > 1):
                 continue
-            fragment = self.fragments.setdefault(balanced, Fragment(balanced))
+            fragment = fragments.setdefault(balanced, Fragment(balanced))
             if frame is balanced or balanced in frame.ancestors():
                 if any(between.count > 1 for between in frame_path(balanced, frame)):
                     fragment.alone = True
@@ -1718,20 +2383,22 @@ class Builder:
 
         A band split, and an eject an `eject` node or a keep-together
         rule caused that stays on the page, each decide something about
-        where a band goes that packing by height would not reproduce.
+        where a band goes that packing by height would not reproduce,
+        and so does a subreport.
 
         Args:
             frame: The frame it happened in.
 
         """
+        fragments = self.sheet.fragments
         for balanced in (frame, *frame.ancestors()):
-            fragment = self.fragments.get(balanced)
+            fragment = fragments.get(balanced)
             if fragment is not None:
                 fragment.alone = True
             elif balanced.balance and balanced.count > 1:
-                self.fragments[balanced] = Fragment(balanced, alone=True)
+                fragments[balanced] = Fragment(balanced, alone=True)
 
-    def settle_columns(self) -> None:
+    def settle_columns(self, frames: list[Frame] | None = None) -> None:
         """Balance every balanced frame's fragment on the page as it ends.
 
         A fragment is balanced once.  The report's summary can still
@@ -1744,9 +2411,13 @@ class Builder:
         the pass, so its deferral would count the rows the fill put
         in that column and sit under the rows the pass put there.
 
+        Args:
+            frames: The frames to balance, which at the end of an inline
+                subreport are its own; every frame on the sheet otherwise.
+
         """
-        for frame in reversed(self.frames()):
-            fragment = self.fragments.get(frame)
+        for frame in reversed(self.frames() if frames is None else frames):
+            fragment = self.sheet.fragments.get(frame)
             if fragment is None or fragment.alone or not fragment.bands:
                 continue
             if footer_waits_for_column(frame):
@@ -1760,24 +2431,9 @@ class Builder:
 
     # -- the document -----------------------------------------------------
 
-    def text_blobs(self) -> dict[str, str]:
-        """Return the `data` nodes whose content a `field` can hold.
-
-        A blob reaches a field as text, so one whose bytes are not text
-        is left out and a field naming it is the error that says so.
-
-        """
-        found: dict[str, str] = {}
-        for name, content in self.build.blobs.items():
-            try:
-                found[name] = content.decode("utf-8")
-            except UnicodeDecodeError:
-                continue
-        return found
-
-    def paper(self) -> Paper:
+    def paper_of(self) -> Paper:
         """Return the document's page geometry."""
-        page = self.layout.paper
+        page = self.document.paper
         return Paper(
             page.width, page.height, page.left, page.right, page.top, page.bottom
         )
@@ -1787,12 +2443,13 @@ class Builder:
 
         The font table holds the fonts that were used rather than every
         one declared, per doc/printout.md#fonts: a font some measured
-        element's style walk resolved to.  Every declared font was still
-        resolved at load, so an unusable one is refused all the same.
-        Each used `font` node is its own entry, under its own name,
-        even where another resolves to the same face at the same size.
-        What resolving a font had to say is carried only for a font the
-        table lists, so no warning names a font the document does not have.
+        element's style walk resolved to, in whichever template.
+        Every declared font of the report was still resolved at load, so
+        an unusable one is refused all the same.  Each used `font` node
+        is its own entry, under its own name, even where another resolves
+        to the same face at the same size.  What resolving a font had
+        to say is carried only for a font the table lists, so no warning
+        names a font the document does not have.
 
         The `data` table holds the entries something in the document
         refers to, per doc/printout.md#data: an image mark on a page,
@@ -1800,19 +2457,16 @@ class Builder:
         that never reached the page stays taken, and is not written.
 
         """
-        used = tuple(
-            one for one in self.build.fonts if one.font.name in self.measurer.used
-        )
-        fonts = tuple(
-            font_entry(one, self.measurer.font_data.get(one.font.name)) for one in used
-        )
+        document = self.document
+        shared = document.shared
+        fonts = shared.fonts.listed()
         referenced = [one.data for one in fonts if one.data is not None]
         referenced.extend(blobs_in(mark for page in self.pages for mark in page.marks))
         report = self.build.report
         # A group is listed once it has opened, and not before: over no
         # records at all the header carries neither table.
-        names = sorted(self.name(run) for run in self.runs if run.runs)
-        by_name = {self.name(run): run for run in self.runs}
+        names = sorted(name for name, tally in document.tallies.items() if tally.runs)
+        tallies = document.tallies
         return Printout(
             report=ReportMeta(
                 report.name, report.description, report.version, report.author
@@ -1820,19 +2474,59 @@ class Builder:
             built=self.build.built.format(RFC3339),
             engine=meta.engine(),
             strict_fonts=self.build.strict_fonts,
-            paper=self.paper(),
+            paper=self.paper_of(),
             fonts=fonts,
-            data=self.table.written(referenced),
+            data=document.table.written(referenced),
             pages=tuple(self.pages),
             warnings=(
                 tuple(self.build.warnings)
-                + tuple(warning for one in used for warning in one.warnings)
-                + tuple(self.measurer.warnings)
-                + tuple(self.warnings)
+                + shared.fonts.warnings()
+                + tuple(shared.warnings)
+                + tuple(document.warnings)
             ),
-            group_runs={name: by_name[name].runs for name in names},
-            group_keys={name: len(by_name[name].keys) for name in names},
+            group_runs={name: tallies[name].runs for name in names},
+            group_keys={name: len(tallies[name].keys) for name in names},
         )
+
+
+def referenced(report: Report) -> list[Report]:
+    """Return every other document a report's subreports name, once each.
+
+    Args:
+        report: The report.
+
+    """
+    found: list[Report] = []
+    seen = {id(report)}
+    pending = [report]
+    while pending:
+        here = pending.pop(0)
+        for subreport in subreports_of(here):
+            named = subreport.report
+            if named is not None and id(named) not in seen:
+                seen.add(id(named))
+                found.append(named)
+                pending.append(named)
+    return found
+
+
+def text_blobs(blobs: dict[str, bytes]) -> dict[str, str]:
+    """Return the `data` nodes whose content a `field` can hold.
+
+    A blob reaches a field as text, so one whose bytes are not text
+    is left out and a field naming it is the error that says so.
+
+    Args:
+        blobs: A document's `data` nodes' contents, by name.
+
+    """
+    found: dict[str, str] = {}
+    for name, content in blobs.items():
+        try:
+            found[name] = content.decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+    return found
 
 
 def footer_waits_for_column(frame: Frame) -> bool:
@@ -1878,30 +2572,3 @@ def blobs_in(marks: Iterator[Mark] | tuple[Mark, ...]) -> Iterator[str]:
             yield mark.data
         elif isinstance(mark, Xref):
             yield from blobs_in(mark.marks)
-
-
-def font_entry(resolution: Resolution, data: str | None = None) -> FontEntry:
-    """Return one resolved font as the printout's header records it.
-
-    Args:
-        resolution: What the resolution chain produced.
-        data: The `data` entry a font read out of a `data` node
-            is stored under, which is another node's name where
-            an entry built earlier holds the same bytes.
-
-    """
-    font = resolution.font
-    origin = resolution.origin
-    return FontEntry(
-        name=font.name,
-        size=font.size,
-        bold=font.bold,
-        italic=font.italic,
-        underline=font.underline,
-        face=resolution.face.family,
-        step=resolution.step,
-        requested=resolution.requested,
-        file=Path(origin.path) if origin.path is not None else None,
-        data=data if data is not None else origin.data,
-        index=origin.index,
-    )

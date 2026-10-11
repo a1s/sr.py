@@ -1,0 +1,62 @@
+// probes/subreport/pages.kdl -- a subreport with pages of its own.
+//
+// Not inline: each invocation builds whole pages, with the child's own
+// header and footer, and they go into the printout after the host band.
+//
+// The reference: the host's page ends, its footer built in the host's context
+// and counting the band, and the child's pages follow, numbered on from the
+// host's.  The host resumes on a fresh page, whose header is built before
+// the next record is read.  The third record's sequence is empty and the
+// child still runs: its title and summary take a page of their own.
+//
+// doc/layout.md#pages.
+
+report name="subreport/pages" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "name" type="string"
+    member "items" type="list"
+  }
+  variable "hostpage" expr="1" calc="count" reset="page"
+  variable "hostall" expr="1" calc="count" reset="report"
+  layout width=200 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    embedded "items" {
+      parameter "owner" type="string"
+      records {
+        member "n" type="int"
+      }
+      variable "childpage" expr="n" calc="sum" reset="page"
+      header height=8 {
+        field expr="'child header %s pn %d pc %d cp %s' % (owner, PAGE_NUMBER, PAGE_COUNT, childpage)" left=0 top=0 height=6
+      }
+      footer height=8 {
+        field expr="'child footer %s pn %d pc %d cp %s' % (owner, PAGE_NUMBER, PAGE_COUNT, childpage)" left=0 top=0 height=6
+      }
+      title height=8 {
+        field expr="'child title vp %s pn %d' % (VERTICAL_POSITION, PAGE_NUMBER)" left=0 top=0 height=6
+      }
+      detail height=8 {
+        field expr="'item %d pn %d pc %d' % (n, PAGE_NUMBER, PAGE_COUNT)" left=10 top=0 height=6
+      }
+      summary height=8 {
+        field expr="'child summary pn %d' % PAGE_NUMBER" left=0 top=0 height=6
+      }
+    }
+    header height=8 {
+      field expr="'header pn %d pc %d hp %s this %s' % (PAGE_NUMBER, PAGE_COUNT, hostpage, THIS.name if THIS else None)" left=0 top=0 height=6
+    }
+    footer height=8 {
+      field expr="'footer pn %d pc %d hp %s ha %s this %s' % (PAGE_NUMBER, PAGE_COUNT, hostpage, hostall, THIS.name if THIS else None)" left=0 top=0 height=6
+    }
+    detail height=8 {
+      field expr="'host %s pn %d pc %d hp %s' % (name, PAGE_NUMBER, PAGE_COUNT, hostpage)" left=0 top=0 height=6
+      subreport embedded="items" seq=1 data="items" {
+        arg "owner" value="name"
+      }
+    }
+    summary height=8 {
+      field expr="'host summary pn %d hp %s' % (PAGE_NUMBER, hostpage)" left=0 top=0 height=6
+    }
+  }
+}

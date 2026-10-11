@@ -121,7 +121,7 @@ class Pictures:
         if image.data is not None:
             content = self.blobs[image.data]
             header = self.header(content, image, "data", record)
-            return self.made(header, data=self.table.named(image.data))
+            return self.made(header, data=self.table.named(image.data, content))
         assert image.content is not None
         header = self.header(image.content, image, None, record)
         data = self.table.generated(CONTENT_NAME, image.content)

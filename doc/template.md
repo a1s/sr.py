@@ -1592,11 +1592,17 @@ or on a `summary` without `swapfooter`, and nowhere else -- see
 [where a subreport's bands go](layout.md#where-a-subreports-bands-go).
 Any of those three carries one wherever it sits, a `columns` block included.
 
-A host band suppressed by `printwhen` runs none of its subreports.
+A host band suppressed by `printwhen` runs none of its subreports, and
+a subreport whose `when` is false does not run. `data` yields the records
+it runs over, which its own [`records`](#records) coerces; `None` is an
+empty sequence, over which the subreport still runs and prints its title
+and summary -- see [names and values](layout.md#names-and-values).
 
 `template=` is read when this template is read, so one `sr validate` checks the
 whole tree and one load error names whichever file it came from. A template that
 reaches itself, directly or through another, is refused at load.
+Its fonts are resolved, and its `data` nodes produced, when it
+first runs; see [subreports](layout.md#subreports).
 
 Children: `arg*`.
 
@@ -1610,8 +1616,10 @@ Supplies a value for a subreport `parameter`.
 | `value` | expression | required |
 
 `value` is an expression, not text, so it is not parsed per the parameter's `type`.
-Its result must already match that type. It is evaluated in the **host's**
-context, at the point the subreport runs.
+Its result must already match that type, exactly: an `int` is not a `decimal`,
+and a tuple is not a `list`; the whole rule is in
+[names and values](layout.md#names-and-values). It is evaluated
+in the **host's** context, at the point the subreport runs.
 
 A subreport has no command line, so a parameter of the layout it names that has
 neither an `arg` here nor a `default` or `defaultexpr` of its own is a load-time
@@ -1672,7 +1680,9 @@ A subreport given by `template=` is an ordinary `report` document and carries
 its own `records`, `font` and `data` definitions, `basedir`, and page geometry.
 It validates on its own, so a layout meant only ever to be run as a subreport
 still passes `sr validate` -- its parameters are simply ones a caller has to
-supply.
+supply. Its `data` nodes are produced, and its fonts resolved, when it first
+runs, against the parameters that invocation was given, and are kept for the
+rest of the build.
 
 ## Font resolution
 

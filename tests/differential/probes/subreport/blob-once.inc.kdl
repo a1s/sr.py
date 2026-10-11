@@ -1,0 +1,15 @@
+// probes/subreport/blob-once.inc.kdl -- the child blob-once.kdl runs,
+// with a blob of its parameter.
+
+report name="subreport/blob-once, the child" {
+  parameter "p" type="string"
+  data "blob" expr="'blob made for ' + p"
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    detail height=6 {
+      field data="blob" left=0 top=0 height=6
+      field expr="'p is ' + p" left=100 top=0 height=6
+    }
+  }
+}

@@ -1,0 +1,24 @@
+// probes/subreport/paper.inc.kdl -- the child paper.kdl runs, on a page of its own geometry.
+
+report name="subreport/paper, the child" {
+  parameter "tag" type="string"
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=120 height=60 leftmargin=0 rightmargin=10 topmargin=8 bottommargin=4 {
+    style font="body" color="black"
+    title swapheader=#true height=6 {
+      field expr="'swapped title %s pn %d' % (tag, PAGE_NUMBER)" left=0 top=0 height=6
+    }
+    header height=6 {
+      field expr="'child header pn %d' % PAGE_NUMBER" left=0 top=0 height=6
+    }
+    footer height=6 {
+      field expr="'child footer pn %d' % PAGE_NUMBER" left=0 top=0 height=6
+    }
+    detail height=6 {
+      field expr="'%s %d pn %d vs %s' % (tag, ITEM_NUMBER, PAGE_NUMBER, VERTICAL_SPACE)" left=0 top=0 height=6
+    }
+    summary swapfooter=#true height=6 {
+      field expr="'swapped summary pn %d' % PAGE_NUMBER" left=0 top=0 height=6
+    }
+  }
+}

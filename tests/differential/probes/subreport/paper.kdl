@@ -1,0 +1,24 @@
+// probes/subreport/paper.kdl -- a template's own page geometry.
+//
+// paper.inc.kdl paginates itself on a page of its own size and margins,
+// with a swapped title and a swapped summary.
+//
+// The reference writes the child's pages with the overrides of
+// doc/printout.md#page-lines, each that differs from the document's,
+// its left margin of 0 among them, and lays them out in that geometry,
+// the swapped bands included.  The host's pages carry none.
+//
+// doc/layout.md#pages.
+
+report name="subreport/paper" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=100 height=50 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    detail height=6 {
+      field expr="'host %d pn %d' % (ITEM_NUMBER, PAGE_NUMBER)" left=0 top=0 height=6
+      subreport template="paper.inc.kdl" seq=1 data="[{}] * (ITEM_NUMBER * 4)" {
+        arg "tag" value="'run %d' % ITEM_NUMBER"
+      }
+    }
+  }
+}

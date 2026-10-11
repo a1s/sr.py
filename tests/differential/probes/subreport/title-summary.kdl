@@ -1,0 +1,53 @@
+// probes/subreport/title-summary.kdl -- subreports on the report's title and summary.
+//
+// An inline subreport before the title and one with pages of its own after it,
+// and one with pages of its own before the summary and an inline one after it.
+//
+// The reference: the inline ones print in the page frame beside the band.
+// The paginating ones each end the host's page, whether or not it was full,
+// and the host resumes on a fresh one: the rows begin on page 3 and the summary
+// on page 5.  An embedded layout run that way has no header or footer, since it
+// defines none.
+//
+// doc/layout.md#pages.
+
+report name="subreport/title-summary" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  variable "rows" expr="1" calc="count" reset="report"
+  layout width=100 height=50 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    embedded "sheet" {
+      parameter "tag" type="string"
+      detail height=6 {
+        field expr="'%s pn %d vp %s' % (tag, PAGE_NUMBER, VERTICAL_POSITION)" left=0 top=0 height=6
+      }
+    }
+    header height=6 {
+      field expr="'header pn %d rows %s' % (PAGE_NUMBER, rows)" left=0 top=0 height=6
+    }
+    footer height=6 {
+      field expr="'footer pn %d rows %s' % (PAGE_NUMBER, rows)" left=0 top=0 height=6
+    }
+    title height=6 {
+      field expr="'title vp %s' % VERTICAL_POSITION" left=0 top=0 height=6
+      subreport embedded="sheet" seq=-1 data="[{}]" inline=#true {
+        arg "tag" value="'inline before title'"
+      }
+      subreport embedded="sheet" seq=1 data="[{}]" {
+        arg "tag" value="'pages after title'"
+      }
+    }
+    detail height=6 {
+      field expr="'row %d pn %d' % (ITEM_NUMBER, PAGE_NUMBER)" left=0 top=0 height=6
+    }
+    summary height=6 {
+      field expr="'summary pn %d rows %s' % (PAGE_NUMBER, rows)" left=0 top=0 height=6
+      subreport embedded="sheet" seq=-1 data="[{}]" {
+        arg "tag" value="'pages before summary'"
+      }
+      subreport embedded="sheet" seq=1 data="[{}]" inline=#true {
+        arg "tag" value="'inline after summary'"
+      }
+    }
+  }
+}

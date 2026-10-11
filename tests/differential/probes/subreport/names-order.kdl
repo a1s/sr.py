@@ -1,0 +1,30 @@
+// probes/subreport/names-order.kdl -- who keeps a name two templates use.
+//
+// The host and its subreport each declare a font `x`, differently,
+// and the subreport declares a `data` node `pic.png` while the host
+// draws an image file of that base name.  The subreport's are used first,
+// on the detail band, and the host's last, on the summary.
+//
+// The reference: the font used first keeps `x`, whichever template
+// declares it, and the host's becomes `x-2`.  The child's `pic.png`
+// keeps its name and the host's image becomes `pic.png-2`.
+//
+// doc/printout.md#fonts and doc/printout.md#data.
+
+report name="subreport/names-order" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  font "x" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    detail height=8 {
+      field text="host" left=0 top=0 height=6
+      subreport template="names-order.inc.kdl" seq=1 data="[{}]" inline=#true
+    }
+    summary height=8 {
+      field text="summary" left=0 top=0 height=6 {
+        style font="x"
+      }
+      image file="../data/one/pic.png" left=100 top=0 width=4 height=4
+    }
+  }
+}

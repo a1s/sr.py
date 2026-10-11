@@ -1,0 +1,2 @@
+{"name": "a", "kids": [{"name": "x", "toys": [{"t": 1}]}, {"name": "y", "toys": [{"t": 2}, {"t": 3}, {"t": 4}]}]}
+{"name": "b", "kids": [{"name": "z", "toys": []}]}

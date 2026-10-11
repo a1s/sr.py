@@ -20,27 +20,18 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, TextIO
+from typing import TextIO
 
 from sr.data import read_records
-from sr.errors import (
-    BadValue,
-    BuildError,
-    BuildWarning,
-    Diagnostic,
-    ExpressionError,
-    FontError,
-    Location,
-)
-from sr.expr import Time, evaluate
+from sr.errors import BuildError, BuildWarning, Diagnostic
+from sr.expr import Time
 from sr.expr.builtins import parse_time
 from sr.expr.golayout import RFC3339
-from sr.fonts.resolve import Resolution, Resolver
 from sr.layout.loop import Build, Builder
 from sr.printout.model import Printout
+from sr.settle import blob_bytes, parameter_values, resolve_fonts
 from sr.template import load as load_template
 from sr.template.load import Options as LoadOptions
-from sr.template.model import Blob, Report, parse_text
 
 __all__ = ["Options", "Result", "build", "build_time_of"]
 
@@ -123,9 +114,7 @@ def build(
     built = build_time_of(asked.build_time)
     parameters = parameter_values(report, asked.params, built)
     blobs = blob_bytes(report, parameters)
-    fonts, diagnostics = resolve_fonts(
-        report, blobs, strict=asked.strict_fonts, verbose=asked.verbose
-    )
+    (fonts, resolver) = resolve_fonts(report, blobs, strict=asked.strict_fonts)
     records = read_records(data, report.records) if data is not None else ()
     # A font's own warnings stay on its resolution: the builder carries
     # them only for the fonts the document turns out to use.
@@ -141,10 +130,13 @@ def build(
             strict_fonts=asked.strict_fonts,
             allow_overflow=asked.allow_overflow,
             warnings=warnings,
+            resolver=resolver,
         )
     )
     printout = builder.run()
     notes = tuple(one for one in loaded.warnings if one.kind is None)
+    # Read after the build, since a subreport resolves its fonts when it runs.
+    diagnostics = resolver.diagnostics if asked.verbose else ()
     return Result(printout, printout.warnings, notes, diagnostics)
 
 
@@ -200,141 +192,3 @@ def carried(diagnostic: Diagnostic) -> BuildWarning:
         node=str(where.path) if where.path else None,
         prop=where.prop,
     )
-
-
-def parameter_values(
-    report: Report, params: dict[str, str], built: Time | None = None
-) -> dict[str, Any]:
-    """Return every parameter's value, refusing one that has none.
-
-    A ``--param`` wins over a ``default``, and a ``default`` over
-    a ``defaultexpr``.  A parameter with none of the three is an
-    error naming it: the report would otherwise be built over a value
-    nothing supplied, and nothing in the document would say so.
-
-    A ``defaultexpr`` is evaluated against the parameters settled
-    before it and against ``BUILD_TIME``, which is the one predefined
-    name that has a value this early: the data has not been read,
-    so every other one describes a report that has not started.
-
-    Args:
-        report: The template.
-        params: The ``--param`` values, by name.
-        built: The run's ``BUILD_TIME``.
-
-    Raises:
-        BuildError: A name is not declared, or a value is missing
-            or will not parse.
-
-    """
-    declared = {one.name: one for one in report.parameters}
-    for name in params:
-        if name not in declared:
-            known = ", ".join(sorted(declared)) or "none"
-            raise BuildError(
-                f"--param {name}: the template declares no such parameter; "
-                f"it declares: {known}"
-            )
-    found: dict[str, Any] = {}
-    constants: dict[str, Any] = {"BUILD_TIME": built} if built is not None else {}
-    for one in report.parameters:
-        where = Location(file=report.file, path=one.path)
-        if one.name in params:
-            try:
-                found[one.name] = parse_text(one.kind, params[one.name], one.format)
-            except BadValue as refused:
-                raise BuildError(f"--param {one.name}: {refused}") from None
-        elif one.value is not None:
-            found[one.name] = one.value
-        elif one.defaultexpr is not None:
-            try:
-                found[one.name] = one.defaultexpr.evaluate({**constants, **found})
-            except ExpressionError as refused:
-                raise BuildError(f"parameter {one.name!r}: {refused}", where) from None
-        else:
-            raise BuildError(
-                f"parameter {one.name!r} has no value, no default and no defaultexpr",
-                where,
-            )
-    return found
-
-
-def blob_bytes(report: Report, names: dict[str, Any]) -> dict[str, bytes]:
-    """Return the bytes of every `data` node.
-
-    A blob written as ``content`` was decoded when the template loaded;
-    one written as ``expr`` is produced now, which is why this needs
-    the parameters.
-
-    Args:
-        report: The template.
-        names: The parameter values its expressions may read.
-
-    Raises:
-        BuildError: A blob's expression would not evaluate.
-
-    """
-    found: dict[str, bytes] = {}
-    for blob in report.data:
-        if blob.content is not None:
-            found[blob.name] = blob.content
-        elif blob.expr is not None:
-            found[blob.name] = as_bytes(blob, names, report.file)
-    return found
-
-
-def as_bytes(blob: Blob, names: dict[str, Any], file: str) -> bytes:
-    """Return the bytes an ``expr`` blob evaluates to.
-
-    Args:
-        blob: The node.
-        names: The values its expression may read.
-        file: The template, for the diagnostic.
-
-    Raises:
-        BuildError: The expression would not evaluate.
-
-    """
-    assert blob.expr is not None
-    try:
-        value = evaluate(blob.expr.source, names)
-    except ExpressionError as refused:
-        raise BuildError(
-            f"data {blob.name!r}: {refused}",
-            Location(file=file, path=blob.path, prop="expr"),
-        ) from None
-    if isinstance(value, bytes):
-        return value
-    return str(value).encode()
-
-
-def resolve_fonts(
-    report: Report,
-    blobs: dict[str, bytes],
-    *,
-    strict: bool = False,
-    verbose: bool = False,
-) -> tuple[tuple[Resolution, ...], tuple[str, ...]]:
-    """Resolve every `font` node the template declares.
-
-    Args:
-        report: The template.
-        blobs: Its `data` nodes' contents, for a `font data=`.
-        strict: Whether ``--strict-fonts`` is set.
-        verbose: Whether to keep what enumerating the host had to say.
-
-    Raises:
-        BuildError: A font did not resolve.
-
-    """
-    resolver = Resolver(basedir=report.basedir, blobs=blobs, strict=strict)
-    resolved = []
-    for font in report.fonts:
-        try:
-            resolved.append(resolver.resolve(font))
-        except FontError as beaten:
-            raise BuildError(
-                f"font {font.name!r}: {beaten}",
-                Location(file=report.file, path=font.path),
-            ) from None
-    return tuple(resolved), resolver.diagnostics if verbose else ()

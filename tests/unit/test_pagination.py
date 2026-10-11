@@ -1219,7 +1219,7 @@ def test_a_swapped_band_taller_than_the_page_overflows(
 def test_a_band_in_a_column_brings_its_parents_fill_down() -> None:
     page = Frame(top=0.0, bottom=100.0, fill=0.0)
     column = Frame(count=2, parent=page, top=0.0, bottom=100.0, fill=0.0)
-    page.child = column
+    page.graft(column)
     column.advance(40.0)
     assert (page.fill, column.fill) == (40.0, 40.0)
     page.advance(50.0)

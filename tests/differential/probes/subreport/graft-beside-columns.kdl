@@ -1,0 +1,62 @@
+// probes/subreport/graft-beside-columns.kdl -- the host's columns and the child's at once.
+//
+// group-title.kdl with a child that opens three columns of its own,
+// so the page frame holds two blocks of columns: the group's two
+// and the child's three.
+//
+// The reference places the child's block as though the group's were not there.
+// On the second page the child's column header is drawn over the group's, and
+// after the invocation the group's rows start at the top of the page, over the
+// child's.  doc/layout.md#pages gives the grafted frame the room a band of the
+// host's frame has, below the group's column header and above its footer, and
+// the group's rows continue below the invocation: here below the child's first
+// column's footer, so on the next page.
+//
+// Registered as the divergence `graft-beside-columns`.
+
+report name="subreport/graft-beside-columns" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "g" type="string"
+    member "n" type="int"
+  }
+  layout width=100 height=70 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    embedded "notes" {
+      parameter "tag" type="string"
+      title height=6 {
+        field expr="'%s title cn %d vp %s vs %s' % (tag, COLUMN_NUMBER, VERTICAL_POSITION, VERTICAL_SPACE)" left=0 top=0 height=6
+      }
+      columns count=3 gap=5 {
+        header height=6 {
+          field expr="'%s ch cn %d' % (tag, COLUMN_NUMBER)" left=0 top=0 height=6
+        }
+        footer height=6 {
+          field expr="'%s cf cn %d' % (tag, COLUMN_NUMBER)" left=0 top=0 height=6
+        }
+      }
+      detail height=6 {
+        field expr="'%s %d cn %d vp %s' % (tag, ITEM_NUMBER, COLUMN_NUMBER, VERTICAL_POSITION)" left=0 top=0 height=6
+      }
+    }
+    group "grp" expr="g" {
+      columns count=2 gap=10 {
+        header height=6 {
+          field expr="'colhead cn %d' % COLUMN_NUMBER" left=0 top=0 height=6
+        }
+        footer height=6 {
+          field expr="'colfoot cn %d' % COLUMN_NUMBER" left=0 top=0 height=6
+        }
+      }
+      title height=6 {
+        field expr="'group %s cn %d vp %s vs %s' % (g, COLUMN_NUMBER, VERTICAL_POSITION, VERTICAL_SPACE)" left=0 top=0 height=6
+        subreport embedded="notes" seq=1 data="[{}] * 20" inline=#true {
+          arg "tag" value="g"
+        }
+      }
+      detail height=6 {
+        field expr="'row %d cn %d vp %s' % (n, COLUMN_NUMBER, VERTICAL_POSITION)" left=0 top=0 height=6
+      }
+    }
+  }
+}

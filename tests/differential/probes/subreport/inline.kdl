@@ -1,0 +1,54 @@
+// probes/subreport/inline.kdl -- an inline subreport's own context.
+//
+// One embedded layout run twice per record: once with seq=1 after the host
+// band, once with seq=-1 before it.  Each invocation has its own title,
+// detail and summary, its own records and its own counters.
+//
+// The reference: the negative-seq invocation's bands come first and
+// the host band follows them; the positive-seq one's follow the host band.
+// REPORT_COUNT, PAGE_COUNT and ITEM_NUMBER count the child's own records
+// and start again with each invocation, DATA_COUNT is the length of the
+// sequence it was given, and PAGE_NUMBER and COLUMN_NUMBER are the host's.
+// VERTICAL_POSITION is measured in the host's frame.  The second record's `n`
+// is the string "3" in the data, and the child's `records` makes it an int.
+//
+// doc/layout.md#subreports and doc/expressions.md#inside-a-subreport.
+
+report name="subreport/inline" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "name" type="string"
+    member "items" type="list"
+  }
+  layout width=200 height=200 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    embedded "items" {
+      parameter "owner" type="string"
+      records {
+        member "n" type="int"
+      }
+      variable "total" expr="n" calc="sum" reset="report"
+      title height=8 {
+        field expr="'title %s vp %s pn %d pc %d rc %d in %d dc %d cn %d' % (owner, VERTICAL_POSITION, PAGE_NUMBER, PAGE_COUNT, REPORT_COUNT, ITEM_NUMBER, DATA_COUNT, COLUMN_NUMBER)" left=10 top=0 height=6
+      }
+      detail height=8 {
+        field expr="'item %d vp %s pn %d pc %d rc %d in %d dc %d total %s' % (n, VERTICAL_POSITION, PAGE_NUMBER, PAGE_COUNT, REPORT_COUNT, ITEM_NUMBER, DATA_COUNT, total)" left=10 top=0 height=6
+      }
+      summary height=8 {
+        field expr="'summary vp %s pc %d rc %d in %d total %s' % (VERTICAL_POSITION, PAGE_COUNT, REPORT_COUNT, ITEM_NUMBER, total)" left=10 top=0 height=6
+      }
+    }
+    detail height=10 {
+      field expr="'host %s vp %s pc %d rc %d in %d' % (name, VERTICAL_POSITION, PAGE_COUNT, REPORT_COUNT, ITEM_NUMBER)" left=0 top=0 height=6
+      subreport embedded="items" seq=1 data="items" inline=#true {
+        arg "owner" value="name + ' after'"
+      }
+      subreport embedded="items" seq=-1 data="items[:1]" inline=#true {
+        arg "owner" value="name + ' before'"
+      }
+    }
+    summary height=8 {
+      field expr="'host summary vp %s rc %d' % (VERTICAL_POSITION, REPORT_COUNT)" left=0 top=0 height=6
+    }
+  }
+}

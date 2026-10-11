@@ -8,7 +8,15 @@ a group's title and summary belong to the frame that *contains* the
 group's columns, which is what lets a group title span every column.
 
 The nesting of a template is linear, one group per level, so the tree
-is a chain: every frame has at most one child.
+of one template is a chain: every frame has at most one child.
+An inline [subreport](doc/layout.md#pages) can open a `columns` block
+of its own, which is **grafted** onto the frame its host band belongs to
+for the length of the invocation, so that frame can briefly hold two:
+the host's own columns, where the band is the title or the summary of
+a level that opened some, and the graft.  The walks below are depth first,
+and a graft comes after the host's own.  A grafted frame begins where its
+parent was filled when the invocation began, which its ``begins`` records,
+for the rest of that page, and goes back to its parent's top on the next.
 
 Two things are separate here, and the separation is the point.
 
@@ -111,7 +119,8 @@ class Frame:
             inside it walks after its own.
         path: The node that made the frame, for a diagnostic.
         parent: The frame this one divides.
-        child: The frame dividing this one, where there is one.
+        children: The frames dividing this one: one at most,
+            and a second while an inline subreport's columns are grafted.
         column: The current column, from 0.
         x: The left edge of the current column.
         width: The width of one column.
@@ -130,6 +139,13 @@ class Frame:
             opens draws them again, and a band across them goes below.
         lead: How much lower than on a later page the content of this
             page begins: the height of a swapped title, on the first.
+        grafted: Whether an inline subreport opened it,
+            onto its host's frame.
+        begins: For a grafted frame, where its columns' headers go
+            for the rest of the page: where the parent was filled
+            when the invocation began.
+        drawn: How far down the header of its current column
+            was drawn, or its top edge where it drew none.
 
     """
 
@@ -141,7 +157,7 @@ class Frame:
     styles: tuple[Style, ...] = ()
     path: NodePath = field(default_factory=NodePath)
     parent: Frame | None = None
-    child: Frame | None = None
+    children: list[Frame] = field(default_factory=list)
     column: int = 0
     x: float = 0.0
     width: float = 0.0
@@ -155,6 +171,9 @@ class Frame:
     reserved_footer: float = 0.0
     start: float = 0.0
     lead: float = 0.0
+    grafted: bool = False
+    begins: float | None = None
+    drawn: float = 0.0
 
     # -- the tree ---------------------------------------------------------
 
@@ -166,11 +185,28 @@ class Frame:
             up = up.parent
 
     def descendants(self) -> Iterator[Frame]:
-        """Yield every frame below this one, nearest first."""
-        down = self.child
-        while down is not None:
-            yield down
-            down = down.child
+        """Yield every frame below this one, depth first."""
+        for child in self.children:
+            yield child
+            yield from child.descendants()
+
+    def graft(self, child: Frame) -> None:
+        """Put a frame under this one, after any it has.
+
+        Args:
+            child: The frame, whose ``parent`` is this one.
+
+        """
+        self.children.append(child)
+
+    def prune(self, child: Frame) -> None:
+        """Take a grafted frame out from under this one.
+
+        Args:
+            child: The frame.
+
+        """
+        self.children.remove(child)
 
     @property
     def columned(self) -> bool:
@@ -221,12 +257,12 @@ class Frame:
         The frame's ``bottom``, or the innermost frame's inside it:
         the footers of the columns inside it are drawn when their
         columns end, below everything placed across them.
+        Each frame reserves its footer inside its parent's,
+        so the innermost bottom is the highest, and
+        where a frame holds two the higher of theirs.
 
         """
-        innermost = self
-        for down in self.descendants():
-            innermost = down
-        return innermost.bottom
+        return min([self.bottom, *(down.bottom for down in self.descendants())])
 
     @property
     def height(self) -> float:

@@ -1,0 +1,61 @@
+// probes/subreport/nested.kdl -- subreports inside subreports.
+//
+// Each host record's kids are an inline subreport, each kid's toys
+// an inline subreport of that one, and a kid with more than two toys
+// also runs a subreport with pages of its own.
+//
+// The reference: an eject in the innermost is an eject of all three,
+// each resetting its own page scope; the paginating one ends the page
+// all three are printing on, and the host resumes after it.
+//
+// doc/layout.md#pages.
+
+report name="subreport/nested" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "name" type="string"
+    member "kids" type="list"
+  }
+  variable "hostpage" expr="1" calc="count" reset="page"
+  layout width=100 height=50 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    embedded "kid" {
+      parameter "parent" type="string"
+      records {
+        member "name" type="string"
+        member "toys" type="list"
+      }
+      variable "kidpage" expr="1" calc="count" reset="page"
+      embedded "toy" {
+        parameter "owner" type="string"
+        detail height=6 {
+          field expr="'toy %s of %s pn %d' % (THIS['t'], owner, PAGE_NUMBER)" left=20 top=0 height=6
+        }
+      }
+      embedded "sheet" {
+        parameter "owner" type="string"
+        detail height=6 {
+          field expr="'sheet %s pn %d' % (owner, PAGE_NUMBER)" left=0 top=0 height=6
+        }
+      }
+      detail height=6 {
+        field expr="'kid %s of %s pn %d kp %d' % (name, parent, PAGE_NUMBER, kidpage)" left=10 top=0 height=6
+        subreport embedded="toy" seq=1 data="toys" inline=#true {
+          arg "owner" value="name"
+        }
+        subreport embedded="sheet" seq=2 data="[{}]" when="len(toys) > 2" {
+          arg "owner" value="name"
+        }
+      }
+    }
+    footer height=6 {
+      field expr="'footer pn %d hp %d' % (PAGE_NUMBER, hostpage)" left=0 top=0 height=6
+    }
+    detail height=6 {
+      field expr="'host %s pn %d hp %d' % (name, PAGE_NUMBER, hostpage)" left=0 top=0 height=6
+      subreport embedded="kid" seq=1 data="kids" inline=#true {
+        arg "parent" value="name"
+      }
+    }
+  }
+}

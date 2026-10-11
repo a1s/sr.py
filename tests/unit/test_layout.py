@@ -872,8 +872,9 @@ def test_a_font_the_table_leaves_out_takes_its_warnings_with_it(
 ) -> None:
     """Every font is resolved and warned about; only a used one is reported."""
     import sr.api
+    import sr.settle
 
-    real = sr.api.resolve_fonts
+    real = sr.settle.resolve_fonts
 
     def warned(*args: Any, **kwargs: Any) -> Any:
         fonts, diagnostics = real(*args, **kwargs)

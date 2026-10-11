@@ -1,0 +1,39 @@
+// probes/subreport/parameters.kdl -- a subreport's parameters.
+//
+// Three parameters supplied by `arg`, one by its `default`, and two
+// by a `defaultexpr`, one of which reads a parameter an `arg` set.
+//
+// The reference: an `arg` reads the host's names, THIS among them,
+// and is taken as it is; a `default` is parsed per the type; a
+// `defaultexpr` reads BUILD_TIME and the parameters settled before it.
+//
+// doc/layout.md#names-and-values.
+
+report name="subreport/parameters" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "name" type="string"
+  }
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    embedded "child" {
+      parameter "given" type="string"
+      parameter "where" type="float"
+      parameter "plain" type="int" default="7"
+      parameter "computed" type="datetime" defaultexpr="BUILD_TIME"
+      parameter "derived" type="string" defaultexpr="given + '!'"
+      parameter "row" type="object"
+      detail height=6 {
+        field expr="'%s %s %d %s %s %s' % (given, where, plain, strftime(computed, '%Y-%m-%d'), derived, row.name)" left=0 top=0 height=6
+      }
+    }
+    detail height=10 {
+      field expr="'host %s' % name" left=0 top=0 height=6
+      subreport embedded="child" seq=1 data="[{}]" inline=#true {
+        arg "given" value="name + ' ' + str(ITEM_NUMBER)"
+        arg "where" value="float(ITEM_NUMBER) / 4"
+        arg "row" value="THIS"
+      }
+    }
+  }
+}

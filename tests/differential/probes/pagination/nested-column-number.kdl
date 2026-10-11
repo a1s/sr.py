@@ -1,0 +1,30 @@
+// probes/pagination/nested-column-number.kdl -- COLUMN_NUMBER in columns inside columns.
+//
+// The layout opens two columns and the group two more inside each of them,
+// so the page has four.  doc/expressions.md said only "current column
+// number", which for a block inside a block could be either block's.
+//
+// The reference counts every column on the page from the left: the inner
+// block's columns read 1 and 2 in the outer block's first column, and 3
+// and 4 in its second.  doc/expressions.md#predefined-variables now says so.
+
+report name="pagination/nested-column-number" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "g" type="string"
+  }
+  layout width=200 height=40 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    columns count=2 gap=10
+    group "grp" expr="g" {
+      columns count=2 gap=4 {
+        header height=6 {
+          field expr="'ch cn %d' % COLUMN_NUMBER" left=0 top=0 height=6
+        }
+      }
+      detail height=6 {
+        field expr="'%s %d cn %d' % (g, ITEM_NUMBER, COLUMN_NUMBER)" left=0 top=0 height=6
+      }
+    }
+  }
+}

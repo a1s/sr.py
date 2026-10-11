@@ -25,6 +25,16 @@ A JSON ``null`` is ``None`` in a `nullable` member and an error
 in any other, naming the member and the record index, which is
 the one coercion rule doc/template.md#records writes out.
 
+The same coercion turns the elements of
+a [subreport](doc/layout.md#names-and-values)'s data into its records,
+and those can arrive typed rather than as JSON gave them, since the data
+is an expression: a decimal the host computed, a time, a list built by
+a comprehension.  A value is written as text the way ``str`` writes it
+and read by the declared type, as JSON's scalars are, with three exceptions
+that keep a value as it is: a time in a `date` or `datetime` member, which
+a `date` takes at the start of its day; a record or a dict in an `object`
+member; and a list or a tuple in a `list` member.
+
 """
 
 from __future__ import annotations
@@ -35,10 +45,16 @@ from pathlib import Path
 from typing import Any, TextIO
 
 from sr.errors import BadValue, BuildError, Location
+from sr.expr.golayout import RFC3339
 from sr.expr.values import (
+    Decimal,
+    FrozenDict,
+    FrozenList,
     Record,
+    Time,
     go_shortest,
     json_without_surrogates,
+    type_name,
     without_surrogates,
 )
 from sr.template.model import Member, Records, freeze, parse_text
@@ -275,24 +291,45 @@ def coerce(value: Any, member: Member) -> Any:
         if member.nullable:
             return None
         raise BadValue("null in a member that is not nullable")
-    if member.kind in ("object", "list"):
-        wanted = dict if member.kind == "object" else list
-        if not isinstance(value, wanted):
-            article = "an object" if member.kind == "object" else "an array"
-            raise BadValue(f"want {article}, got {type(value).__name__}")
-        return freeze(value)
+    if member.kind == "object":
+        if isinstance(value, Record):
+            return value
+        if not isinstance(value, dict | FrozenDict):
+            raise BadValue(f"want an object, got {type_name(value)}")
+        return freeze(dict(value))
+    if member.kind == "list":
+        if isinstance(value, FrozenList):
+            return value
+        if not isinstance(value, list | tuple):
+            raise BadValue(f"want an array, got {type_name(value)}")
+        return FrozenList(freeze(item) for item in value)
+    if isinstance(value, Time) and member.kind in ("date", "datetime"):
+        return value if member.kind == "datetime" else start_of_day(value)
     return parse_text(member.kind, as_text(value), member.format)
 
 
+def start_of_day(moment: Time) -> Time:
+    """Return the first instant of a time's day, where it is read.
+
+    Args:
+        moment: The time.
+
+    """
+    midnight = moment.moment.replace(hour=0, minute=0, second=0, microsecond=0)
+    return Time.from_datetime(midnight, 0)
+
+
 def as_text(value: Any) -> str:
-    """Return a JSON scalar as the text that spells it.
+    """Return a scalar as the text that spells it.
 
     A string is itself.  Everything else is written the way JSON writes
     it, so that one reader per declared type covers both the data that
-    quotes its numbers and the data that does not.
+    quotes its numbers and the data that does not.  A decimal and a time,
+    which reach here only from a subreport's data, are written the way
+    ``str`` writes them, a time as RFC 3339.
 
     Args:
-        value: A JSON scalar.
+        value: A JSON scalar, or a decimal or a time.
 
     Raises:
         BadValue: The value is an object or an array, which no scalar
@@ -307,4 +344,8 @@ def as_text(value: Any) -> str:
         return str(value)
     if isinstance(value, float):
         return go_shortest(value)
-    raise BadValue(f"want a value, got {type(value).__name__}")
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, Time):
+        return value.format(RFC3339)
+    raise BadValue(f"want a value, got {type_name(value)}")

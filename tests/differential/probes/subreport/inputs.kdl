@@ -1,0 +1,37 @@
+// probes/subreport/inputs.kdl -- what a subreport's inputs read of the host.
+//
+// A subreport on each side of a detail band, whose `when`, `data` and `arg`
+// read where the host is.  The second record's band splits across a page.
+//
+// The reference: before the band, VERTICAL_POSITION is where the band would
+// begin.  After it, it is where the band was measured, even where its tail
+// went on to the next page, while PAGE_COUNT, REPORT_COUNT, PAGE_NUMBER
+// and the page-scoped total read the report as it stands, the band counted.
+//
+// doc/layout.md#names-and-values.
+
+report name="subreport/inputs" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "text" type="string"
+  }
+  variable "seen" expr="1" calc="count" reset="page"
+  layout width=120 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    embedded "child" {
+      parameter "a" type="string"
+      detail height=6 {
+        field expr="'%s / data %s' % (a, THIS['d'])" left=10 top=0 height=6
+      }
+    }
+    detail height=6 split=#true orphans=1 widows=1 {
+      field expr="'%d vp %s pc %d seen %d: %s' % (ITEM_NUMBER, VERTICAL_POSITION, PAGE_COUNT, seen, text)" left=0 top=0 width=50 stretch=#true
+      subreport embedded="child" seq=1 inline=#true when="VERTICAL_POSITION >= 0" data="[{'d': 'vp %s pc %d' % (VERTICAL_POSITION, PAGE_COUNT)}]" {
+        arg "a" value="'after: vp %s vs %s pc %d rc %d pn %d seen %d' % (VERTICAL_POSITION, VERTICAL_SPACE, PAGE_COUNT, REPORT_COUNT, PAGE_NUMBER, seen)"
+      }
+      subreport embedded="child" seq=-1 inline=#true data="[{'d': 'vp %s pc %d' % (VERTICAL_POSITION, PAGE_COUNT)}]" {
+        arg "a" value="'before: vp %s pc %d pn %d seen %d' % (VERTICAL_POSITION, PAGE_COUNT, PAGE_NUMBER, seen)"
+      }
+    }
+  }
+}
