@@ -241,8 +241,7 @@ that made it, not through the document.
 
 ### `fonts`
 
-One entry per distinct font used, sorted by `name`, and an empty array
-when none is.
+One entry per font used, sorted by `name`, and an empty array when none is.
 
 A font is **used** when the [style walk](layout.md#building-a-band) of an
 element the engine measured resolved to it. The element need not set text:
@@ -253,6 +252,19 @@ it was measured, while a font no walk reached -- one on a `style` whose
 nearer `style` shadowed -- is left out. Every declared font is still
 resolved when the template loads, so a font that cannot be found is refused
 whether or not it would have been listed.
+
+**Each `font` node is its own entry.** Two nodes that resolve to the same
+face, at the same size and with the same flags, write entries that differ
+only in `name`, and both are listed when both are used. A [text mark](#text)
+names the font its own element's style walk resolved to, never another
+that reads the same face, so every name in the printout is one the template
+gave to the text it marks. A `glyph` [warning](#header-line) counts fonts
+the same way, once per font and character, and the font it names always
+has an entry.
+
+This is the rule for the fonts of one template. A
+[subreport](layout.md#subreports) whose template declares
+fonts of its own shares the one table as layout.md describes.
 
 ```json
 {

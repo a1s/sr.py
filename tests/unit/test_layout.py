@@ -12,6 +12,7 @@ against a frame and the frame is what the layout builds.
 
 from __future__ import annotations
 
+import base64
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -824,6 +825,42 @@ def test_the_font_table_lists_the_fonts_a_walk_resolved_to(
     asked = Options(build_time="2026-08-04T09:12:44Z", strict_fonts=True)
     printout = build(template, rows, asked).printout
     assert sorted(one.name for one in printout.fonts) == ["big", "boxed"]
+
+
+@pytest.mark.parametrize("source", ["file", "data"])
+def test_two_fonts_that_resolve_alike_are_two_entries(
+    tmp_path: Path, source: str
+) -> None:
+    """Each mark names its own font, though the two read one face.
+
+    `two` is declared second and built first.  The reference writes one
+    entry, under the name of the font built first; see
+    `twin-fonts-merged` in divergences.toml.
+
+    """
+    face = f'file="{REGULAR}"'
+    nodes = ""
+    if source == "data":
+        packed = base64.b64encode(Path(REGULAR).read_bytes()).decode("ascii")
+        nodes = f'  data "face" encoding="base64" {{ content "{packed}"; }}\n'
+        face = 'data="face"'
+    nodes += f'  font "one" {face} size=10\n  font "two" {face} size=10\n'
+    printout = built(
+        tmp_path,
+        "    detail height=40 {\n"
+        '      field text="b" top=0 height=12 { style font="two"; }\n'
+        '      field text="a" top=20 height=12 { style font="one"; }\n'
+        "    }",
+        nodes=nodes,
+    )
+    one, two = printout.fonts
+    assert (one.name, two.name) == ("one", "two")
+    assert replace(one, name="two") == two
+    texts = [mark for mark in marks(printout) if isinstance(mark, Text)]
+    assert [(mark.font, mark.lines) for mark in texts] == [
+        ("two", ("b",)),
+        ("one", ("a",)),
+    ]
 
 
 def test_a_font_the_table_leaves_out_takes_its_warnings_with_it(

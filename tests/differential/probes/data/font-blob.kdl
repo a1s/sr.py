@@ -14,8 +14,8 @@
 //
 // The face is Go Regular cut down to `x`, `y` and its `.notdef`,
 // so that the recorded answer stays readable.  The two sizes keep
-// the two fonts apart; see the probe README for why two font nodes
-// the same in everything but their names are not used here.
+// the two fonts apart; two font nodes the same in everything but
+// their names are the question printout/twin-fonts asks.
 
 report name="data/font-blob" {
   font "small" data="one" size=10
