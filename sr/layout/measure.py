@@ -56,12 +56,23 @@ and its symbol's size at the declared module is its content height.
 What the symbol is finally drawn at waits for its box, since ``grow``
 expands it to what the box offers: doc/layout.md#a-barcode-in-its-box.
 
+An `image` is read here too, as far as its header: the natural size
+is its content, and with ``scale="grow"`` the natural height is
+its content height.  How it meets its box waits for the box,
+as a barcode's symbol does: doc/layout.md#an-image-in-its-box.
+Reading an embedded image is also what names its entry in the printout's
+`data` table, and so is the first use of a font read out of a `data` node,
+since doc/printout.md#data names an entry for the first element built
+that mentions it.  Those names, the warnings, and the fonts used are
+the only state measuring leaves behind.
+
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import Any
 
 from sr.barcode import Symbol, Unencodable, encode
@@ -75,11 +86,14 @@ from sr.errors import (
 from sr.expr import Namespace, apply_format
 from sr.expr.values import quote
 from sr.fonts.text import Metrics, missing_glyph, wrap
+from sr.layout.blobs import DataTable
 from sr.layout.context import Context, condition, evaluate, evaluate_at
 from sr.layout.defer import Deferral, scope_of, snapshot
 from sr.layout.frame import Window
+from sr.layout.images import Picture, Pictures
 from sr.printout.model import Barcode as BarcodeMark
-from sr.printout.model import Box, Line, Mark, Rectangle, Text
+from sr.printout.model import Box, Crop, Line, Mark, Rectangle, Text
+from sr.printout.model import Image as ImageMark
 from sr.printout.model import Xref as XrefMark
 from sr.printout.write import number
 from sr.template.model import (
@@ -91,16 +105,12 @@ from sr.template.model import (
     Style,
     Xref,
 )
+from sr.template.model import Image as ImageElement
 from sr.template.model import Line as LineElement
 from sr.template.model import Rectangle as RectangleElement
 from sr.units import fill_points, fits, round_points
 
 __all__ = ["Extent", "Measurement", "Measurer", "Styling", "resolve_span"]
-
-# The body elements this milestone draws,
-# and the milestone that brings each kind it does not.
-DRAWN = (Field, LineElement, RectangleElement, Barcode)
-ELEMENT_MILESTONE = {"Image": "M11"}
 
 # The colour a mark is drawn in when no `style` in the walk set one.
 # doc/template.md leaves a text mark's `color` required and a
@@ -219,6 +229,7 @@ class Placement:
         deferral: What a deferred element waits for its scope with.
         value: The string a `barcode` encodes.
         symbol: What it encodes to.
+        picture: What an `image` draws, sniffed and sized.
 
     """
 
@@ -241,6 +252,7 @@ class Placement:
     deferral: Deferral | None = None
     value: str = ""
     symbol: Symbol | None = None
+    picture: Picture | None = None
 
     @property
     def floating(self) -> bool:
@@ -342,9 +354,14 @@ class Measurer:
         fonts: The metrics of each `font` node, by name.
         blobs: The report's `data` nodes' contents, by name.
         file: The template, for a diagnostic.
+        pictures: What resolves an `image`, and names its `data` entry.
+        embedded: The `data` node each font read out of one was read from,
+            by font name.
         warnings: What the build has to say, in the order found.
         used: The fonts some measured element's style walk resolved to,
             which are the ones doc/printout.md#fonts lists.
+        font_data: The `data` entry name for each embedded font,
+            by font name.
 
     """
 
@@ -353,6 +370,8 @@ class Measurer:
         fonts: dict[str, Metrics],
         blobs: dict[str, str],
         file: str | None = None,
+        pictures: Pictures | None = None,
+        embedded: Mapping[str, str] | None = None,
     ) -> None:
         """Hold what every band in one report is measured against.
 
@@ -360,14 +379,22 @@ class Measurer:
             fonts: The metrics of each `font` node, by name.
             blobs: The contents of the report's `data` nodes, by name.
             file: The template, for a diagnostic.
+            pictures: What resolves the report's images;
+                one with no `data` nodes, resolving against
+                the working directory, where none is given.
+            embedded: The `data` node by font name
+                for each font read out of data elements.
 
         """
         self.fonts = fonts
         self.blobs = blobs
         self.file = file
+        self.pictures = pictures or Pictures(Path(), {}, DataTable({}), file)
+        self.embedded = dict(embedded or {})
         self.warnings: list[BuildWarning] = []
         self.reported: set[tuple[str, str]] = set()
         self.used: set[str] = set()
+        self.font_data: dict[str, str] = {}
 
     def prints(self, section: Section, frame: Window, context: Context) -> bool:
         """Report whether a band's ``printwhen`` lets it print.
@@ -607,14 +634,35 @@ class Measurer:
             return None
         style = self.styling(element.styles, names, context, outer)
         if style.font is not None:
-            self.used.add(style.font)
+            self.use(style.font)
         x, extent = resolve_span(element.box.across, width)
         placed = Placement(element, style, x, extent)
         if isinstance(element, Field):
             self.wrap_content(placed, context, names)
         elif isinstance(element, Barcode):
             self.encode_content(placed, context, names)
+        elif isinstance(element, ImageElement):
+            self.read_picture(placed, context)
         return placed
+
+    def use(self, font: str) -> None:
+        """Note that an element's style walk resolved to a font.
+
+        The first use of a font read out of a `data` node is
+        what names that node's entry in the printout's `data` table,
+        which is the node's own name unless an entry built earlier
+        holds the same bytes.
+
+        Args:
+            font: The name of the `font` node.
+
+        """
+        if font in self.used:
+            return
+        self.used.add(font)
+        data = self.embedded.get(font)
+        if data is not None:
+            self.font_data[font] = self.pictures.table.named(data)
 
     def xref(
         self,
@@ -981,6 +1029,28 @@ class Measurer:
                 Location(file=self.file, path=field.path, prop="format", record=record),
             ) from None
 
+    # -- images -----------------------------------------------------------
+
+    def read_picture(self, placed: Placement, context: Context) -> None:
+        """Resolve an `image`'s bytes, and size it.
+
+        Every image is read as far as its header, whatever its ``scale``,
+        and with ``grow`` its natural height is its content height.
+
+        Args:
+            placed: The element being placed.
+            context: The report as it stands, for a diagnostic.
+
+        Raises:
+            BuildError: The file will not read, or the bytes are not an image.
+
+        """
+        image = placed.element
+        assert isinstance(image, ImageElement)
+        placed.picture = self.pictures.picture(image, context.record_index)
+        if image.scale == "grow":
+            placed.content_height = float(placed.picture.height)
+
     # -- barcodes ---------------------------------------------------------
 
     def encode_content(
@@ -1293,6 +1363,9 @@ class Measurer:
             return self.text_mark(placed, element)
         if isinstance(element, Barcode):
             return self.barcode_mark(placed, element)
+        if isinstance(element, ImageElement):
+            assert placed.picture is not None
+            return image_mark(element, placed.picture, box)
         if isinstance(element, LineElement):
             return Line(
                 box,
@@ -1386,7 +1459,10 @@ class Measurer:
             raise Unsupported("a subreport arrives in M12", where)
 
     def refuse_unsupported_element(self, element: Element | Xref) -> None:
-        """Refuse an element of a kind a later milestone brings.
+        """Refuse an element that asks for work a later milestone brings.
+
+        Every body element is drawn; what is left is an xref
+        to an outline entry, which needs the outline.
 
         Args:
             element: The node.
@@ -1395,20 +1471,11 @@ class Measurer:
             Unsupported: It is one of them.
 
         """
-        where = Location(file=self.file, path=element.path)
-        if isinstance(element, Xref):
-            if element.kind == "outline":
-                raise Unsupported(
-                    "an xref to an outline entry needs the outline, which"
-                    " arrives in M13",
-                    Location(file=self.file, path=element.path, prop="type"),
-                )
-            return
-        if isinstance(element, DRAWN):
-            return
-        kind = type(element).__name__
-        milestone = ELEMENT_MILESTONE.get(kind, "a later milestone")
-        raise Unsupported(f"a {kind.lower()} element arrives in {milestone}", where)
+        if isinstance(element, Xref) and element.kind == "outline":
+            raise Unsupported(
+                "an xref to an outline entry needs the outline, which arrives in M13",
+                Location(file=self.file, path=element.path, prop="type"),
+            )
 
 
 def deferrals(
@@ -1483,12 +1550,14 @@ def drawn_whole(element: Element | Xref) -> bool:
     A clamp cannot cut such content, so it clamps the box the element
     declared and the box then grows to the content: doc/template.md,
     under maxwidth and maxheight.  A barcode's symbol is drawn whole,
-    and so is an image with ``scale="grow"``, which M11 adds here.
+    and so is an image with ``scale="grow"``.
 
     Args:
         element: The element.
 
     """
+    if isinstance(element, ImageElement):
+        return element.scale == "grow"
     return isinstance(element, Barcode)
 
 
@@ -1562,3 +1631,74 @@ def symbol_mark(
         symbol.stripes() if symbol.linear else (),
         () if symbol.linear else symbol.rows(),
     )
+
+
+def image_mark(image: ImageElement, picture: Picture, box: Box) -> ImageMark:
+    """Return an image's mark, fitted to its box and placed in it.
+
+    doc/layout.md#an-image-in-its-box.  ``scale`` decides the drawn size:
+    ``cut`` the natural size clipped to the box, ``fill`` the box or the
+    largest size of the image's proportions that fits in it, and ``grow``
+    the natural size, wherever it exceeds the box.  The drawn rectangle
+    is then placed in the box by ``halign`` and ``valign``, and where
+    ``grow`` made it larger than the box along an axis it starts at
+    the box's left or top edge: the box grew, right and down, to hold it.
+
+    A clipped image's retained region is the part the alignment leaves
+    inside the box, so the mark's ``crop`` starts that far into the image:
+    a right-aligned image wider than its box keeps its right side.
+
+    Args:
+        image: The node, for its scale, proportions and alignment.
+        picture: What it draws.
+        box: Its resolved box.
+
+    """
+    across = float(picture.width)
+    down = float(picture.height)
+    crop = None
+    if image.scale == "fill":
+        width, height = fitted(across, down, box, image.proportional)
+    elif image.scale == "cut":
+        width = min(across, box.width)
+        height = min(down, box.height)
+        if width < across or height < down:
+            crop = Crop(
+                round_points(HALIGN[image.halign] * (across - width)),
+                round_points(VALIGN[image.valign] * (down - height)),
+                width,
+                height,
+            )
+    else:
+        width, height = across, down
+    x = box.x
+    if width <= box.width:
+        x = round_points(box.x + HALIGN[image.halign] * (box.width - width))
+    y = box.y
+    if height <= box.height:
+        y = round_points(box.y + VALIGN[image.valign] * (box.height - height))
+    return ImageMark(Box(x, y, width, height), picture.data, picture.file, crop)
+
+
+def fitted(
+    across: float, down: float, box: Box, proportional: bool
+) -> tuple[float, float]:
+    """Return the size ``scale="fill"`` draws an image at.
+
+    Without ``proportional`` that is the box.  With it, it is the largest
+    size of the image's proportions that fits: the axis with the smaller
+    ratio of box to image takes the box's extent, and the other follows
+    from it, rounded as every computed extent is.
+
+    Args:
+        across: The natural width.
+        down: The natural height.
+        box: The box it is scaled into.
+        proportional: Whether the aspect ratio is kept.
+
+    """
+    if not proportional:
+        return box.width, box.height
+    if box.width * down <= box.height * across:
+        return box.width, round_points(down * box.width / across)
+    return round_points(across * box.height / down), box.height

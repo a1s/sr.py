@@ -64,7 +64,6 @@ __all__ = [
     "EVALTIME_SCOPES",
     "HALIGNS",
     "IMAGE_SCALES",
-    "IMAGE_TYPES",
     "LINEAR_BARCODES",
     "PAGE_SIZES",
     "RFC3339_DATE",
@@ -142,7 +141,6 @@ BARCODE_TYPES: Final = (
 )
 BARCODE_CHARSETS: Final = CHARSETS
 IMAGE_SCALES: Final = ("cut", "fill", "grow")
-IMAGE_TYPES: Final = ("png", "jpeg", "gif")
 XREF_TYPES: Final = ("outline", "url")
 DASHES: Final = ("solid", "dot", "dash", "dashdot")
 ENCODINGS: Final = ("base64",)
@@ -635,11 +633,17 @@ class Rectangle(Element):
 class Image(Element):
     """A bitmap.
 
+    A ``content`` child is base64, and is decoded at load as a ``data``
+    node's is, so that one that is not base64 is reported against the
+    node rather than halfway through a report.
+
     Attributes:
         file: A path relative to the report's ``basedir``.
         data: The name of a ``data`` node holding the bytes.
-        content: A ``content`` child, as the template wrote it.
-        kind: ``png``, ``jpeg`` or ``gif``; ``None`` means sniff it.
+        content: The bytes a ``content`` child spells, where it decoded.
+        has_content: Whether a ``content`` child was written at all,
+            which is what "exactly one source" is asked of, as on
+            :class:`Blob`.
         scale: One of :data:`IMAGE_SCALES`.
         proportional: Whether ``fill`` preserves the aspect ratio.
         embed: Whether the bytes travel in the printout.
@@ -648,8 +652,8 @@ class Image(Element):
 
     file: str | None
     data: str | None
-    content: str | None
-    kind: str | None
+    content: bytes | None
+    has_content: bool
     scale: str
     proportional: bool
     embed: bool

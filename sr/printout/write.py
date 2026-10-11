@@ -18,9 +18,10 @@ is usually free to choose is fixed here instead.
 * **Lines end with U+000A**, including the last, on every platform.
 
 Serializing is not purely a re-encoding.  A path the template named
-is written [relative to the printout](doc/printout.md#paths), and
-the printout's location is known here and nowhere earlier, so
-:func:`relative_to` runs at this point rather than at resolution.
+(a `font file=`, or an `image file=` with `embed=#false`) is written
+[relative to the printout](doc/printout.md#paths), and the printout's
+location is known here and nowhere earlier, so :func:`relative_to`
+runs at this point rather than at resolution.
 
 """
 
@@ -38,7 +39,9 @@ from sr.printout.model import (
     VERSION,
     Barcode,
     Box,
+    Crop,
     FontEntry,
+    Image,
     Line,
     Mark,
     Page,
@@ -325,11 +328,23 @@ def box_object(box: Box) -> dict[str, Any]:
     return {"x": box.x, "y": box.y, "width": box.width, "height": box.height}
 
 
-def mark_object(mark: Mark) -> dict[str, Any]:
+def crop_object(crop: Crop) -> dict[str, Any]:
+    """Return an image mark's `crop`.
+
+    Args:
+        crop: The retained region, in source pixels.
+
+    """
+    return {"x": crop.x, "y": crop.y, "width": crop.width, "height": crop.height}
+
+
+def mark_object(mark: Mark, base: Path | None = None) -> dict[str, Any]:
     """Return one mark.
 
     Args:
         mark: The mark to write.
+        base: The directory the printout is being written to,
+            which an image's `file` is written relative to.
 
     Raises:
         TypeError: The mark is of a kind this writer does not know.
@@ -361,6 +376,16 @@ def mark_object(mark: Mark) -> dict[str, Any]:
         if mark.radius:
             found["radius"] = mark.radius
         return found
+    if isinstance(mark, Image):
+        if mark.data is not None:
+            found["data"] = mark.data
+        elif mark.file is not None:
+            # doc/printout.md#paths: the template named the file,
+            # so it is a project asset and travels with the printout.
+            found["file"] = relative_to(mark.file, base)
+        if mark.crop is not None:
+            found["crop"] = crop_object(mark.crop)
+        return found
     if isinstance(mark, Barcode):
         found["type"] = mark.symbology
         found["value"] = mark.value
@@ -379,12 +404,12 @@ def mark_object(mark: Mark) -> dict[str, Any]:
         found["target"] = mark.target
         if mark.caption is not None:
             found["caption"] = mark.caption
-        found["marks"] = [mark_object(one) for one in mark.marks]
+        found["marks"] = [mark_object(one, base) for one in mark.marks]
         return found
     raise TypeError(f"cannot write a {type(mark).__name__} mark")
 
 
-def page_object(page: Page, default: Paper) -> dict[str, Any]:
+def page_object(page: Page, default: Paper, base: Path | None = None) -> dict[str, Any]:
     """Return one page line's object.
 
     The size and the four margins are written only where they differ
@@ -395,6 +420,7 @@ def page_object(page: Page, default: Paper) -> dict[str, Any]:
     Args:
         page: The page.
         default: The document's own geometry, to compare against.
+        base: The directory the printout is being written to.
 
     """
     found: dict[str, Any] = {"kind": "page", "number": page.number}
@@ -410,7 +436,7 @@ def page_object(page: Page, default: Paper) -> dict[str, Any]:
         ):
             if value != standard:
                 found[key] = value
-    found["marks"] = [mark_object(mark) for mark in page.marks]
+    found["marks"] = [mark_object(mark, base) for mark in page.marks]
     return found
 
 
@@ -424,7 +450,7 @@ def lines_of(printout: Printout, base: Path | None) -> Iterator[str]:
     """
     yield dumps(header_object(printout, base))
     for page in printout.pages:
-        yield dumps(page_object(page, printout.paper))
+        yield dumps(page_object(page, printout.paper, base))
 
 
 def write_jsonl(printout: Printout, out: TextIO, base: Path | None = None) -> None:

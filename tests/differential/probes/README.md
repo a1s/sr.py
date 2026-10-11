@@ -23,8 +23,11 @@ building. The suite rebuilds every probe with the reference and holds it
 to that file, so an oracle that changed its mind about line breaking fails
 here rather than moving both engines at once. It is the printout as written --
 the `lines`, the boxes, the `data` keys, and the exact spelling of every
-number -- with only a font's `resolvedFile` replaced, since that records
-where the build happened rather than what it decided.
+number -- with only the paths a template named replaced, since those record
+where the build happened rather than what it decided. A font's `resolvedFile`
+is written `<resolved>`, and an `embed=#false` image's `file` is written
+`<resolved>/` and its base name, so that a probe reading several images
+still says which went where.
 
 Regenerate after adding or deliberately changing a probe:
 
@@ -67,15 +70,38 @@ Every probe is built with `--build-time` fixed and `--strict-fonts` set, so
 it must resolve its fonts by path. The committed faces in `example/fonts/`
 are what to point at.
 
-A probe that reads an image points at one of the small fixtures under `data/`,
-each a few dozen bytes so that a recorded answer embedding one stays readable.
-They are shaped for the questions the `data/` probes ask:
+A probe that reads an image points at one of the small fixtures under `data/`
+or `image/`, each a few dozen or a few hundred bytes so that a recorded answer
+embedding one stays readable. Those under `data/` are shaped for the questions
+the `data/` probes ask, which are about names:
 
 | | |
 |---|---|
 | `data/one/pic.png`, `data/two/pic.png` | one base name, two contents — what makes a generated name collide |
 | `data/two/copy-of-one.png` | `one/pic.png`'s bytes under another name — what makes two entries share |
 | `data/alpha.png`, `data/zebra.png` | two more contents whose names sort either side of `pic.png` |
+
+Those under `image/` are shaped for the `image/` probes, which are about sizes
+and so mostly read them with `embed=#false`, keeping the base64 out of the
+answers:
+
+| | |
+|---|---|
+| `image/wide.png` | 24 by 12, wider than tall, so that an axis swapped shows |
+| `image/odd.png` | 7 by 5, whose ratios to a box do not come out even |
+| `image/dpi.png`, `image/wide.jpg` | 24 by 12 with a resolution of 144 and of 300 dots per inch |
+| `image/rotated.jpg` | 24 by 12 with an EXIF orientation of 6, a quarter turn |
+| `image/progressive.jpg`, `image/wide.gif` | 24 by 12 in the other two encodings |
+| `image/screen.gif` | a logical screen of 30 by 20 around a frame of 24 by 12 |
+| `image/png.jpg` | PNG bytes under a JPEG name |
+| `image/no-pixels.gif` | a logical screen of 0 by 0, and no frame |
+
+`data/font-blob.kdl` carries its own face, in base64: Go Regular cut down
+to `x`, `y` and `.notdef`, 652 bytes, under the Go fonts' licence beside
+the full faces in `example/fonts/`. It does not use two font nodes the same
+in everything but their names, which the reference merges into one entry
+and this engine lists as two; that is a question about the font table,
+outside what the probe asks.
 
 An image in `example/` works too, and `example/fonts/` is where a probe's
 fonts come from, but prefer these: a fixture that exists to be a fixture
@@ -225,6 +251,21 @@ the reference gave, and names the section of `doc/` that answer became.
 | `data/blob-collision` | a generated name that is already taken |
 | `data/key-order` | the order of the header's `data` object |
 | `data/declared-names` | a declared name against an identical file |
+| `data/declared-shared` | two declared names for one content |
+| `data/content` | the blob an image's `content` child holds, and its name |
+| `data/build-order` | what "first" means for a generated name |
+| `data/unprinted` | an image built and never drawn |
+| `data/font-blob` | a font read out of a `data` node |
+| `image/natural` | what an image's natural size is |
+| `image/cut` | what `scale="cut"` draws |
+| `image/cut-aligned` | which pixels a clipped image keeps |
+| `image/fill` | what `scale="fill"` draws |
+| `image/grow` | what `scale="grow"` draws, and the box it grows |
+| `image/grow-valign` | a grow image shorter than its box |
+| `image/band` | what an image does to the band around it |
+| `image/split` | an image in a band that splits |
+| `image/type` | an image given a `type` |
+| `image/no-pixels` | an image with no pixels |
 | `expressions/strings` | `len`, indexing and slicing over non-ASCII text |
 | `expressions/string-methods` | the string type's iteration methods |
 | `expressions/escapes` | what a literal's escapes name, where Python's and Starlark's part |
@@ -334,7 +375,21 @@ ISO 8859-1. doc/ keeps that as the default and adds `charset` and `eci`
 for readers that follow the standard. The reference refuses both as unknown
 properties, so the probe is refused there until it catches up.
 
-Of the rest, every one agrees byte for byte except the three `data/`
-probes, which need an image. Those are in [pending.toml](../pending.toml)
-with the milestone that brings them. `rounding/tolerance-refuses` was
-the fourth until M8 brought the page eject it needs.
+M11 added the `image/` group and five `data/` probes, and with them
+three defects in the reference and two decisions. In `cut-aligned`,
+the reference keeps the top-left pixels of every clipped image,
+whatever its alignment says; in `grow-valign`, it ignores `valign`
+for a grow image shorter than its box, though it honours `halign`;
+and in `data/unprinted`, it writes the blob of an image it built
+for a footer's reservation and never drew. The first decision is
+`no-pixels`: an image with no pixels along an axis is refused here,
+and the reference builds it. The second is `type`: the reference
+takes a `type` on an image and writes one on every image mark,
+though it converts nothing, and here an image has neither.
+The comparison drops the reference's mark `type`, so what differs
+is the warning a `type` in the template gets here.
+
+Of the rest, every one agrees byte for byte. The three `data/` probes that
+waited for an image to be built were in [pending.toml](../pending.toml)
+until M11 brought it, and `rounding/tolerance-refuses` until M8 brought
+the page eject it needs.

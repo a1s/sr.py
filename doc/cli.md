@@ -366,7 +366,8 @@ out rather than written empty: a rectangle with no `stroke` has no `width`,
 an unrotated barcode does not say so, and a barcode with no `paper` shows only
 its `ink`. A barcode's line ends with how many runs a 1-D symbol has,
 `69 stripes`, or how many rows a 2-D one has, `25 rows`; the runs
-themselves are not shown.
+themselves are not shown. An image's line ends with its `crop` where it
+has one, written as a box is, in pixels: `crop 7,3.5 10x5`.
 
 ## `sr.py version`
 

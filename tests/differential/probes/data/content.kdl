@@ -1,0 +1,44 @@
+// probes/data/content.kdl -- the blob an image's `content` child holds.
+//
+// A `content` child on an `image` is the image's bytes in base64,
+// as a `data` node's is with `encoding="base64"`; the whitespace
+// a multi-line string lays it out with is not part of it.  It has
+// no name in the template, so the engine names its entry as it names
+// a file's, from a base name, and the base name of a `content` child
+// is `image`:
+//
+// - the `data` node `image` is declared and nothing refers to it, so
+//   it is not written, and it still takes the name: `a` is `image-2`;
+// - `b` spells the same bytes over four lines, and shares `a`'s entry;
+// - `c` holds other bytes and takes the next name, `image-3`.
+//
+// doc/template.md#image and doc/printout.md#data are what this became.
+
+report name="data/content" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  data "image" encoding="base64" {
+    content "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAF0lEQVR42mP4////fwYGTJKJAQcYnBIAwx0P/9iojwYAAAAASUVORK5CYII="
+  }
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=40 {
+      // a
+      image left=0 top=0 width=30 height=20 {
+        content "R0lGODdhGAAMAIEAAAAAAP///wAAAAAAACwAAAAAGAAMAAAIRQABCAQQoGCAgQQNIjR4cCDDhQodRhT4UGJBiBctNqQ4MSHDjBxBetw4EiPJiiFPdkRZUqNJhC9dykwZk+bMljZz4hwZEAA7"
+      }
+      // b
+      image left=40 top=0 width=30 height=20 {
+        content """
+          R0lGODdhGAAMAIEAAAAAAP///wAAAAAAACwAAAAA
+          GAAMAAAIRQABCAQQoGCAgQQNIjR4cCDDhQodRhT4
+          UGJBiBctNqQ4MSHDjBxBetw4EiPJiiFPdkRZUqNJ
+          hC9dykwZk+bMljZz4hwZEAA7
+          """
+      }
+      // c
+      image left=80 top=0 width=30 height=20 {
+        content "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAF0lEQVR42mP4//8/A8N/TJKJAQcYnBIAuyUP/zAXBNgAAAAASUVORK5CYII="
+      }
+    }
+  }
+}

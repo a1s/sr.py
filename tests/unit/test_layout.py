@@ -958,8 +958,11 @@ def test_a_variable_folds_per_record_and_the_summary_reads_the_total(
 
 def test_what_a_later_milestone_brings_says_so(tmp_path: Path) -> None:
     with pytest.raises(Unsupported) as refused:
-        built(tmp_path, '    detail height=10 { image file="x.png" }')
-    assert "M11" in str(refused.value)
+        built(
+            tmp_path,
+            "    detail height=10 { outline title=\"'Top'\" name=\"'top'\" }",
+        )
+    assert "M13" in str(refused.value)
 
 
 def test_a_band_that_fits_no_frame_is_refused_by_name(tmp_path: Path) -> None:

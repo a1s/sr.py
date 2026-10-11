@@ -37,7 +37,7 @@ MARK_FIELDS: dict[str, tuple[str, ...]] = {
     "text": ("font", "color", "align", "leading", "lastLineJustified"),
     "line": ("width", "dash", "color", "backslant"),
     "rectangle": ("stroke", "width", "dash", "fill", "radius"),
-    "image": ("type", "data", "file"),
+    "image": ("data", "file"),
     "barcode": ("type", "value", "module", "vertical", "ink", "paper"),
     "outline": ("title", "level", "name", "closed"),
     "xref": ("type", "target", "caption"),
@@ -417,6 +417,9 @@ def mark_line(mark: dict[str, Any]) -> str:
         parts.append(f"{len(mark['stripes'])} stripes")
     if kind == "barcode" and mark.get("rows"):
         parts.append(f"{len(mark['rows'])} rows")
+    crop = mark.get("crop")
+    if kind == "image" and isinstance(crop, dict):
+        parts.append(box_of({"box": crop}).replace("box", "crop", 1))
     return "  ".join(parts)
 
 

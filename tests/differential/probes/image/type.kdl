@@ -1,0 +1,36 @@
+// probes/image/type.kdl -- an image given a `type`.
+//
+// A registered divergence: a decision, and the reference is the side
+// that changes.  See `divergences.toml`, entry `image-type-removed`.
+//
+// The reference takes `type` and writes it as the mark's `type`, and that
+// is all it does: the bytes are still sniffed and their own header read,
+// so the size is right whatever `type` claims, and the PDF embeds them by
+// what they are.  Nothing converts them.  So doc/template.md#image gives
+// an image no `type`, and here each one written is an unknown property,
+// accepted with a warning and ignored.
+//
+// - `a` is PNG bytes given `type="jpeg"`: the reference's mark
+//   says `jpeg`, and is 24 by 12, which only the PNG header says;
+// - `b` is JPEG bytes given `type="png"`, the other way round;
+// - `c` gives the type the content has;
+// - `d` gives none, and the content's own type is sniffed, not the name's.
+//
+// The comparison drops the `type` the reference writes on every image mark,
+// so what differs is the three warnings.  Each element reads its own file,
+// because the reference keeps the first element's `type` for every later one
+// reading the same path.
+
+report name="image/type" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=500 height=800 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail {
+      // a, b, c, d
+      image file="wide.png" embed=#false type="jpeg" left=0 top=0 width=40 height=40
+      image file="wide.jpg" embed=#false type="png" left=50 top=0 width=40 height=40
+      image file="wide.gif" embed=#false type="gif" left=100 top=0 width=40 height=40
+      image file="png.jpg" embed=#false left=150 top=0 width=40 height=40
+    }
+  }
+}

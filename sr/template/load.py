@@ -61,7 +61,6 @@ from sr.template.model import (
     ENCODINGS,
     HALIGNS,
     IMAGE_SCALES,
-    IMAGE_TYPES,
     LINEAR_BARCODES,
     SCOPES,
     SECTIONS,
@@ -1248,17 +1247,17 @@ class Loader:
             "width",
             "file",
             "data",
-            "type",
             "scale",
             "proportional",
             "embed",
         )
         node.known_children("style", "content")
+        text = self.content(node)
         return Image(
             file=node.string("file"),
             data=node.string("data"),
-            content=self.content(node),
-            kind=node.enum("type", IMAGE_TYPES),
+            content=None if text is None else self.decode(node, text, "base64", None),
+            has_content=text is not None,
             scale=node.enum("scale", IMAGE_SCALES, default="cut"),
             proportional=node.boolean("proportional", default=True),
             embed=node.boolean("embed", default=True),

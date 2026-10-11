@@ -20,23 +20,6 @@
 #   M10: Barcodes            M14: PDF renderer
 
 [[pending]]
-id = "images"
-summary = "an image element, and the data table that carries its bytes"
-reason = """
-An `image` is refused here, so the three probes that ask what an \
-embedded blob is named build on the reference alone.  They answer a \
-question about the header's `data` table, which arrives with the rest \
-of the printout; the element that fills it arrives before that.\
-"""
-ticket = "M11: images, and M13 for the data table"
-since = "2026-09-20"
-affects = [
-    "probe/data/blob-names",
-    "probe/data/blob-collision",
-    "probe/data/key-order",
-]
-
-[[pending]]
 id = "example-sakila"
 summary = "the sakila report uses most of the format"
 reason = """
@@ -44,13 +27,14 @@ Two columns, a group with its own title and summary, a column header \
 and footer, six barcode types, two images, both kinds of \
 cross-reference, conditional outline entries and a deferred page count. \
 It is the broadest single comparison the corpus has and it starts \
-passing when the last of those is built, not before.  The barcodes are \
-built, and drawn at 10mil, so the reference's unrounded barcode \
-lengths will still keep the two apart after M13: see \
-`barcode-lengths-unrounded` in divergences.toml, which an example may \
-not be covered by.\
+passing when the last of those is built, not before: the outline entries, \
+and the xref that points at one.  The barcodes are built, and drawn at \
+10mil, so the reference's unrounded barcode lengths will still keep the \
+two apart after M13: see `barcode-lengths-unrounded` in divergences.toml, \
+which an example may not be covered by.  The images are built, and are \
+drawn by `fill` at the default alignment, where the two engines agree.\
 """
-ticket = "M11 images, M13 the rest"
+ticket = "M13: outline entries"
 since = "2026-09-20"
 affects = ["example/sakila", "example/sakila-june"]
 

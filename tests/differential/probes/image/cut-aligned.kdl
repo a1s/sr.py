@@ -1,0 +1,33 @@
+// probes/image/cut-aligned.kdl -- which pixels a clipped image keeps.
+//
+// A registered divergence, and a defect in the reference rather than a
+// rule to copy.  See `divergences.toml`, entry `cut-crop-ignores-alignment`.
+//
+// `wide.png` is 24 by 12 and every box here is 10 by 5, so each image is
+// clipped on both axes.  doc/template.md#alignment has `halign` and `valign`
+// position an image's bitmap inside its box, and `cut` clips it to the box,
+// so the pixels kept are the ones the alignment leaves inside it:
+//
+// - `a`, centred both ways, keeps the middle: the crop starts 7 pixels
+//   across and 3.5 down;
+// - `b`, aligned right and bottom, keeps that corner: 14 across, 7 down;
+// - `c`, aligned right and top, keeps the right side of the top rows.
+//
+// The reference keeps the top-left corner in all three, the same pixels
+// as an image aligned top-left, so alignment moves nothing once an image
+// is larger than its box.  A barcode's symbol larger than its box is
+// aligned by both, and the one sentence of doc/ that says so covers
+// images as well.
+
+report name="image/cut-aligned" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=500 height=800 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail {
+      // a, b, c
+      image file="wide.png" embed=#false left=0 top=0 width=10 height=5 halign="center" valign="center"
+      image file="wide.png" embed=#false left=50 top=0 width=10 height=5 halign="right" valign="bottom"
+      image file="wide.png" embed=#false left=100 top=0 width=10 height=5 halign="right"
+    }
+  }
+}

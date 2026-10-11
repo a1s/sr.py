@@ -191,7 +191,9 @@ is one, names the source pixels that fill it. So there is no fitting to do.
 An image's bytes come from the header's [`data`](printout.md#data) table,
 or from the `file` the mark names, [resolved against the printout's own
 directory](printout.md#paths). Two marks reading one source share one
-embedded object.
+embedded object. How the bytes are embedded follows from what they are,
+read from their own signature as the engine [read them](template.md#image):
+the printout does not record the format.
 
 A baseline JPEG is embedded as it stands, keeping its own compression. Every
 other format is decoded and re-encoded as eight-bit samples -- grey where the

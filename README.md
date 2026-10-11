@@ -200,11 +200,12 @@ lists what a command that works does not reach yet -- today a mark that
 lands outside the printable area is not judged an
 [overflow](doc/layout.md#errors), which is the one row of that table
 neither engine checks. Today it paginates reports of `field`, `line`,
-`rectangle`, `barcode`, and `xref` elements, with groups, columns,
+`rectangle`, `image`, `barcode`, and `xref` elements, with groups, columns,
 band splitting, `eject` nodes, keep-together rules, balanced columns,
 and deferred values, and writes them as NDJSON. Every barcode type
-is encoded here, from the standards, rather than by a library.
-Images, subreports, and PDF are the milestones after this one.
+is encoded here, from the standards, rather than by a library, and
+an image is read only as far as the header that states its size.
+Subreports, outline entries, and PDF are the milestones after this one.
 The cases the differential corpus cannot yet compare are listed,
 with the milestone each waits for, in
 [tests/differential/pending.toml](tests/differential/pending.toml).

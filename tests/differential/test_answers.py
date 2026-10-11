@@ -31,6 +31,19 @@ def test_a_strict_answer_keeps_the_face_it_resolved() -> None:
     assert '"resolvedIndex":2' in distilled
 
 
+def test_an_image_file_keeps_only_its_base_name() -> None:
+    """An image's path is relative to the output; which file it is, is not."""
+    page = (
+        '{"kind":"page","number":1,"marks":['
+        '{"kind":"image","type":"png","file":"../../src/probes/image/wide.png"},'
+        '{"kind":"image","type":"png","file":"wide.png"},'
+        '{"kind":"image","type":"png","data":"file"}]}'
+    )
+    distilled = distil(HEADER + "\n" + page + "\n").split("\n")[1]
+    assert distilled.count('"file":"<resolved>/wide.png"') == 2
+    assert '"data":"file"' in distilled
+
+
 def test_a_host_fonts_answer_names_no_substitute() -> None:
     distilled = distil(PRINTOUT, host_fonts=True)
     assert "Courier New" not in distilled.split("\n")[0]

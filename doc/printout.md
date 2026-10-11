@@ -322,11 +322,12 @@ Content is stored decompressed.
 
 Entries come from three places: the template's `data` nodes, which keep their
 declared names; embedded fonts; and images the template gave as `file=` with
-`embed=#true`, the default. Those last have no name in the template, so the
-engine assigns one.
+`embed=#true`, the default, or as a `content` child. Those last have no name
+in the template, so the engine assigns one.
 
 **The generated name is the source file's base name** — `logo.png` for
-`../assets/logo.png`. It has to be distinct from every other name in
+`../assets/logo.png`. An image given as a `content` child has no file, and
+its base name is `image`. It has to be distinct from every other name in
 the table, so where it is taken already the engine appends `-2` to the
 whole base name, then `-3`, and so on until it is free: `logo.png`, then
 `logo.png-2`, then `logo.png-3`. The suffix goes after the extension,
@@ -340,6 +341,15 @@ document order**: the first mention of an image wins it, where "first" is the
 order elements are built in. That is the one thing about this table that
 document order still decides, and moving an image within a template can
 therefore rename both blobs.
+
+A band is built each time it is measured, and a header or a footer is measured
+when its space is [reserved](layout.md#headerfooter-reservation), before the
+bands that fill the page. So an image in a page footer takes a name ahead of
+one drawn above it in a detail band. A name is taken when the image is built,
+whether or not its band goes on to reach the page; its entry is written only
+if something refers to it, below. An image with `embed=#false` has no entry
+and takes no name, and neither does one its `printwhen` suppressed, since
+it is never built.
 
 A name is taken if a `data` node declares it or an earlier entry generated it.
 Declared names are reserved whether or not anything refers to them, so an
@@ -356,11 +366,26 @@ share the **declared** name: a name the template chose outranks a name
 the engine invented, and the order in which the document happens to mention
 them does not come into it.
 
+Two declared nodes with identical content are one entry too, and only one
+of their names can be its name. Neither outranks the other, so document order
+decides, as between generated names: the entry takes the name of the node
+the first element built refers to. A generated blob identical to several
+declared nodes takes the name of whichever already holds the entry, and
+failing that the first of them in the template.
+
+An embedded font is named by the same rules. Its entry is its node's name,
+unless an entry built earlier holds the same bytes, and a font is built when
+the first element whose [style walk](layout.md#building-a-band) resolves to
+it is. Its `resolvedData` names the entry, which is another node's name
+where two fonts read identical bytes.
+
 **Only entries something refers to are written.** A `data` node nothing
 references does not appear, and neither does one a `field` consumed —
 a field's text reaches the printout in its mark's `lines`, so the blob
 behind it is not needed. An image with `embed=#false` contributes no entry
-either, since its bytes were never read in.
+either: the engine reads as far as its header, for its size, and its bytes
+stay in the file the mark points at. Nor does an image whose band was
+built and never reached the page, though it took its name.
 
 **Keys are sorted by name**, as [`fonts`](#fonts) is, and for the same reason:
 the table is a lookup and its order carries nothing, so an order that has to be
@@ -481,7 +506,6 @@ The template's `stroke=#false` resolves to an absent `stroke`, and its
 {
   "kind": "image",
   "box": { "x": 42.52, "y": 100, "width": 56.7, "height": 28.35 },
-  "type": "png",
   "data": "logo",
   "crop": { "x": 0, "y": 0, "width": 120, "height": 60 }
 }
@@ -489,10 +513,9 @@ The template's `stroke=#false` resolves to an absent `stroke`, and its
 
 | Field | Meaning |
 |---|---|
-| `type` | `png` `jpeg` `gif`. Always present. |
 | `data` | Name of a header `data` entry. |
 | `file` | Path to the image, when the template set `embed=#false`. Relative to the printout. Mutually exclusive with `data`. |
-| `crop` | Optional source-pixel rectangle. Present only when the image was clipped, which only `scale="cut"` does. |
+| `crop` | Optional source-pixel rectangle, measured from the image's top-left corner. Present only when the image was clipped, which only `scale="cut"` does. |
 
 Exactly one of `data` and `file` is present. `data` is the default case: an image
 given as `file=` with `embed=#true` has its bytes copied into the header's
@@ -506,10 +529,17 @@ render.
 `box` is the final drawn rectangle. `crop` names the source pixels that fill it;
 when `crop` is absent the whole image does. Scaling is whatever maps the one onto
 the other, so a renderer needs no notion of fitting: `cut` arrives as a `crop` at
-scale 1, `fill` as a box the image is stretched into, and `grow` as a box already
-the image's natural size.
+scale 1, `fill` as a box the image is stretched into, and `grow` as a box
+already the image's natural size. At scale 1 a crop's extent is the box's,
+so it is a length like any other, written to three decimals, and
+a box with a fraction of a point has a crop with a fraction of a pixel.
+Which pixels it starts at follows the element's alignment; see
+[an image in its box](layout.md#an-image-in-its-box).
 
-The template's `scale` and `proportional` do not appear — both are resolved away.
+The template's `scale` and `proportional` do not appear, both are resolved away.
+Nor does the image's format: the bytes are written as they are, and a
+[renderer](render.md#images) reads the format from their own signature,
+as the engine did.
 
 ### `barcode`
 

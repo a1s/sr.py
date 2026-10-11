@@ -1,0 +1,29 @@
+// probes/data/declared-shared.kdl -- two declared names, one content.
+//
+// Blobs are shared on their content, so two `data` nodes holding the same
+// bytes are one entry, and only one of the two names can be its name.
+// Both are names the template chose, so neither outranks the other,
+// and document order decides, as it does between generated names:
+// the node the first element built refers to.  `zz` is declared first
+// and `aa` second; `a` refers to `zz` and is built first, so both images,
+// and the one entry, are `zz`.  Swapping the two images makes them `aa`.
+//
+// doc/printout.md#data is what this became.
+
+report name="data/declared-shared" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  data "zz" encoding="base64" {
+    content "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAI0lEQVR42mNgiGSAo89vn8MRTvFBqIEoRUjig1HDaDwMCg0ArOyQEA2r1rMAAAAASUVORK5CYII="
+  }
+  data "aa" encoding="base64" {
+    content "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAI0lEQVR42mNgiGSAo89vn8MRTvFBqIEoRUjig1HDaDwMCg0ArOyQEA2r1rMAAAAASUVORK5CYII="
+  }
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=40 {
+      // a, b
+      image data="zz" left=0 top=0 width=20 height=20
+      image data="aa" left=30 top=0 width=20 height=20
+    }
+  }
+}

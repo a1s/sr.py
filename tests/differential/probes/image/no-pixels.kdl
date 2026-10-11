@@ -1,0 +1,26 @@
+// probes/image/no-pixels.kdl -- an image with no pixels.
+//
+// A registered divergence: a decision, and this engine is the side
+// that refuses.  See `divergences.toml`, entry `image-without-pixels`.
+//
+// A GIF's natural size is its logical screen, and nothing in the format
+// stops that screen being 0 by 0: `no-pixels.gif` is fourteen bytes, a
+// header, a screen of no size, and the trailer.  Every `scale` starts from
+// the natural size, and `fill` divides by it, so there is no size to draw
+// this at and doc/template.md#image now refuses it, naming the element.
+// A PNG cannot express a zero dimension, and a JPEG only by leaving its
+// height to a marker after the first scan, which is refused the same way.
+//
+// The reference builds it, and under `fill` draws it at the full 20 by 20
+// box, which follows from no reading of the rule: a ratio of box to image
+// is undefined when the image is nothing.
+
+report name="image/no-pixels" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=500 height=800 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail {
+      image file="no-pixels.gif" embed=#false scale="fill" left=0 top=0 width=20 height=20
+    }
+  }
+}
