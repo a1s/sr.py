@@ -1,0 +1,63 @@
+// probes/printout/twin-fonts.kdl -- two fonts that resolve alike.
+//
+// doc/printout.md#fonts used to list "one entry per distinct font
+// used".  Here are two pairs of `font` nodes, each pair the same
+// in everything but its names: `body` and `twin` read one file,
+// and `cell` and `note` one `data` node.  Each pair is declared
+// in one order and built in the other.
+//
+// The reference reads "distinct" as merging.  It writes one entry for
+// each pair, named after the font built first, `twin` and `note`, and
+// every mark set in either font names that entry.  Its glyph warnings
+// still count the fonts apart: the character `body` lacks is reported
+// against `body`, a font its table does not list and no mark names.
+//
+// doc/ now keeps the two apart: each font is listed under the name its
+// template gave it, and each mark names the font its own style walk
+// resolved to.  The difference is registered as `twin-fonts-merged`,
+// a decision.
+//
+// The `data` pair reads Go Regular cut down to `x`, `y` and `.notdef`,
+// the face data/font-blob.kdl carries, and is set at another size
+// than the file pair so that the question stays one of names.
+
+report name="printout/twin-fonts" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  font "twin" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  font "cell" data="face" size=12
+  font "note" data="face" size=12
+  data "face" encoding="base64" {
+    content """
+      AAEAAAAKAIAAAwAgT1MvMkTXSW4AAAEoAAAAYGNtYXAADADMAAABlAAAADRnbHlm
+      OsbnTQAAAdAAAABqaGVhZBZBTrMAAACsAAAANmhoZWELmARfAAAA5AAAACRobXR4
+      ChMBHAAAAYgAAAAKbG9jYQAfADUAAAHIAAAACG1heHAABQANAAABCAAAACBuYW1l
+      AdEKCgAAAjwAAAAwcG9zdP7wADIAAAJsAAAAIAABAAAAAgKPTKF7z18PPPUADwgA
+      AAAAANRJaQAAAAAA3sybcwAT/nUD9AQ+AAAACQACAAAAAAAAAAEAAAeP/lAAAAYA
+      ABMADAP0AAEAAAAAAAAAAAAAAAAAAAACAAEAAAADAAwAAQAAAAAAAQAAAAAAAAAA
+      AAAAAAAAAAAAAwSyAZAABQAABZoFMwAAARsFmgUzAAAD0QBmAgAIAgILBgAAAAAA
+      AAAAAAABAAAAAAAAAAAAAAAAICAgIABAAHgAeQYr/nUBiQePAbAAAAABAAAAAAQ+
+      BcgAAAAgAAAGAAEABAAAHAATAAAAAAACAAAAAwAAABQAAwABAAAAFAAEACAAAAAE
+      AAQAAQAAAHn//wAAAHj///+JAAEAAAAAAAAAAAAfADUAAQAcAAAD4QQ+AAsAADMB
+      ATMBEzMBASMBARwBYf6r5AEQ9Lb+tAFn4/7a/voCPgIA/mkBl/3d/eUBtP5MAAAB
+      ABP+dQP0BD4ABwAAIQEzAQEzASMBlP5/yAEnAUSu/cLNBD78vwNB+jcAAAAAAAAC
+      AB4AAwABBAkAAQAEAAAAAwABBAkAAgAOAAQARwBvAFIAZQBnAHUAbABhAHIAAwAA
+      AAAAAP7tADIAAAAAAAAAAAAAAAAAAAAAAAAAAA==
+      """
+  }
+  layout width=300 height=800 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    detail height=80 {
+      field text="b" left=0 width=100 top=0 height=12 {
+        style font="twin"
+      }
+      field text="a中" left=0 width=100 top=20 height=12 {
+        style font="body"
+      }
+      field text="x" left=0 width=100 top=40 height=15 {
+        style font="note"
+      }
+      field text="y" left=0 width=100 top=60 height=15 {
+        style font="cell"
+      }
+    }
+  }
+}

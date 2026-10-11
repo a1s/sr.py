@@ -1789,6 +1789,8 @@ class Builder:
         one declared, per doc/printout.md#fonts: a font some measured
         element's style walk resolved to.  Every declared font was still
         resolved at load, so an unusable one is refused all the same.
+        Each used `font` node is its own entry, under its own name,
+        even where another resolves to the same face at the same size.
         What resolving a font had to say is carried only for a font the
         table lists, so no warning names a font the document does not have.
 

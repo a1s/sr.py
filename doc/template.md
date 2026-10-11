@@ -814,6 +814,11 @@ above it had applied.
 
 `underline` is drawn by the renderer and does not affect metrics.
 
+Two `font` nodes may describe one face at one size under two names.
+They stay two fonts: each that is used has an
+[entry of its own](printout.md#fonts) in the printout,
+and the text set in it names it there.
+
 **What a face must carry.** Whatever named it, a face is usable only
 with `head`, `hhea`, `hmtx`, `cmap` and `name`: the em, the advances,
 the characters and the family. One of them missing is a refusal naming

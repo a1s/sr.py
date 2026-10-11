@@ -98,10 +98,9 @@ answers:
 
 `data/font-blob.kdl` carries its own face, in base64: Go Regular cut down
 to `x`, `y` and `.notdef`, 652 bytes, under the Go fonts' licence beside
-the full faces in `example/fonts/`. It does not use two font nodes the same
-in everything but their names, which the reference merges into one entry
-and this engine lists as two; that is a question about the font table,
-outside what the probe asks.
+the full faces in `example/fonts/`. `printout/twin-fonts.kdl` carries
+the same face. The first does not use two font nodes the same in
+everything but their names, because that is the question the second asks.
 
 An image in `example/` works too, and `example/fonts/` is where a probe's
 fonts come from, but prefer these: a fixture that exists to be a fixture
@@ -154,6 +153,7 @@ the reference gave, and names the section of `doc/` that answer became.
 | `printout/used-fonts` | which fonts the header's table lists |
 | `printout/no-fonts` | the table when no element prints |
 | `printout/font-warning` | the warning a substituted typeface gives |
+| `printout/twin-fonts` | two fonts that resolve to one face at one size |
 | `layout/band-height` | the two maxima a band's height is |
 | `layout/alignment` | where a field's content sits in its box |
 | `layout/field-format` | what an element's `format` applies to |
@@ -388,6 +388,12 @@ takes a `type` on an image and writes one on every image mark,
 though it converts nothing, and here an image has neither.
 The comparison drops the reference's mark `type`, so what differs
 is the warning a `type` in the template gets here.
+
+After M11 came one decision, in `printout/twin-fonts`. doc/printout.md#fonts
+said "one entry per distinct font used", and the reference reads that as
+merging two `font` nodes that resolve to one face at one size and style.
+It writes one entry, under the name of the font built first, and every
+mark set in either font names it. doc/ now keeps the two apart.
 
 Of the rest, every one agrees byte for byte. The three `data/` probes that
 waited for an image to be built were in [pending.toml](../pending.toml)

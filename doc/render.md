@@ -256,25 +256,38 @@ equal to the target entry's. A `caption` becomes the annotation's hover text.
 
 ## Fonts in the file
 
-Each font in the header becomes a **Type0 font with Identity-H encoding and
-a CIDFontType2 descendant**, carrying a subset of the face the printout names.
-The face is opened from its `resolvedFile`, or from the header `data` entry
-its `resolvedData` names, at the face index `resolvedIndex` states.
+Each face the header's [fonts](printout.md#fonts) name becomes a **Type0
+font with Identity-H encoding and a CIDFontType2 descendant**, carrying
+a subset of that face. The face is opened from an entry's `resolvedFile`,
+or from the header `data` entry its `resolvedData` names, at the face
+index `resolvedIndex` states, and at the first face when that is absent.
 
-A **code per character**, not per glyph. Code 0 is the face's empty glyph, and
-every character the document sets gets a code of its own, in code point order.
-Two characters that share a glyph -- a non-breaking space and a space, in most
-faces -- therefore get two codes, and a character the face
+**One font per face, not one per entry.** Entries that read the same bytes
+at the same face index share one font, whatever their names, sizes and
+flags, and whether they reached the face by `file`, by `data` or through
+the host. Nothing an entry adds to its face belongs in the font. The size
+is given where the text is shown, `underline` is a [rule](#underline)
+drawn under the line, and `bold` and `italic` describe the face rather
+than change it: the renderer draws the face it is given and synthesizes
+no weight or slant. So a face set at three sizes, or under two names,
+is embedded once.
+
+A **code per character**, not per glyph. Code 0 is the face's empty glyph,
+and every character the document sets in the face, under any entry that
+names it, gets a code of its own, in code point order. Two characters that
+share a glyph -- a non-breaking space and a space, in most faces --
+therefore get two codes, and a character the face
 [does not have](template.md#missing-glyphs) gets a code that draws the empty
 glyph. So the text reads back out of the file as exactly what the printout
 said, missing glyphs included, and stays searchable where a glyph is absent.
 
-The widths the font dictionary states are the advances the engine measured,
-written to **three decimal places** of a thousandth of an em rather than
-rounded to whole thousandths. The file's numbers are then exact for the
-usual units per em, and the pen inside a shown string lands where the
-printout measured it to well under a thousandth of a point. Rounding
-to whole thousandths, which is what every writer surveyed in
+The widths the font dictionary states are the advances the engine measured.
+They are in thousandths of an em, so one dictionary serves every size the
+face is set at, and are written to **three decimal places** of a thousandth
+of an em rather than rounded to whole thousandths. The file's numbers are
+then exact for the usual units per em, and the pen inside a shown string
+lands where the printout measured it to well under a thousandth of a point.
+Rounding to whole thousandths, which is what every writer surveyed in
 [decisions.md](decisions.md#font-metrics-and-pdf) does, is what leaves
 a hundredth-of-a-point drift across a long line.
 
@@ -291,10 +304,12 @@ the baseline positive and the descent below it negative, whichever signs the
 face itself used: a face storing its descender as a magnitude is not rare,
 and copying that through would state a descent above the face's own baseline.
 
-The `BaseFont` name carries the six upper-case letters PDF requires in front of
-a subset, derived from the face and the glyphs it holds, so two subsets of one
-face differ and the same subset is stable across runs. The name after the tag
-is the face's own PostScript name.
+The `BaseFont` name carries the six upper-case letters PDF requires in front
+of a subset, derived from the face and the glyphs it holds. A document carries
+one subset of each face, but two documents usually carry different ones, and
+the tag keeps them apart where a tool combines the two files. The same subset
+is stable across runs. The name after the tag is the face's own PostScript
+name.
 
 ## Document metadata
 

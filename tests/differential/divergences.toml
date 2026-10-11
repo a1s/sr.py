@@ -32,7 +32,8 @@
 # M11 added three defects in the reference's images:
 # `cut-crop-ignores-alignment`, `grow-ignores-valign`,
 # and `unprinted-blobs-written`; and two decisions,
-# `image-type-removed` and `image-without-pixels`.
+# `image-type-removed` and `image-without-pixels`.  After M11 came
+# one decision about the font table, `twin-fonts-merged`.
 #
 # The milestone numbers:
 #   M0: Scaffold and oracle
@@ -906,3 +907,23 @@ taken and the entry out, and the reference is the side that changes.\
 ticket = "M11: data, printout.md#data; filed against the Go engine"
 since = "2026-10-10"
 affects = ["probe/data/unprinted"]
+
+[[divergence]]
+id = "twin-fonts-merged"
+summary = "two fonts that resolve alike are two entries here; the reference merges them under the name of the first one built"
+reason = """\
+doc/printout.md#fonts said "one entry per distinct font used", and the \
+reference reads "distinct" as merging.  Two `font` nodes whose entries \
+differ only in `name` are written as one entry, under the name of \
+whichever was built first, and every mark set in either names it, so \
+moving an element can rename text in bands it never touched.  Its glyph \
+warnings still count the two apart, and name a font its table does not \
+list and no mark names.  This holds for `file` and `data` fonts alike.  \
+doc/printout.md#fonts now lists each font under the name its template \
+gave it and never merges it into an entry of another name, and \
+doc/render.md embeds one font per face, so two entries over one face \
+cost nothing in the PDF.  The reference is the side that changes.\
+"""
+ticket = "M7: the font table, printout.md#fonts"
+since = "2026-10-11"
+affects = ["probe/printout/twin-fonts"]
