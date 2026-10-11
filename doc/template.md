@@ -461,6 +461,11 @@ The defaults are `halign="left"` and `valign="top"`.
 
 For an `image` the content is the bitmap and for a `barcode` the symbol,
 so `halign` and `valign` position it inside the resolved box.
+That holds for content larger than the box as well: a symbol overhangs
+the box on the side the alignment does not name, and an image under
+`scale="cut"` is aligned and then clipped to the box, so the alignment
+decides which of its pixels are kept. See
+[an image in its box](layout.md#an-image-in-its-box).
 
 An `xref` accepts both and they position nothing. What it holds is elements,
 each placed by its own geometry inside the xref's box and aligned by its own
@@ -1217,7 +1222,6 @@ image data="TheLarch" scale="grow"
 |---|---|---|
 | `file` | string, path relative to `basedir` | — |
 | `data` | string, a `data` node name | — |
-| `type` | `png` `jpeg` `gif` | sniffed from content |
 | `scale` | scale enum | `cut` |
 | `proportional` | boolean | `#true` |
 | `embed` | boolean | `#true` |
@@ -1240,7 +1244,15 @@ is scaled to fit within the box and then positioned by `halign` / `valign`;
 with `#false` it is stretched to the box exactly.
 
 Only `cut` clips, and the clipped region is what the printout records
-as [`crop`](printout.md#image).
+as [`crop`](printout.md#image). Under `grow` the box expands right and
+down, keeping its left and top edges, so along an axis where it grew
+there is nothing for alignment to do. The arithmetic of all three is
+in [an image in its box](layout.md#an-image-in-its-box).
+
+**The natural size** is what every `scale` starts from:
+the bitmap's pixels along each axis, drawn at one point per pixel.
+Resolution metadata and an EXIF orientation are not read,
+and a GIF's natural size is its logical screen's.
 
 `embed=#true`, the default, copies the image bytes into the printout, so the
 printout is self-contained. `embed=#false` records a file reference instead:
@@ -1251,7 +1263,41 @@ on the image still being where the printout expects it.
 `embed=#false` needs `file=`, since a reference is all it writes and only
 `file` supplies a path; `data` and a `content` child are always embedded.
 
-`type` is optional and sniffed from the content; give it to override.
+A `content` child holds the image's bytes in base64, as a `data` node's
+`content` does with `encoding="base64"`. The whitespace a multi-line string
+lays it out with is not part of it, and content that is not base64 is an
+error when the template loads.
+
+**The bytes are read when the report is built**, whatever the `scale`
+and whatever `embed` says, since the natural size is in them. So an
+`embed=#false` file has to be there when the report is built as well as
+when it is rendered, and a file that cannot be read is an error naming
+the element. The engine interprets nothing past the header that states
+the size: decoding the pixels is the renderer's. An embedded file is read
+whole, since its bytes go into the printout, but of an `embed=#false`
+file only the header is read, so a large image referred to costs the
+build no more than a small one.
+
+**The format is sniffed** from the bytes' signature, never from a
+file name, so PNG bytes saved as `logo.jpg` are a PNG. What is read:
+
+| Format | Read | Refused |
+|---|---|---|
+| PNG | the `IHDR` chunk, which must come first | an `IHDR` that fails its CRC, or names a colour type and bit depth PNG does not have |
+| JPEG | the first frame header: baseline, extended sequential, or progressive, with 8-bit samples and 1, 3 or 4 components | lossless, hierarchical, arithmetic-coded, and JPEG-LS frames, other sample precisions, and no frame header before the first scan |
+| GIF | `GIF87a` or `GIF89a`, and the logical screen descriptor | a file cut short before the descriptor ends |
+
+The refused JPEG kinds are ones a renderer is not required to decode.
+Bytes that are none of the three formats are an error, and so is an image
+with no pixels along an axis, since no `scale` has a size to start from.
+A GIF can say that with a logical screen of no size, and a JPEG by leaving
+its height to a marker after the first scan, past the header the engine
+reads; a PNG cannot say it at all.
+
+**Nothing converts an image.** The bytes reach the printout as they are,
+and the format is not recorded there: a renderer sniffs it as the engine does.
+A smaller or differently encoded image is made before the report is built,
+not by it.
 
 ### `barcode`
 

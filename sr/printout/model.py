@@ -19,8 +19,8 @@ Three rules of the format are visible in the shapes here.
   is what the writer reads to decide, per doc/printout.md#paths.
 
 The kinds produced so far are :class:`Text`, :class:`Line`,
-:class:`Rectangle`, :class:`Barcode`, and :class:`Xref`.  Images
-and outline entries arrive with the elements that make them.
+:class:`Rectangle`, :class:`Image`, :class:`Barcode`, and :class:`Xref`.
+Outline entries arrive with the element that makes them.
 
 """
 
@@ -36,7 +36,9 @@ __all__ = [
     "VERSION",
     "Barcode",
     "Box",
+    "Crop",
     "FontEntry",
+    "Image",
     "Line",
     "Mark",
     "Page",
@@ -194,6 +196,51 @@ class Rectangle(Mark):
     stroke: str | None
     fill: str | None
     radius: float
+
+
+@dataclass(frozen=True)
+class Crop:
+    """The source pixels that fill an image's box.
+
+    In pixels, measured from the image's top-left corner.
+    Only ``scale="cut"`` clips, so a crop arrives at one point per pixel
+    and its extent is the box's, a fraction of a pixel included.
+
+    Attributes:
+        x: The left edge of the retained region.
+        y: Its top edge.
+        width: Its extent across.
+        height: Its extent down.
+
+    """
+
+    x: float
+    y: float
+    width: float
+    height: float
+
+
+@dataclass(frozen=True)
+class Image(Mark):
+    """A bitmap, already fitted: the box is the drawn rectangle.
+
+    A renderer maps the image, or the part ``crop`` names, onto the box
+    and does no fitting of its own.  Exactly one of ``data`` and ``file``
+    is set.  ``file`` is held as the engine resolved it, and is written
+    relative to the printout at serialization, as a font's path is.
+    Nothing says what format the bytes are: a renderer reads that from
+    the bytes, as the engine did.
+
+    Attributes:
+        data: The name of a header `data` entry holding the bytes.
+        file: The file, for an image the template gave ``embed=#false``.
+        crop: The source pixels that fill the box, where it was clipped.
+
+    """
+
+    data: str | None = None
+    file: Path | None = None
+    crop: Crop | None = None
 
 
 @dataclass(frozen=True)

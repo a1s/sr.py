@@ -843,7 +843,7 @@ def image_source(visit: Visit, element: Image) -> None:
         for name, given in (
             ("file", element.file),
             ("data", element.data),
-            ("content", element.content),
+            ("content", True if element.has_content else None),
         )
         if given is not None
     ]

@@ -7,12 +7,14 @@ because the oracle is not on this machine.  So each probe's printout is
 committed beside it, and the reference is held to it on every run.
 
 The golden is the printout as written, minus the one part of it that is not
-a property of the build: a font's ``resolvedFile`` is relative to wherever
-the printout landed, which is a temporary directory.  Everything else is
-kept verbatim, including the spelling of every number -- ``0`` against
-``0.0``, and an exponent against a written-out fraction, are exactly the
-kind of difference a probe is here to catch, and parsing the JSON would
-throw them away.
+a property of the build: a path the template named.  A font's ``resolvedFile``
+and an `embed=#false` image's ``file`` are relative to wherever the printout
+landed, which is a temporary directory.  The first is replaced outright;
+the second keeps its base name, since a probe that reads several images
+is read by which file went where.  Everything else is kept verbatim,
+including the spelling of every number -- ``0`` against ``0.0``, and an
+exponent against a written-out fraction, are exactly the kind of difference
+a probe is here to catch, and parsing the JSON would throw them away.
 
 A probe built with ``!host-fonts`` has one more part that is a property
 of the machine rather than of the build: which face the host offered as
@@ -39,6 +41,10 @@ ANSWER_SUFFIX = ".answer.jsonl"
 # where the build happened rather than what the build decided.
 RESOLVED_FILE = re.compile(r'("resolvedFile":)"(?:[^"\\]|\\.)*"')
 
+# An image mark's ``file`` is relative to it too.  Only an image mark has
+# a key spelled exactly so; its base name, after the last ``/``, is kept.
+IMAGE_FILE = re.compile(r'("file":)"(?:[^"\\]|\\.)*?((?:[^"\\/]|\\.)*)"')
+
 # Where a face sits in a collection, which only a `.ttc` substitute has.
 RESOLVED_INDEX = re.compile(r'"resolvedIndex":[0-9]+,')
 
@@ -62,6 +68,7 @@ def distil(printout: str, host_fonts: bool = False) -> str:
 
     """
     normalised = RESOLVED_FILE.sub(r'\1"<resolved>"', printout)
+    normalised = IMAGE_FILE.sub(r'\1"<resolved>/\2"', normalised)
     if host_fonts:
         normalised = anonymised(normalised)
     return normalised.replace("\r\n", "\n").rstrip("\n") + "\n"

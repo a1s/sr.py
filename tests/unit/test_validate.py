@@ -185,6 +185,32 @@ def test_an_empty_band_is_not_worth_warning_about() -> None:
     assert not loaded.warnings
 
 
+# -- a content child that holds no string -----------------------------
+
+
+def test_an_image_whose_content_is_no_string_still_has_one_source() -> None:
+    (found,) = built("image width=10 height=10 { content 12; }").errors
+    assert "a content holds one string" in found.message
+
+
+def test_a_data_node_whose_content_is_no_string_still_has_one_source() -> None:
+    loaded = load_text(
+        f"""
+report name="probe" {{
+  font "body" file="{FONT.as_posix()}" size=10
+  data "blob" {{ content 12; }}
+  layout pagesize="A4" {{
+    style font="body" color="black"
+    detail height=20 {{ field text="x"; }}
+  }}
+}}
+""",
+        file="probe.kdl",
+    )
+    (found,) = loaded.errors
+    assert "a content holds one string" in found.message
+
+
 # -- the namespace boundary -------------------------------------------
 
 

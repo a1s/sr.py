@@ -1,0 +1,47 @@
+// probes/image/grow.kdl -- what `scale="grow"` draws, and the box it grows.
+//
+// `grow` draws the image at its natural size, `wide.png`'s 24 by 12,
+// and the box expands wherever the image exceeds it.  It expands right
+// and down, keeping its left and top edges, so along an axis where it grew
+// there is nothing for alignment to do:
+//
+// - `a` has no geometry at all and is drawn at the band's top-left corner;
+// - `b`'s box is 10 by 5 and grows to 24 by 12 from its corner;
+// - `c`'s box was derived from `right=300 width=10`, and it grows to the
+//   right from where that put its left edge, whatever `halign` says;
+// - `d` declares 40 by 40 clamped by `maxwidth` and `maxheight` to 10 by 5:
+//   the clamp shrinks the box, the box grows back to the image,
+//   and doc/template.md says a clamp does not clamp a grow image;
+// - `e`'s box is 40 wide, wider than the image, so `halign` centres it.
+//
+// The natural height is a content height, so `f`, declared 5 tall at 30,
+// takes the band to 42, and the rule beside it spans that.  `g` declared a
+// `bottom` outright, so its box is the 2 the band leaves it below 40; the
+// image grows past the band's edge to 52, and the next band starts there.
+//
+// Every image here is shorter than its box or aligned to its top.
+//  A grow image shorter than its box under another `valign` is
+// `grow-valign.kdl`, a registered divergence.
+//  doc/layout.md#an-image-in-its-box is what this became.
+
+report name="image/grow" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=500 height=800 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail {
+      // a
+      image file="wide.png" embed=#false scale="grow"
+      // b, c
+      image file="wide.png" embed=#false scale="grow" left=50 top=0 width=10 height=5
+      image file="wide.png" embed=#false scale="grow" right=300 width=10 top=0 height=5 halign="right"
+      // d
+      image file="wide.png" embed=#false scale="grow" left=250 top=0 width=40 maxwidth=10 height=40 maxheight=5 halign="right" valign="bottom"
+      // e
+      image file="wide.png" embed=#false scale="grow" left=300 top=0 width=40 height=5 halign="center"
+      // f, g
+      image file="wide.png" embed=#false scale="grow" left=350 top=30 height=5
+      image file="wide.png" embed=#false scale="grow" left=400 top=40 bottom=0
+      line left=490 width=0
+    }
+  }
+}

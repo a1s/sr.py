@@ -1,0 +1,37 @@
+// probes/image/cut.kdl -- what `scale="cut"` draws.
+//
+// `cut` draws the image at its natural size, 24 by 12 here, and clips
+// it to the box.  Along each axis the mark is the smaller of the two:
+//
+// - `a` and `b` are smaller than their boxes on both axes, so nothing
+//   is clipped, there is no `crop`, and `halign` and `valign` place
+//   the image in the box as they place a barcode's symbol;
+// - `c` is larger than its box on both axes, so the mark is the box
+//   and the `crop` names the 10 by 5 pixels that fill it;
+// - `d` is larger across and smaller down: the crop keeps the whole
+//   height, 12, and `valign` places those 12 at the box's bottom;
+// - `e`'s box is 10.5 by 5.25, and the crop is that too: it is in source
+//   pixels at one point per pixel, so a fraction of a pixel is kept.
+//
+// Every clipped image here is aligned top-left, where the reference and
+// this engine agree on which pixels are kept.  An image clipped under
+// another alignment is `cut-aligned.kdl`, a registered divergence.
+// doc/layout.md#an-image-in-its-box is what this became.
+
+report name="image/cut" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=500 height=800 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail {
+      // a, b
+      image file="wide.png" embed=#false left=0 top=0 width=40 height=40 halign="center" valign="center"
+      image file="wide.png" embed=#false left=50 top=0 width=40 height=40 halign="right" valign="bottom"
+      // c
+      image file="wide.png" embed=#false left=100 top=0 width=10 height=5
+      // d
+      image file="wide.png" embed=#false left=150 top=0 width=10 height=40 valign="bottom"
+      // e
+      image file="wide.png" embed=#false left=200 top=0 width=10.5 height=5.25
+    }
+  }
+}

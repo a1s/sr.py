@@ -29,6 +29,10 @@
 # barcodes, `code93-check-k`, `barcode-lengths-unrounded`, and
 # `qr-numeric-plus`, and one decision, `barcode-charset`.  After M10
 # came one decision about reading the records, `records-byte-order-mark`.
+# M11 added three defects in the reference's images:
+# `cut-crop-ignores-alignment`, `grow-ignores-valign`,
+# and `unprinted-blobs-written`; and two decisions,
+# `image-type-removed` and `image-without-pixels`.
 #
 # The milestone numbers:
 #   M0: Scaffold and oracle
@@ -804,3 +808,101 @@ The reference is the side that changes.\
 ticket = "M15: data input, template.md#data-input"
 since = "2026-10-10"
 affects = ["probe/records/byte-order-mark"]
+
+[[divergence]]
+id = "cut-crop-ignores-alignment"
+summary = "a clipped image keeps the pixels its alignment leaves in the box here; the reference keeps the top-left corner whatever the alignment"
+reason = """\
+doc/template.md#alignment has `halign` and `valign` position an image's \
+bitmap inside its box, in the same sentence that has them position a \
+barcode's symbol, and `cut` clips the bitmap to the box.  So an image \
+wider than its box and aligned right keeps its right side, and one \
+centred keeps its middle: the mark's `crop` starts that far into the \
+image.  The reference starts every crop at the image's top-left corner, \
+so alignment stops mattering the moment an image is larger than its box, \
+while it still aligns a barcode's symbol in the same position.  \
+doc/layout.md#an-image-in-its-box spells the crop out, and the reference \
+is the side that changes.\
+"""
+ticket = "M11: an image in its box, layout.md#an-image-in-its-box; filed against the Go engine"
+since = "2026-10-10"
+affects = ["probe/image/cut-aligned"]
+
+[[divergence]]
+id = "grow-ignores-valign"
+summary = "a grow image shorter than its box is placed by `valign` here; the reference puts it at the box's top"
+reason = """\
+Under `scale="grow"` the box expands wherever the image exceeds it, and \
+where the image is smaller the box stays as it was and the image sits \
+inside it.  doc/template.md#alignment places it there by `halign` and \
+`valign`.  The reference applies `halign`, and centres a narrow image in \
+a wide box, but not `valign`: an image shorter than its box starts at \
+the box's top whatever `valign` says, where a barcode's symbol in the \
+same box, and the same image under `cut`, would be moved down.  \
+doc/layout.md#an-image-in-its-box applies both, and the reference is the \
+side that changes.\
+"""
+ticket = "M11: an image in its box, layout.md#an-image-in-its-box; filed against the Go engine"
+since = "2026-10-10"
+affects = ["probe/image/grow-valign"]
+
+[[divergence]]
+id = "image-type-removed"
+summary = "an image has no `type` here, in the template or on the mark; the reference takes one and writes one on every image mark"
+reason = """\
+`type` converts nothing in the reference: a PDF built from PNG bytes \
+given `type="jpeg"` is byte for byte the PDF built without it, from \
+`build` and from `render` alike, so all it does is let the printout name \
+a format the bytes do not have.  doc/template.md#image now says that \
+nothing converts an image and gives an image no `type`, so one written \
+on it is an unknown name, and doc/printout.md#image records no format on \
+the mark: a renderer sniffs the bytes, as the engine does.  The \
+reference writes the format on every image mark, and the comparison \
+drops it, since every case with an image would differ otherwise; see \
+`without_image_types` in test_corpus.py.  What stays visible is the \
+template side: the probe gives three images a `type`, and the warnings \
+about them reach this engine's printout and not the reference's.  This \
+also retires a defect in the reference, which keeps the `type` the \
+first element gave a file for every later element reading the same \
+path.  A decision, since doc/ never said what `type` does; the \
+reference is the side that changes.\
+"""
+ticket = "M11: image, template.md#image"
+since = "2026-10-10"
+affects = ["probe/image/type"]
+
+[[divergence]]
+id = "image-without-pixels"
+summary = "an image of no pixels on an axis is refused here; the reference builds one"
+reason = """\
+A GIF's natural size is its logical screen, and nothing in the format \
+stops the screen being 0 by 0.  Every `scale` starts from the natural \
+size, and `fill` divides by it, so such an image has no size to be drawn \
+at.  The reference builds it, and under `fill` draws it at the full box, \
+which follows from no reading of the rule.  doc/template.md#image now \
+refuses it, naming the element, as it refuses bytes it cannot size.  A \
+PNG cannot express a zero dimension, and a JPEG only by leaving its height \
+to a marker after the first scan, which is refused the same way.  A \
+decision rather than a defect, since doc/ said nothing about it; the \
+reference is the side that changes.\
+"""
+ticket = "M11: image, template.md#image"
+since = "2026-10-10"
+affects = ["probe/image/no-pixels"]
+
+[[divergence]]
+id = "unprinted-blobs-written"
+summary = "only `data` entries the document refers to are written here; the reference also writes the blob of an image it built and never drew"
+reason = """\
+A band is built whenever it is measured, so a footer is built when its \
+space is reserved, and an image in it takes its generated name then, \
+before the bands that fill the page.  Both engines agree on that.  If the \
+footer's `printwhen` is false by the time it is built for the page, the \
+image never reaches the page, and doc/printout.md#data says only entries \
+something refers to are written.  The reference writes the image's bytes \
+all the same, under a name no mark names.  This engine leaves the name \
+taken and the entry out, and the reference is the side that changes.\
+"""
+ticket = "M11: data, printout.md#data; filed against the Go engine"
+since = "2026-10-10"
+affects = ["probe/data/unprinted"]

@@ -1,0 +1,40 @@
+// probes/image/band.kdl -- what an image does to the band around it.
+//
+// An image is an element like any other, and the rules of
+// doc/layout.md#building-a-band apply to it as written:
+//
+// - `a`, under `cut`, and `b`, under `fill`, give a `top` and no height,
+//   so their bottom is derived and they are container-dependent: their
+//   boxes are what the band leaves below 2, and `valign` places the image
+//   at the bottom of that, 24 by 12 for `a` and 40 by 20, scaled, for `b`;
+// - `c` floats.  A `grow` image has a content height, so it may, and it is
+//   pushed below the stretch field above it, which wraps to three lines
+//   and is 36 tall: the 2 declared between them is kept, so it starts
+//   at 38, and the band is as tall as it reaches;
+// - `d` is suppressed by its `printwhen` and leaves no mark;
+// - `e` is inside an xref, filled to the xref's box and aligned right
+//   within it by its own `halign`.
+//
+// doc/layout.md#an-image-in-its-box is what this became.
+
+report name="image/band" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=500 height=800 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=30 {
+      // a, b
+      image file="wide.png" embed=#false left=0 width=40 top=2 valign="bottom"
+      image file="wide.png" embed=#false scale="fill" left=50 width=40 top=2 valign="bottom"
+      // c
+      field stretch=#true left=100 width=30 top=0 height=10 text="one two three"
+      image file="wide.png" embed=#false scale="grow" left=100 top=12 float=#true
+      // d
+      image file="wide.png" embed=#false left=150 top=0 printwhen="False"
+      // e
+      xref type="url" target="'https://example.invalid/'" left=200 width=50 top=0 height=20 {
+        image file="wide.png" embed=#false scale="fill" halign="right"
+      }
+      line left=490 width=0
+    }
+  }
+}

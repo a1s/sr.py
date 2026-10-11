@@ -1,0 +1,87 @@
+// probes/data/font-blob.kdl -- a font read out of a `data` node.
+//
+// A font node that names `data` is embedded, and doc/printout.md#data
+// lists embedded fonts among the entries of the header's `data` table.
+// Its entry is named as an image's is: the font table's `resolvedData`
+// names it, and it is written because the font is used.
+//
+// - `small` and `large` read `one` and `two`, which hold the same bytes,
+//   so they share one entry.  `large` is the first font an element is
+//   built in, so the entry takes the name of the node it reads, `two`,
+//   and both fonts' `resolvedData` say so;
+// - `unused` reads `three`, and no element is built in it:
+//   it is not in the font table, and `three` is not written.
+//
+// The face is Go Regular cut down to `x`, `y` and its `.notdef`,
+// so that the recorded answer stays readable.  The two sizes keep
+// the two fonts apart; see the probe README for why two font nodes
+// the same in everything but their names are not used here.
+
+report name="data/font-blob" {
+  font "small" data="one" size=10
+  font "large" data="two" size=12
+  font "unused" data="three" size=10
+  data "one" encoding="base64" {
+    content """
+      AAEAAAAKAIAAAwAgT1MvMkTXSW4AAAEoAAAAYGNtYXAADADMAAABlAAAADRnbHlm
+      OsbnTQAAAdAAAABqaGVhZBZBTrMAAACsAAAANmhoZWELmARfAAAA5AAAACRobXR4
+      ChMBHAAAAYgAAAAKbG9jYQAfADUAAAHIAAAACG1heHAABQANAAABCAAAACBuYW1l
+      AdEKCgAAAjwAAAAwcG9zdP7wADIAAAJsAAAAIAABAAAAAgKPTKF7z18PPPUADwgA
+      AAAAANRJaQAAAAAA3sybcwAT/nUD9AQ+AAAACQACAAAAAAAAAAEAAAeP/lAAAAYA
+      ABMADAP0AAEAAAAAAAAAAAAAAAAAAAACAAEAAAADAAwAAQAAAAAAAQAAAAAAAAAA
+      AAAAAAAAAAAAAwSyAZAABQAABZoFMwAAARsFmgUzAAAD0QBmAgAIAgILBgAAAAAA
+      AAAAAAABAAAAAAAAAAAAAAAAICAgIABAAHgAeQYr/nUBiQePAbAAAAABAAAAAAQ+
+      BcgAAAAgAAAGAAEABAAAHAATAAAAAAACAAAAAwAAABQAAwABAAAAFAAEACAAAAAE
+      AAQAAQAAAHn//wAAAHj///+JAAEAAAAAAAAAAAAfADUAAQAcAAAD4QQ+AAsAADMB
+      ATMBEzMBASMBARwBYf6r5AEQ9Lb+tAFn4/7a/voCPgIA/mkBl/3d/eUBtP5MAAAB
+      ABP+dQP0BD4ABwAAIQEzAQEzASMBlP5/yAEnAUSu/cLNBD78vwNB+jcAAAAAAAAC
+      AB4AAwABBAkAAQAEAAAAAwABBAkAAgAOAAQARwBvAFIAZQBnAHUAbABhAHIAAwAA
+      AAAAAP7tADIAAAAAAAAAAAAAAAAAAAAAAAAAAA==
+      """
+  }
+  data "two" encoding="base64" {
+    content """
+      AAEAAAAKAIAAAwAgT1MvMkTXSW4AAAEoAAAAYGNtYXAADADMAAABlAAAADRnbHlm
+      OsbnTQAAAdAAAABqaGVhZBZBTrMAAACsAAAANmhoZWELmARfAAAA5AAAACRobXR4
+      ChMBHAAAAYgAAAAKbG9jYQAfADUAAAHIAAAACG1heHAABQANAAABCAAAACBuYW1l
+      AdEKCgAAAjwAAAAwcG9zdP7wADIAAAJsAAAAIAABAAAAAgKPTKF7z18PPPUADwgA
+      AAAAANRJaQAAAAAA3sybcwAT/nUD9AQ+AAAACQACAAAAAAAAAAEAAAeP/lAAAAYA
+      ABMADAP0AAEAAAAAAAAAAAAAAAAAAAACAAEAAAADAAwAAQAAAAAAAQAAAAAAAAAA
+      AAAAAAAAAAAAAwSyAZAABQAABZoFMwAAARsFmgUzAAAD0QBmAgAIAgILBgAAAAAA
+      AAAAAAABAAAAAAAAAAAAAAAAICAgIABAAHgAeQYr/nUBiQePAbAAAAABAAAAAAQ+
+      BcgAAAAgAAAGAAEABAAAHAATAAAAAAACAAAAAwAAABQAAwABAAAAFAAEACAAAAAE
+      AAQAAQAAAHn//wAAAHj///+JAAEAAAAAAAAAAAAfADUAAQAcAAAD4QQ+AAsAADMB
+      ATMBEzMBASMBARwBYf6r5AEQ9Lb+tAFn4/7a/voCPgIA/mkBl/3d/eUBtP5MAAAB
+      ABP+dQP0BD4ABwAAIQEzAQEzASMBlP5/yAEnAUSu/cLNBD78vwNB+jcAAAAAAAAC
+      AB4AAwABBAkAAQAEAAAAAwABBAkAAgAOAAQARwBvAFIAZQBnAHUAbABhAHIAAwAA
+      AAAAAP7tADIAAAAAAAAAAAAAAAAAAAAAAAAAAA==
+      """
+  }
+  data "three" encoding="base64" {
+    content """
+      AAEAAAAKAIAAAwAgT1MvMkTXSW4AAAEoAAAAYGNtYXAADADMAAABlAAAADRnbHlm
+      OsbnTQAAAdAAAABqaGVhZBZBTrMAAACsAAAANmhoZWELmARfAAAA5AAAACRobXR4
+      ChMBHAAAAYgAAAAKbG9jYQAfADUAAAHIAAAACG1heHAABQANAAABCAAAACBuYW1l
+      AdEKCgAAAjwAAAAwcG9zdP7wADIAAAJsAAAAIAABAAAAAgKPTKF7z18PPPUADwgA
+      AAAAANRJaQAAAAAA3sybcwAT/nUD9AQ+AAAACQACAAAAAAAAAAEAAAeP/lAAAAYA
+      ABMADAP0AAEAAAAAAAAAAAAAAAAAAAACAAEAAAADAAwAAQAAAAAAAQAAAAAAAAAA
+      AAAAAAAAAAAAAwSyAZAABQAABZoFMwAAARsFmgUzAAAD0QBmAgAIAgILBgAAAAAA
+      AAAAAAABAAAAAAAAAAAAAAAAICAgIABAAHgAeQYr/nUBiQePAbAAAAABAAAAAAQ+
+      BcgAAAAgAAAGAAEABAAAHAATAAAAAAACAAAAAwAAABQAAwABAAAAFAAEACAAAAAE
+      AAQAAQAAAHn//wAAAHj///+JAAEAAAAAAAAAAAAfADUAAQAcAAAD4QQ+AAsAADMB
+      ATMBEzMBASMBARwBYf6r5AEQ9Lb+tAFn4/7a/voCPgIA/mkBl/3d/eUBtP5MAAAB
+      ABP+dQP0BD4ABwAAIQEzAQEzASMBlP5/yAEnAUSu/cLNBD78vwNB+jcAAAAAAAAC
+      AB4AAwABBAkAAQAEAAAAAwABBAkAAgAOAAQARwBvAFIAZQBnAHUAbABhAHIAAwAA
+      AAAAAP7tADIAAAAAAAAAAAAAAAAAAAAAAAAAAA==
+      """
+  }
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="small" color="black"
+    detail height=40 {
+      field text="x" left=0 top=0 width=40 height=20 {
+        style font="large"
+      }
+      field text="y" left=50 top=0 width=40 height=20
+    }
+  }
+}

@@ -562,15 +562,15 @@ Given a band template and a context, measurement proceeds:
         container-dependent and whether or not the clamp is what made
         its box short, drops the lines beyond the box as they are dropped
         without `stretch`.
-      - `image`: decode and sniff the type, then apply `scale`. `cut` draws the
-        image at natural size clipped to the box, and the retained region becomes
-        the mark's `crop`. `fill` scales the image to the box: with `proportional=#true`
-        the aspect ratio is preserved, so it is scaled to fit within the box
-        and positioned by `halign` / `valign`, and with `#false` it is stretched
-        to the box exactly. `grow` expands the box wherever the image exceeds it,
-        so the image is drawn at natural size, neither scaled nor clipped.
-        Only `fill` scales, so `proportional` is consulted only for `fill`;
-        only `cut` produces a `crop`.
+      - `image`: read the bytes as far as their header, which gives
+        the format and the natural size. With `scale="grow"` the natural
+        height is the element's content height. How the image is finally
+        drawn waits for the box: `cut` draws it at natural size clipped to
+        the box, and the retained region becomes the mark's `crop`; `fill`
+        scales it to the box, keeping its aspect ratio unless `proportional`
+        is `#false`; and `grow` expands the box wherever the image exceeds
+        it, so the image is drawn at natural size, neither scaled nor clipped.
+        See [an image in its box](#an-image-in-its-box).
       - `barcode`: encode the value by the rules of
         [barcode.md](barcode.md), giving a symbol in modules.
         Its size at the declared `module` is the element's content height,
@@ -720,6 +720,99 @@ with `share` 0, 0.5, or 1 as for a field. A symbol larger than its box
 overhangs it, on the side the alignment does not name, and the mark is
 the symbol: its box, its `module`, and its runs. A symbol that overhangs
 the band reaches the band's second maximum like any mark.
+
+### An image in its box
+
+An image's size comes from its bitmap, and `scale` decides how that
+meets the box. Every length here is rounded as it is computed,
+as [coordinates and rounding](#coordinates-and-rounding) requires.
+
+**The natural size** is the bitmap's pixel count along each axis, drawn
+at one point per pixel. It is read from the image's header and nothing
+else in the file moves it: resolution metadata -- a PNG's `pHYs` chunk,
+a JFIF density, an EXIF resolution -- is not read, and neither is an EXIF
+orientation, so a photo a viewer would turn a quarter turn is drawn as
+its pixels lie. A GIF's natural size is its logical screen's, not its
+first frame's. Which bytes are read, and which are refused,
+is in [template.md](template.md#image).
+
+Ignoring resolution is a deliberate decision: the density an image
+declares cannot be trusted. Many files carry a wrong one, because the
+tool that saved them wrote 72 or 96 whatever the image was made for,
+and a GIF has no field for it at all. Honouring it would make an
+image's size depend on which program last saved the file.
+The pixel count is the one size every image states correctly, and
+a box with `scale="fill"` draws an image at any physical size wanted.
+
+**The box** is resolved from the geometry like any element's, `maxwidth` and
+`maxheight` included. Under `cut` and `fill` an image has no content height,
+so a box with no height of its own is [container-dependent](#building-a-band).
+Under `grow` the natural height is the content height, and a box whose height
+is its own is at least that.
+
+**The drawn size** is decided by `scale`:
+
+```
+cut     width  = min(natural width,  box width)
+        height = min(natural height, box height)
+fill    width  = box width,  height = box height        proportional=#false
+grow    width  = natural width,  height = natural height
+```
+
+Under `fill` with `proportional=#true`, the default, the axis whose ratio
+of box to image is the smaller takes the box's extent exactly, and the
+other follows from it:
+
+```
+if box width × natural height ≤ box height × natural width:
+    width  = box width
+    height = round(natural height × box width / natural width)
+otherwise:
+    width  = round(natural width × box height / natural height)
+    height = box height
+```
+
+A box of no width or no height draws the image at no size at all.
+
+**`grow` expands the box** wherever the image exceeds it, right and down:
+the box keeps its left and top edges as resolved and reaches as far as the
+image does. That holds for a box whose left edge was derived from a `right`,
+which still grows to the right, and for one a `maxwidth` or `maxheight`
+clamped, which grows back to the image, since a clamp does not clamp a grow
+image. An image that grows past the band's bottom edge reaches the band's
+second maximum like any mark. Along an axis where the image is smaller
+than the box, the box stays as it was.
+
+**The image sits in the box** by `halign` and `valign`,
+measured from the box's edges as a barcode's symbol is:
+
+```
+x = round(box.x + share × (box.width  - width))
+y = round(box.y + share × (box.height - height))
+```
+
+along each axis where the image is no larger than the box.
+Where `grow` made it larger, the box grew to it, and it starts at
+the box's left or top edge. The mark's box is the drawn rectangle.
+
+**`cut` clips the image to the box**, and the mark's `crop` names the pixels
+kept. The bitmap is aligned before it is clipped, so the pixels kept are
+the ones the alignment leaves inside the box: an image wider than its box
+and aligned right keeps its right side, and one centred keeps its middle.
+
+```
+crop.x = round(share × (natural width  - width))
+crop.y = round(share × (natural height - height))
+crop.width  = width
+crop.height = height
+```
+
+with `share` the alignment's, as above. The crop is in source pixels
+at one point per pixel, measured from the image's top-left corner,
+and keeps a fraction of a pixel where the box has one: a box 10.5 wide
+keeps 10.5 pixels. It is present only where the image was clipped along
+at least one axis, and along an axis that was not clipped it spans the
+whole image. Neither `fill` nor `grow` clips, so neither produces a crop.
 
 ## Floating elements
 
@@ -1738,6 +1831,8 @@ Each of these names the template node, the record index, and the measured values
 | Deferred barcode whose symbol is longer than its placeholder's | error |
 | Header and footer reservations together exceed the frame | error |
 | Barcode content not encodable in the selected type | error |
+| An image file that cannot be read, `embed=#false` included | error |
+| Image bytes that are not a PNG, a JPEG or a GIF that can be sized, or have no pixels along an axis | error |
 | Expression type mismatch, missing field, or a `null` in a member that is not `nullable` | error |
 | A value a `calc="sum"` accumulator cannot add to its running total | error |
 | `FINAL` without `evaltime`, or `evaltime` without `FINAL` | error, at template validation |

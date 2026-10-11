@@ -3,11 +3,14 @@
 Every case in the corpus is built by the reference and by this engine
 into one directory, and the two printouts are compared.  A case the
 divergence register covers is allowed to differ, and is required to.
+One field of the reference's is dropped before the comparison, the `type`
+of an image mark, for the reason :func:`without_image_types` gives.
 
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -17,6 +20,25 @@ from tests.differential.cases import ROOT, Case, corpus, probe_cases
 from tests.differential.diff import compare_printouts
 from tests.differential.engines import Build, BuildFailed, Engine, run
 from tests.differential.register import Divergence, Register
+
+# The `type` the reference writes on every image mark, right after the
+# mark's box, which is flat.  doc/printout.md#image has no such field.
+IMAGE_TYPE = re.compile(rb'("kind":"image","box":\{[^{}]*\}),"type":"[a-z]+"')
+
+
+def without_image_types(printout: bytes) -> bytes:
+    """Return a printout with the reference's image `type` fields dropped.
+
+    The one field the comparison does not hold the reference to.
+    This engine writes no format on an image mark, and the reference writes
+    one on every image mark, so comparing it would leave every case with an
+    image differing and hide whatever else differs in it.  The divergence
+    `image-type-removed` registers the difference, and the probes that
+    still give an image a `type` keep it visible: here that is an unknown
+    property, and the warning about it reaches the printout.
+
+    """
+    return IMAGE_TYPE.sub(rb"\1", printout)
 
 
 def attempt(engine: Engine, case: Case, directory: Path) -> Build | BuildFailed:
@@ -95,7 +117,7 @@ def test_printouts_agree(
     assert isinstance(local_build, Build)
 
     comparison = compare_printouts(
-        reference_build.printout,
+        without_image_types(reference_build.printout),
         local_build.printout,
         left_name=oracle.name,
         right_name=local.name,
@@ -202,3 +224,13 @@ def test_corpus_is_not_empty() -> None:
 
     """
     assert corpus(), "the differential corpus is empty"
+
+
+def test_only_an_image_marks_type_is_dropped() -> None:
+    image = b'{"kind":"image","box":{"x":0,"y":0,"width":24,"height":12},'
+    barcode = b'{"kind":"barcode","box":{"x":0,"y":0,"width":9,"height":9},'
+    printout = image + b'"type":"png","data":"wide.png"}' + barcode
+    printout += b'"type":"Code128"}'
+    assert without_image_types(printout) == (
+        image + b'"data":"wide.png"}' + barcode + b'"type":"Code128"}'
+    )

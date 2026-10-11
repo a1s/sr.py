@@ -1,0 +1,36 @@
+// probes/data/build-order.kdl -- what "first" means for a generated name.
+//
+// The first mention of an image wins its base name, where first is
+// the order elements are built in -- and a band is built whenever
+// it is measured, which for a header or a footer starts when its space
+// is reserved, before anything else on the page.  `one/pic.png`
+// and `two/pic.png` have one base name and different bytes:
+//
+// - the header is built first.  Its `one/pic.png` is `embed=#false`,
+//   has no entry, and takes no name;
+// - the footer is built next, to reserve its space, so its `two/pic.png`
+//   is the first embedded `pic.png` built, and is `pic.png`;
+// - the detail's `one/pic.png` is built after both and is `pic.png-2`,
+//   though it is drawn above the footer on the page;
+// - the detail's `zebra.png` is suppressed by its `printwhen`,
+//   is never built, and has no entry.
+//
+// doc/printout.md#data is what this became.
+
+report name="data/build-order" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=200 height=200 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    header height=20 {
+      image file="alpha.png" left=0 top=0
+      image file="one/pic.png" embed=#false left=50 top=0
+    }
+    detail height=40 {
+      image file="zebra.png" left=100 top=0 printwhen="False"
+      image file="one/pic.png" left=0 top=0
+    }
+    footer height=30 {
+      image file="two/pic.png" left=0 top=0
+    }
+  }
+}

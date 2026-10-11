@@ -81,6 +81,7 @@ from sr.expr import Record, Time
 from sr.expr.golayout import RFC3339
 from sr.fonts.resolve import Resolution
 from sr.fonts.text import Metrics
+from sr.layout.blobs import DataTable
 from sr.layout.columns import Fragment, balance
 from sr.layout.context import Context, condition, evaluate
 from sr.layout.defer import (
@@ -94,10 +95,11 @@ from sr.layout.defer import (
     waits_for,
 )
 from sr.layout.frame import Frame, Window
+from sr.layout.images import Pictures
 from sr.layout.measure import Measurement, Measurer
 from sr.layout.place import choose, split
 from sr.layout.variables import Variables
-from sr.printout.model import FontEntry, Mark, Page, Paper, Printout
+from sr.printout.model import FontEntry, Image, Mark, Page, Paper, Printout, Xref
 from sr.printout.model import Report as ReportMeta
 from sr.printout.write import number
 from sr.template.model import Eject, Group, Layout, Nesting, Report, Section, Style
@@ -321,6 +323,7 @@ class Builder:
         layout: The template's `layout` node.
         context: The names in scope, as the report stands.
         measurer: What turns a band into marks.
+        table: The printout's `data` table, as the build names its blobs.
         variables: The accumulators.
         page: The page frame, the root of the frame tree.
         levels: The layout and its groups, outermost first.
@@ -347,7 +350,18 @@ class Builder:
         self.metrics = {
             one.font.name: Metrics(one.face, one.font.size) for one in build.fonts
         }
-        self.measurer = Measurer(self.metrics, self.text_blobs(), report.file)
+        self.table = DataTable(build.blobs)
+        self.measurer = Measurer(
+            self.metrics,
+            self.text_blobs(),
+            Pictures(report.basedir, build.blobs, self.table, report.file),
+            {
+                one.font.name: one.origin.data
+                for one in build.fonts
+                if one.origin.data is not None
+            },
+            report.file,
+        )
         self.context = Context(
             parameters=dict(build.parameters),
             data_count=len(build.records),
@@ -1778,10 +1792,20 @@ class Builder:
         What resolving a font had to say is carried only for a font the
         table lists, so no warning names a font the document does not have.
 
+        The `data` table holds the entries something in the document
+        refers to, per doc/printout.md#data: an image mark on a page,
+        or a font in the font table.  A name an image took in a band
+        that never reached the page stays taken, and is not written.
+
         """
         used = tuple(
             one for one in self.build.fonts if one.font.name in self.measurer.used
         )
+        fonts = tuple(
+            font_entry(one, self.measurer.font_data.get(one.font.name)) for one in used
+        )
+        referenced = [one.data for one in fonts if one.data is not None]
+        referenced.extend(blobs_in(mark for page in self.pages for mark in page.marks))
         report = self.build.report
         # A group is listed once it has opened, and not before: over no
         # records at all the header carries neither table.
@@ -1795,8 +1819,8 @@ class Builder:
             engine=meta.engine(),
             strict_fonts=self.build.strict_fonts,
             paper=self.paper(),
-            fonts=tuple(font_entry(one) for one in used),
-            data={},
+            fonts=fonts,
+            data=self.table.written(referenced),
             pages=tuple(self.pages),
             warnings=(
                 tuple(self.build.warnings)
@@ -1840,11 +1864,28 @@ def frame_path(top: Frame, bottom: Frame) -> list[Frame]:
     return found
 
 
-def font_entry(resolution: Resolution) -> FontEntry:
+def blobs_in(marks: Iterator[Mark] | tuple[Mark, ...]) -> Iterator[str]:
+    """Yield the `data` entries these marks name, the ones inside xrefs too.
+
+    Args:
+        marks: The marks, in any order.
+
+    """
+    for mark in marks:
+        if isinstance(mark, Image) and mark.data is not None:
+            yield mark.data
+        elif isinstance(mark, Xref):
+            yield from blobs_in(mark.marks)
+
+
+def font_entry(resolution: Resolution, data: str | None = None) -> FontEntry:
     """Return one resolved font as the printout's header records it.
 
     Args:
         resolution: What the resolution chain produced.
+        data: The `data` entry a font read out of a `data` node
+            is stored under, which is another node's name where
+            an entry built earlier holds the same bytes.
 
     """
     font = resolution.font
@@ -1859,6 +1900,6 @@ def font_entry(resolution: Resolution) -> FontEntry:
         step=resolution.step,
         requested=resolution.requested,
         file=Path(origin.path) if origin.path is not None else None,
-        data=origin.data,
+        data=data if data is not None else origin.data,
         index=origin.index,
     )

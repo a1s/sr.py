@@ -1,0 +1,29 @@
+// probes/data/unprinted.kdl -- an image built and never drawn.
+//
+// A registered divergence, and a defect in the reference rather than a
+// rule to copy.  See `divergences.toml`, entry `unprinted-blobs-written`.
+//
+// The footer's `printwhen` is true when its space is reserved, before any
+// detail has printed, and false when it is built at the end of the page.
+// So its `two/pic.png` is built and never reaches the page -- it is
+// measured for the reservation.  Being built first, it takes the name
+// `pic.png`, and the detail's `one/pic.png` is `pic.png-2`: a name
+// is taken by the first element built, as `build-order.kdl` shows.
+//
+// What is written is a separate question, and doc/printout.md#data
+// answers it: only entries something refers to.  No mark and no font refers
+// to `pic.png`, so the table holds `pic.png-2` alone.  The reference writes
+// both, carrying the bytes of an image the document does not show.
+
+report name="data/unprinted" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout width=200 height=100 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=40 {
+      image file="one/pic.png" left=0 top=0
+    }
+    footer height=20 printwhen="REPORT_COUNT == 0" {
+      image file="two/pic.png" left=0 top=0
+    }
+  }
+}
