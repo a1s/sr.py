@@ -1,21 +1,21 @@
 // probes/printout/twin-fonts.kdl -- two fonts that resolve alike.
 //
-// doc/printout.md#fonts lists one entry per font used, and a font
-// is a `font` node.  Here are two pairs of them, each pair the same 
-//in everything but its names: `body` and `twin` read one file,
+// doc/printout.md#fonts used to list "one entry per distinct font
+// used".  Here are two pairs of `font` nodes, each pair the same
+// in everything but its names: `body` and `twin` read one file,
 // and `cell` and `note` one `data` node.  Each pair is declared
 // in one order and built in the other.
 //
-// The reference writes one entry for each pair, named after the font
-// built first, `twin` and `note`, and every mark set in either font
-// names that entry.  Its glyph warnings still count the fonts apart:
-// the character `body` lacks is reported against `body`, a font
-// its table does not list and no mark names.
+// The reference reads "distinct" as merging.  It writes one entry for
+// each pair, named after the font built first, `twin` and `note`, and
+// every mark set in either font names that entry.  Its glyph warnings
+// still count the fonts apart: the character `body` lacks is reported
+// against `body`, a font its table does not list and no mark names.
 //
-// doc/ keeps the two apart: each font used is its own entry,
-// under its own name, and each mark names the font its own
-// style walk resolved to.  The difference is registered as
-// `twin-fonts-merged`, a defect in the reference.
+// doc/ now keeps the two apart: each font is listed under the name its
+// template gave it, and each mark names the font its own style walk
+// resolved to.  The difference is registered as `twin-fonts-merged`,
+// a decision.
 //
 // The `data` pair reads Go Regular cut down to `x`, `y` and `.notdef`,
 // the face data/font-blob.kdl carries, and is set at another size

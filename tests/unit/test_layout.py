@@ -831,11 +831,11 @@ def test_the_font_table_lists_the_fonts_a_walk_resolved_to(
 def test_two_fonts_that_resolve_alike_are_two_entries(
     tmp_path: Path, source: str
 ) -> None:
-    """Each mark names its own font, though the two read one face.
+    """Each mark and each glyph warning names its own font.
 
-    `two` is declared second and built first.  The reference writes one
-    entry, under the name of the font built first; see
-    `twin-fonts-merged` in divergences.toml.
+    The two read one face, and `two` is declared second and built first.
+    The reference writes one entry, under the name of the font built
+    first; see `twin-fonts-merged` in divergences.toml.
 
     """
     face = f'file="{REGULAR}"'
@@ -848,19 +848,23 @@ def test_two_fonts_that_resolve_alike_are_two_entries(
     printout = built(
         tmp_path,
         "    detail height=40 {\n"
-        '      field text="b" top=0 height=12 { style font="two"; }\n'
-        '      field text="a" top=20 height=12 { style font="one"; }\n'
+        '      field text="b中" top=0 height=12 { style font="two"; }\n'
+        '      field text="a中" top=20 height=12 { style font="one"; }\n'
         "    }",
         nodes=nodes,
     )
-    one, two = printout.fonts
-    assert (one.name, two.name) == ("one", "two")
-    assert replace(one, name="two") == two
+    assert [entry.name for entry in printout.fonts] == ["one", "two"]
+    first, second = printout.fonts
+    assert replace(first, name="two") == second
     texts = [mark for mark in marks(printout) if isinstance(mark, Text)]
     assert [(mark.font, mark.lines) for mark in texts] == [
-        ("two", ("b",)),
-        ("one", ("a",)),
+        ("two", ("b中",)),
+        ("one", ("a中",)),
     ]
+    glyphs = [one.message for one in printout.warnings if one.kind == "glyph"]
+    assert len(glyphs) == 2
+    assert 'font "two"' in glyphs[0]
+    assert 'font "one"' in glyphs[1]
 
 
 def test_a_font_the_table_leaves_out_takes_its_warnings_with_it(

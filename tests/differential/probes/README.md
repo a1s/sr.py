@@ -389,10 +389,11 @@ though it converts nothing, and here an image has neither.
 The comparison drops the reference's mark `type`, so what differs
 is the warning a `type` in the template gets here.
 
-After M11 came one more defect in the reference, in `printout/twin-fonts`.
-Two `font` nodes that resolve to one face at one size and style are two
-entries in doc/. The reference writes one, under the name of the font
-built first, and every mark set in either font names it.
+After M11 came one decision, in `printout/twin-fonts`. doc/printout.md#fonts
+said "one entry per distinct font used", and the reference reads that as
+merging two `font` nodes that resolve to one face at one size and style.
+It writes one entry, under the name of the font built first, and every
+mark set in either font names it. doc/ now keeps the two apart.
 
 Of the rest, every one agrees byte for byte. The three `data/` probes that
 waited for an image to be built were in [pending.toml](../pending.toml)

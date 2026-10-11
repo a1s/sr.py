@@ -1662,8 +1662,10 @@ A layout named by `template=` is a separate document with fonts, data and a base
 directory of its own, and its style search ends at its own `layout` -- the same
 rule applied to a different tree. Either way the printout carries one font table
 and one data table for the whole document, so a face two templates both resolve
-is measured and embedded once, and a name two templates give to different things
-is published under distinct names.
+is measured once and [embedded once](render.md#fonts-in-the-file).
+The fonts that name it are still listed under their own names,
+as [printout.md](printout.md#fonts) describes, and a name two templates
+give to different things is published under distinct names.
 
 - **Non-inline** (default): the child builds complete pages, which are spliced into
   the parent's page list at the point the subreport occurs. `ownpageno` restarts

@@ -33,7 +33,7 @@
 # `cut-crop-ignores-alignment`, `grow-ignores-valign`,
 # and `unprinted-blobs-written`; and two decisions,
 # `image-type-removed` and `image-without-pixels`.  After M11 came
-# one defect in the reference's font table, `twin-fonts-merged`.
+# one decision about the font table, `twin-fonts-merged`.
 #
 # The milestone numbers:
 #   M0: Scaffold and oracle
@@ -912,17 +912,18 @@ affects = ["probe/data/unprinted"]
 id = "twin-fonts-merged"
 summary = "two fonts that resolve alike are two entries here; the reference merges them under the name of the first one built"
 reason = """\
-doc/printout.md#fonts lists one entry per font used, and a font there is \
-a `font` node: it is what a style walk resolves to, what is used, and \
-what a glyph warning is raised once per.  Two nodes that read one face \
-at one size and style write entries that differ only in `name`.  The \
-reference writes one of them, under the name of whichever font was built \
-first, and every mark set in either names it, so moving an element can \
-rename text in bands it never touched.  Its glyph warnings still count \
-the two apart, and name a font its table does not list and no mark \
-names.  This holds for `file` and `data` fonts alike.  This engine writes \
-an entry per node, and the reference is the side that changes.\
+doc/printout.md#fonts said "one entry per distinct font used", and the \
+reference reads "distinct" as merging.  Two `font` nodes whose entries \
+differ only in `name` are written as one entry, under the name of \
+whichever was built first, and every mark set in either names it, so \
+moving an element can rename text in bands it never touched.  Its glyph \
+warnings still count the two apart, and name a font its table does not \
+list and no mark names.  This holds for `file` and `data` fonts alike.  \
+doc/printout.md#fonts now lists each font under the name its template \
+gave it and never merges it into an entry of another name, and \
+doc/render.md embeds one font per face, so two entries over one face \
+cost nothing in the PDF.  The reference is the side that changes.\
 """
-ticket = "M7: the font table, printout.md#fonts; filed against the Go engine"
+ticket = "M7: the font table, printout.md#fonts"
 since = "2026-10-11"
 affects = ["probe/printout/twin-fonts"]

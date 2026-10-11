@@ -1,6 +1,6 @@
 // probes/printout/used-fonts.kdl -- which fonts the header's table lists.
 //
-// doc/printout.md#fonts lists "one entry per distinct font used".
+// doc/printout.md#fonts lists "one entry per font used".
 // The reference reads "used" as: some element that was measured
 // had a style walk that resolved to that font.  So:
 //
