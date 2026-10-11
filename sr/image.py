@@ -4,7 +4,9 @@ doc/template.md#image has the engine sniff the format from the content
 and read the natural size from it, and doc/layout.md#an-image-in-its-box
 does everything else with those two facts.  Nothing here decodes a pixel:
 decoding belongs to the renderer, and the engine reads exactly as far
-into the bytes as the header that states the size.
+into the bytes as the header that states the size.  From a file it reads
+no further either: :func:`read_file_header` reads the start and reads more
+only while the header runs past what it has.
 
 Three formats, each recognised by its signature and never by a file name:
 
@@ -13,8 +15,8 @@ Three formats, each recognised by its signature and never by a file name:
   that cannot be trusted.
 * **JPEG**: the start-of-image marker, then segments up to the first
   frame header.  Baseline, extended sequential and progressive frames
-  are read; lossless, hierarchical and arithmetic-coded ones are refused,
-  since a renderer is not required to decode them.
+  are read; lossless, hierarchical, arithmetic-coded, and JPEG-LS ones
+  are refused, since a renderer is not required to decode them.
 * **GIF**: `GIF87a` or `GIF89a`, then the logical screen descriptor.
   The logical screen is the natural size, not the first frame's.
 
@@ -30,11 +32,26 @@ from __future__ import annotations
 import struct
 import zlib
 from dataclasses import dataclass
+from typing import BinaryIO
 
-__all__ = ["FORMATS", "BadImage", "Header", "read_header", "sniff"]
+__all__ = [
+    "FORMATS",
+    "BadImage",
+    "CutShort",
+    "Header",
+    "read_file_header",
+    "read_header",
+    "sniff",
+]
 
-# The formats a printout's `image` mark can name, in the order doc/ lists them.
+# The formats this engine reads, in the order doc/template.md#image lists them.
 FORMATS = ("png", "jpeg", "gif")
+
+# How much of a file is read first, for its header.  A PNG's or a GIF's
+# is in the first few dozen bytes.  A JPEG's comes after whatever the
+# encoder wrote ahead of it, which is rarely more than this, and the read
+# doubles until it has the header where it is more.
+FIRST_READ = 64 * 1024
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 JPEG_SIGNATURE = b"\xff\xd8"
@@ -57,6 +74,7 @@ PNG_LIMIT = 2**31 - 1
 JPEG_READ = {0xC0, 0xC1, 0xC2}
 
 # Every other frame header, and what it is, for the refusal.
+# The last is JPEG-LS's, from a later standard, which shares JPEG's markers.
 JPEG_REFUSED = {
     0xC3: "lossless",
     0xC5: "hierarchical",
@@ -68,6 +86,7 @@ JPEG_REFUSED = {
     0xCD: "arithmetic-coded",
     0xCE: "arithmetic-coded",
     0xCF: "arithmetic-coded",
+    0xF7: "JPEG-LS",
 }
 
 # Markers that stand alone, with no length after them: TEM and RST0-RST7.
@@ -82,6 +101,15 @@ class BadImage(ValueError):
 
     The message says what is wrong with the bytes and nothing
     about where they came from, which the caller adds.
+
+    """
+
+
+class CutShort(BadImage):
+    """Bytes that end before their header does.
+
+    Kept apart from damage because the bytes may be only the start of
+    the image, which more of it would complete.
 
     """
 
@@ -118,6 +146,32 @@ def sniff(data: bytes) -> str | None:
     return None
 
 
+def read_file_header(stream: BinaryIO) -> Header:
+    """Return an image's format and natural size, reading only its header.
+
+    The bytes after the header are not read: an image that a
+    printout only refers to need not be held whole for its size.
+
+    Args:
+        stream: The image, open for binary reading, at its start.
+
+    Raises:
+        BadImage: As :func:`read_header` raises it, the whole file
+            having been read where it ends before its header does.
+        OSError: The stream will not read.
+
+    """
+    data = stream.read(FIRST_READ)
+    while True:
+        try:
+            return read_header(data)
+        except CutShort:
+            more = stream.read(len(data))
+            if not more:
+                raise
+            data += more
+
+
 def read_header(data: bytes) -> Header:
     """Return an image's format and natural size.
 
@@ -125,9 +179,10 @@ def read_header(data: bytes) -> Header:
         data: The image's bytes.
 
     Raises:
+        CutShort: The bytes end before their header does.
         BadImage: The bytes are none of the three formats,
-            their header is damaged or cut short,
-            or the image has no pixels along one of its axes.
+            their header is damaged, or the image has
+            no pixels along one of its axes.
 
     """
     found = sniff(data)
@@ -155,6 +210,7 @@ def png_header(data: bytes) -> Header:
         data: The image's bytes, signature included.
 
     Raises:
+        CutShort: The bytes end inside the chunk.
         BadImage: The chunk is missing, damaged, or names
             a combination of colour type and depth PNG does not have.
 
@@ -162,7 +218,7 @@ def png_header(data: bytes) -> Header:
     start = len(PNG_SIGNATURE)
     chunk = data[start : start + 25]
     if len(chunk) < 25:
-        raise BadImage("the PNG ends inside its header")
+        raise CutShort("the PNG ends inside its header")
     length, kind = struct.unpack(">I4s", chunk[:8])
     if kind != b"IHDR" or length != 13:
         raise BadImage("the PNG does not begin with its IHDR chunk")
@@ -195,21 +251,27 @@ def jpeg_header(data: bytes) -> Header:
         data: The image's bytes, start-of-image marker included.
 
     Raises:
+        CutShort: The segments run past the end of the bytes.
         BadImage: No frame header comes before the first scan,
-            the segments run past the end of the bytes,
-            or the frame is of a kind a renderer can not decode.
+            a segment is damaged, or the frame is of a kind
+            a renderer does not decode.
 
     """
     position = len(JPEG_SIGNATURE)
     end = len(data)
     while True:
-        if position >= end or data[position] != 0xFF:
-            raise BadImage("the JPEG ends, or is damaged, before its frame header")
+        if position >= end:
+            raise CutShort("the JPEG ends before its frame header")
+        if data[position] != 0xFF:
+            raise BadImage(
+                "the JPEG is damaged before its frame header:"
+                " a segment is not followed by a marker"
+            )
         # Any number of 0xFF bytes may pad the space before a marker.
         while position < end and data[position] == 0xFF:
             position += 1
         if position >= end:
-            raise BadImage("the JPEG ends before its frame header")
+            raise CutShort("the JPEG ends before its frame header")
         marker = data[position]
         position += 1
         if marker in JPEG_STANDALONE:
@@ -217,10 +279,15 @@ def jpeg_header(data: bytes) -> Header:
         if marker in (JPEG_SCAN, JPEG_END):
             raise BadImage("the JPEG has no frame header before its first scan")
         if position + 2 > end:
-            raise BadImage("the JPEG ends before its frame header")
+            raise CutShort("the JPEG ends before its frame header")
         (length,) = struct.unpack(">H", data[position : position + 2])
-        if length < 2 or position + length > end:
-            raise BadImage("the JPEG ends, or is damaged, before its frame header")
+        if length < 2:
+            raise BadImage(
+                "the JPEG is damaged before its frame header:"
+                f" a segment gives its length as {length}"
+            )
+        if position + length > end:
+            raise CutShort("the JPEG ends before its frame header")
         if marker in JPEG_REFUSED:
             raise BadImage(
                 f"the JPEG is {JPEG_REFUSED[marker]}, which a renderer can't"
@@ -262,10 +329,10 @@ def gif_header(data: bytes) -> Header:
         data: The image's bytes, signature included.
 
     Raises:
-        BadImage: The logical screen descriptor is cut short.
+        CutShort: The logical screen descriptor is cut short.
 
     """
     if len(data) < 13:
-        raise BadImage("the GIF ends inside its header")
+        raise CutShort("the GIF ends inside its header")
     width, height = struct.unpack("<HH", data[6:10])
     return Header("gif", width, height)

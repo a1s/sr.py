@@ -72,7 +72,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field, replace
-from pathlib import Path
 from typing import Any
 
 from sr.barcode import Symbol, Unencodable, encode
@@ -86,7 +85,6 @@ from sr.errors import (
 from sr.expr import Namespace, apply_format
 from sr.expr.values import quote
 from sr.fonts.text import Metrics, missing_glyph, wrap
-from sr.layout.blobs import DataTable
 from sr.layout.context import Context, condition, evaluate, evaluate_at
 from sr.layout.defer import Deferral, scope_of, snapshot
 from sr.layout.frame import Window
@@ -369,28 +367,26 @@ class Measurer:
         self,
         fonts: dict[str, Metrics],
         blobs: dict[str, str],
+        pictures: Pictures,
+        embedded: Mapping[str, str],
         file: str | None = None,
-        pictures: Pictures | None = None,
-        embedded: Mapping[str, str] | None = None,
     ) -> None:
         """Hold what every band in one report is measured against.
 
         Args:
             fonts: The metrics of each `font` node, by name.
             blobs: The contents of the report's `data` nodes, by name.
+            pictures: What resolves the report's images, and holds
+                the data table their entries and the fonts' are named in.
+            embedded: The `data` nodes for font data, keyed by font name.
             file: The template, for a diagnostic.
-            pictures: What resolves the report's images;
-                one with no `data` nodes, resolving against
-                the working directory, where none is given.
-            embedded: The `data` node by font name
-                for each font read out of data elements.
 
         """
         self.fonts = fonts
         self.blobs = blobs
         self.file = file
-        self.pictures = pictures or Pictures(Path(), {}, DataTable({}), file)
-        self.embedded = dict(embedded or {})
+        self.pictures = pictures
+        self.embedded = dict(embedded)
         self.warnings: list[BuildWarning] = []
         self.reported: set[tuple[str, str]] = set()
         self.used: set[str] = set()

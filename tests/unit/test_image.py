@@ -4,7 +4,8 @@ The bytes are built by hand here rather than by an encoder,
 so that each case says exactly what its header holds: a size,
 a chunk out of order, a frame type, a damaged checksum.
 A few real files written by Pillow check that what an encoder
-writes is read the same way.
+writes is read the same way.  Read from a file, an image is
+read no further than its header.
 
 """
 
@@ -17,7 +18,15 @@ import zlib
 import pytest
 from PIL import Image
 
-from sr.image import BadImage, Header, read_header, sniff
+from sr.image import (
+    FIRST_READ,
+    BadImage,
+    CutShort,
+    Header,
+    read_file_header,
+    read_header,
+    sniff,
+)
 
 SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
@@ -172,7 +181,12 @@ def test_what_an_encoder_writes_is_read(options: dict[str, object]) -> None:
 
 @pytest.mark.parametrize(
     ("marker", "kind"),
-    [(0xC3, "lossless"), (0xC5, "hierarchical"), (0xC9, "arithmetic-coded")],
+    [
+        (0xC3, "lossless"),
+        (0xC5, "hierarchical"),
+        (0xC9, "arithmetic-coded"),
+        (0xF7, "JPEG-LS"),
+    ],
 )
 def test_a_jpeg_a_renderer_need_not_decode_is_refused(marker: int, kind: str) -> None:
     with pytest.raises(BadImage, match=kind):
@@ -197,8 +211,21 @@ def test_a_jpeg_with_no_frame_before_its_scan_is_refused() -> None:
 @pytest.mark.parametrize("cut", [3, 6, 30])
 def test_a_jpeg_cut_short_is_refused(cut: int) -> None:
     data = jpeg(segment(0xE0, b"\x00" * 40), frame())
-    with pytest.raises(BadImage, match="ends"):
+    with pytest.raises(CutShort, match="ends before its frame header"):
         read_header(data[:cut])
+
+
+@pytest.mark.parametrize(
+    ("data", "found"),
+    [
+        (b"\xff\xd8\xff\xe0\x00\x01", "gives its length as 1"),
+        (jpeg(segment(0xE0, b"\x00" * 4), b"\x00", frame()), "not followed by"),
+    ],
+)
+def test_a_damaged_jpeg_is_not_one_cut_short(data: bytes, found: str) -> None:
+    with pytest.raises(BadImage, match=found) as refused:
+        read_header(data)
+    assert not isinstance(refused.value, CutShort)
 
 
 # -- GIF -----------------------------------------------------------------
@@ -215,6 +242,37 @@ def test_what_an_encoder_writes_as_gif_is_read() -> None:
 def test_a_gif_cut_short_is_refused() -> None:
     with pytest.raises(BadImage, match="ends inside its header"):
         read_header(gif()[:10])
+
+
+# -- from a file ---------------------------------------------------------
+
+
+@pytest.mark.parametrize("data", [png(), jpeg(frame()), gif()])
+def test_a_file_is_read_no_further_than_its_header(data: bytes) -> None:
+    stream = io.BytesIO(data + b"\x00" * (4 * FIRST_READ))
+    assert read_file_header(stream) == read_header(data)
+    assert stream.tell() == FIRST_READ
+
+
+def test_a_jpeg_header_past_the_first_read_is_read_further() -> None:
+    metadata = [segment(0xE2, b"\x00" * 65000) for _ in range(3)]
+    data = jpeg(*metadata, frame(width=640, height=480))
+    stream = io.BytesIO(data + b"\x00" * (8 * FIRST_READ))
+    assert read_file_header(stream) == Header("jpeg", 640, 480)
+    assert stream.tell() == 4 * FIRST_READ
+
+
+@pytest.mark.parametrize("data", [png()[:20], jpeg(frame())[:12], gif()[:10]])
+def test_a_file_cut_short_is_refused_once_it_is_read(data: bytes) -> None:
+    stream = io.BytesIO(data)
+    with pytest.raises(CutShort):
+        read_file_header(stream)
+    assert stream.tell() == len(data)
+
+
+def test_a_file_that_is_no_image_is_refused_from_its_start() -> None:
+    with pytest.raises(BadImage, match="not a PNG, a JPEG or a GIF"):
+        read_file_header(io.BytesIO(b"BM" + b"\x00" * FIRST_READ))
 
 
 # -- no pixels -----------------------------------------------------------

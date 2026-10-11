@@ -507,7 +507,7 @@ The template's `stroke=#false` resolves to an absent `stroke`, and its
   "kind": "image",
   "box": { "x": 42.52, "y": 100, "width": 56.7, "height": 28.35 },
   "data": "logo",
-  "crop": { "x": 0, "y": 0, "width": 120, "height": 60 }
+  "crop": { "x": 0, "y": 0, "width": 56.7, "height": 28.35 }
 }
 ```
 

@@ -586,7 +586,7 @@ class Loader:
             content=(
                 None if text is None else self.decode(node, text, encoding, compress)
             ),
-            has_content=text is not None,
+            has_content=bool(node.each("content")),
             path=node.path,
         )
 
@@ -1257,7 +1257,7 @@ class Loader:
             file=node.string("file"),
             data=node.string("data"),
             content=None if text is None else self.decode(node, text, "base64", None),
-            has_content=text is not None,
+            has_content=bool(node.each("content")),
             scale=node.enum("scale", IMAGE_SCALES, default="cut"),
             proportional=node.boolean("proportional", default=True),
             embed=node.boolean("embed", default=True),

@@ -368,6 +368,33 @@ def test_a_referenced_file_is_written_relative_to_the_printout(
     assert list(written) == ["kind", "box", "file"]
 
 
+def test_a_referenced_file_is_read_only_as_far_as_its_header(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    content = picture(tmp_path / "wide.png")
+    whole = Path.read_bytes
+
+    def refusing(path: Path) -> bytes:
+        assert path.name != "wide.png", "a referenced image was read whole"
+        return whole(path)
+
+    monkeypatch.setattr(Path, "read_bytes", refusing)
+    printout = built(
+        tmp_path,
+        detail(
+            'image file="wide.png" embed=#false left=0 top=0 width=10 height=5'
+            ' scale="grow"'
+        ),
+    )
+    assert box(images(printout)[0])[2:] == (24, 12), "the header sized it"
+    (tmp_path / "wide.png").write_bytes(content[:20])
+    with pytest.raises(BuildError, match="ends inside its header"):
+        built(
+            tmp_path,
+            detail('image file="wide.png" embed=#false left=0 top=0 width=9 height=9'),
+        )
+
+
 def test_a_content_child_is_base64_named_image(tmp_path: Path) -> None:
     content = picture(tmp_path / "unused.png")
     text = base64.b64encode(content).decode("ascii")

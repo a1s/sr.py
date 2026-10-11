@@ -4,8 +4,8 @@ doc/template.md#image gives an image exactly one source: a file, a `data`
 node, or a `content` child.  Whichever it is, the bytes are sniffed and
 their header read here, at build time and whatever the element's `scale`
 or `embed`, since the natural size is what every `scale` starts from.
-So an `embed=#false` file is still read, and has to be there when the
-report is built as well as when it is rendered.
+So an `embed=#false` file is still read, as far as its header, and
+has to be there when the report is built as well as when it is rendered.
 
 The format is sniffed only to find the header.  The mark does not record it,
 and the bytes travel as they are: a renderer sniffs them as this does.
@@ -19,6 +19,10 @@ What reaches the mark is decided here too:
 
 A file is read once per build however many bands draw it,
 and a blob's header is parsed once however many elements name it.
+An embedded file is read whole and kept, since its bytes go into
+the printout.  A file the printout only refers to is read as far
+as its header, and only the header is kept, so a report drawing
+many large images by reference holds none of their bytes.
 
 """
 
@@ -31,7 +35,7 @@ from pathlib import Path
 from sr.errors import BuildError, Location
 from sr.fonts.face import near
 from sr.fonts.resolve import tidy
-from sr.image import BadImage, Header, read_header
+from sr.image import BadImage, Header, read_file_header, read_header
 from sr.layout.blobs import DataTable
 from sr.template.model import Image
 
@@ -93,6 +97,7 @@ class Pictures:
         self.table = table
         self.file = file
         self.files: dict[Path, tuple[bytes, Header]] = {}
+        self.referenced: dict[Path, Header] = {}
         self.headers: dict[bytes, Header] = {}
 
     def picture(self, image: Image, record: int | None) -> Picture:
@@ -108,9 +113,9 @@ class Pictures:
         """
         if image.file is not None:
             path = tidy(self.basedir / image.file)
-            content, header = self.read(path, image, record)
             if not image.embed:
-                return self.made(header, file=path)
+                return self.made(self.peek(path, image, record), file=path)
+            content, header = self.read(path, image, record)
             data = self.table.generated(path.name, content)
             return self.made(header, data=data)
         if image.data is not None:
@@ -139,7 +144,7 @@ class Pictures:
     def read(
         self, path: Path, image: Image, record: int | None
     ) -> tuple[bytes, Header]:
-        """Return a file's bytes and header, reading it the first time only.
+        """Return an embedded file's bytes and header, reading it once only.
 
         Args:
             path: The file, resolved.
@@ -156,13 +161,58 @@ class Pictures:
         try:
             content = path.read_bytes()
         except OSError as refused:
-            raise BuildError(
-                f"cannot read {near(path).as_posix()}: {refused.strerror or refused}",
-                self.where(image, "file", record),
-            ) from None
+            raise self.unreadable(path, refused, image, record) from None
         found = (content, self.header(content, image, "file", record))
         self.files[path] = found
         return found
+
+    def peek(self, path: Path, image: Image, record: int | None) -> Header:
+        """Return a referenced file's header, reading it the first time only.
+
+        The file is read no further than its header, and nothing else of
+        it is kept, since the printout names the file and not its bytes.
+
+        Args:
+            path: The file, resolved.
+            image: The node, for a diagnostic.
+            record: The record it is built for, for a diagnostic.
+
+        Raises:
+            BuildError: The file will not read, or is not an image.
+
+        """
+        found = self.referenced.get(path)
+        if found is not None:
+            return found
+        embedded = self.files.get(path)
+        if embedded is not None:
+            return embedded[1]
+        try:
+            with path.open("rb") as stream:
+                found = read_file_header(stream)
+        except OSError as refused:
+            raise self.unreadable(path, refused, image, record) from None
+        except BadImage as refused:
+            raise BuildError(str(refused), self.where(image, "file", record)) from None
+        self.referenced[path] = found
+        return found
+
+    def unreadable(
+        self, path: Path, refused: OSError, image: Image, record: int | None
+    ) -> BuildError:
+        """Return the error for a file that will not read.
+
+        Args:
+            path: The file, resolved.
+            refused: What reading it raised.
+            image: The node, for a diagnostic.
+            record: The record it is built for, for a diagnostic.
+
+        """
+        return BuildError(
+            f"cannot read {near(path).as_posix()}: {refused.strerror or refused}",
+            self.where(image, "file", record),
+        )
 
     def header(
         self, content: bytes, image: Image, prop: str | None, record: int | None

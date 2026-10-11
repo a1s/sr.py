@@ -1272,8 +1272,11 @@ error when the template loads.
 and whatever `embed` says, since the natural size is in them. So an
 `embed=#false` file has to be there when the report is built as well as
 when it is rendered, and a file that cannot be read is an error naming
-the element. The engine reads only as far as the header that states the
-size; decoding the pixels is the renderer's.
+the element. The engine interprets nothing past the header that states
+the size: decoding the pixels is the renderer's. An embedded file is read
+whole, since its bytes go into the printout, but of an `embed=#false`
+file only the header is read, so a large image referred to costs the
+build no more than a small one.
 
 **The format is sniffed** from the bytes' signature, never from a
 file name, so PNG bytes saved as `logo.jpg` are a PNG. What is read:
@@ -1281,7 +1284,7 @@ file name, so PNG bytes saved as `logo.jpg` are a PNG. What is read:
 | Format | Read | Refused |
 |---|---|---|
 | PNG | the `IHDR` chunk, which must come first | an `IHDR` that fails its CRC, or names a colour type and bit depth PNG does not have |
-| JPEG | the first frame header: baseline, extended sequential, or progressive, with 8-bit samples and 1, 3 or 4 components | lossless, hierarchical and arithmetic-coded frames, other sample precisions, and no frame header before the first scan |
+| JPEG | the first frame header: baseline, extended sequential, or progressive, with 8-bit samples and 1, 3 or 4 components | lossless, hierarchical, arithmetic-coded, and JPEG-LS frames, other sample precisions, and no frame header before the first scan |
 | GIF | `GIF87a` or `GIF89a`, and the logical screen descriptor | a file cut short before the descriptor ends |
 
 The refused JPEG kinds are ones a renderer is not required to decode.

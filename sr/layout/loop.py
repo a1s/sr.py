@@ -354,13 +354,13 @@ class Builder:
         self.measurer = Measurer(
             self.metrics,
             self.text_blobs(),
-            report.file,
             Pictures(report.basedir, build.blobs, self.table, report.file),
             {
                 one.font.name: one.origin.data
                 for one in build.fonts
                 if one.origin.data is not None
             },
+            report.file,
         )
         self.context = Context(
             parameters=dict(build.parameters),

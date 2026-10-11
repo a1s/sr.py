@@ -204,7 +204,7 @@ neither engine checks. Today it paginates reports of `field`, `line`,
 band splitting, `eject` nodes, keep-together rules, balanced columns,
 and deferred values, and writes them as NDJSON. Every barcode type
 is encoded here, from the standards, rather than by a library, and
-an image is read only as far as the header that states its size.
+an image is interpreted only as far as the header that states its size.
 Subreports, outline entries, and PDF are the milestones after this one.
 The cases the differential corpus cannot yet compare are listed,
 with the milestone each waits for, in
