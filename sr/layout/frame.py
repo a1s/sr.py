@@ -146,6 +146,9 @@ class Frame:
             when the invocation began.
         drawn: How far down the header of its current column
             was drawn, or its top edge where it drew none.
+        ending: For a grafted frame, whether the invocation's summary
+            is being placed, so that its last column's footer,
+            which is not drawn, leaves its strip to the summary.
 
     """
 
@@ -174,6 +177,7 @@ class Frame:
     grafted: bool = False
     begins: float | None = None
     drawn: float = 0.0
+    ending: bool = False
 
     # -- the tree ---------------------------------------------------------
 
@@ -189,6 +193,19 @@ class Frame:
         for child in self.children:
             yield child
             yield from child.descendants()
+
+    def lasting(self) -> Iterator[Frame]:
+        """Yield every frame below this one with a footer still to come.
+
+        Depth first, as :meth:`descendants` does,
+        without a grafted frame that is ending or the frames inside it.
+
+        """
+        for child in self.children:
+            if child.ending:
+                continue
+            yield child
+            yield from child.lasting()
 
     def graft(self, child: Frame) -> None:
         """Put a frame under this one, after any it has.
@@ -260,9 +277,11 @@ class Frame:
         Each frame reserves its footer inside its parent's,
         so the innermost bottom is the highest, and
         where a frame holds two the higher of theirs.
+        A grafted frame that is ending draws no footer,
+        and nor does any frame inside it.
 
         """
-        return min([self.bottom, *(down.bottom for down in self.descendants())])
+        return min([self.bottom, *(down.bottom for down in self.lasting())])
 
     @property
     def height(self) -> float:

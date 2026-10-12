@@ -1,0 +1,17 @@
+// probes/subreport/font-suffix.inc.kdl -- the child font-suffix.kdl runs,
+// with a font of the host's name and one of the name the host's would be
+// suffixed to.
+
+report name="subreport/font-suffix, the child" {
+  font "x" file="../../../../example/fonts/Go-Regular.ttf" size=7
+  font "x-2" file="../../../../example/fonts/Go-Bold.ttf" size=9
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="x" color="black"
+    detail height=24 {
+      field expr="'child x'" left=0 top=0 height=8
+      field expr="'child x-2'" left=0 top=10 height=10 {
+        style font="x-2"
+      }
+    }
+  }
+}

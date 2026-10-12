@@ -16,9 +16,9 @@ is everything settled in the **host's** context before the child has one.
   ends at its own `layout`.  The walk is lexical, so the host band's own
   styles are never part of it.
 * **Its records** are the elements of its ``data``, coerced by its own
-  `records` exactly as the input file is by the report's.  ``None`` is
-  an empty sequence; text is no sequence at all, and neither is anything
-  that cannot be iterated.
+  `records` as the input file is by the report's, except that a `string`
+  member refuses a float.  ``None`` is an empty sequence; text is no
+  sequence at all, and neither is anything that cannot be iterated.
 * **Its parameters** are bound from the `arg` nodes, each evaluated in
   the host's context and checked against its declared type rather than
   parsed for it; a default fills in for an `arg` that is not there.
@@ -43,6 +43,7 @@ from sr.template.model import (
     Arg,
     Embedded,
     Layout,
+    Member,
     Parameter,
     Records,
     Report,
@@ -201,13 +202,33 @@ def records_of(
                 fields[name] = freeze(item)
                 continue
             try:
-                fields[name] = coerce(item, member)
+                fields[name] = typed(item, member)
             except BadValue as refusal:
                 raise BuildError(
                     f"element {index}: member {name!r}: {refusal}", where
                 ) from None
         found.append(Record(fields))
     return tuple(found)
+
+
+def typed(item: Any, member: Member) -> Any:
+    """Return one field of a subreport's element as its member declares.
+
+    The input file's coercion, and one refusal more: a `string` member
+    takes no float, since a float the host computed has no one spelling
+    as text.
+
+    Args:
+        item: The field's value.
+        member: Its declaration in the subreport's `records`.
+
+    Raises:
+        BadValue: The value is not of that type.
+
+    """
+    if member.kind == "string" and isinstance(item, float):
+        raise BadValue(f"want text, got {type_name(item)}")
+    return coerce(item, member)
 
 
 def arguments(

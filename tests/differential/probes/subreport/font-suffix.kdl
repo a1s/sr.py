@@ -1,0 +1,23 @@
+// probes/subreport/font-suffix.kdl -- a suffixed font name
+// that another font is declared under.
+//
+// font-suffix.inc.kdl declares a font `x` with another size than the
+// host's `x`, and a font `x-2` of its own.  The host uses its `x` first.
+//
+// The reference publishes the child's `x` as `x-2`, the first suffix the
+// table does not hold yet, and then the child's own `x-2` as `x-2-2`:
+// unlike a generated `data` name, a font's suffix does not step around
+// the names a template declares.  doc/printout.md#fonts says so.
+//
+// doc/printout.md#fonts.
+
+report name="subreport/font-suffix" {
+  font "x" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="x" color="black"
+    detail height=8 {
+      field expr="'host x'" left=0 top=0 height=6
+      subreport template="font-suffix.inc.kdl" seq=1 data="[{}]" inline=#true
+    }
+  }
+}

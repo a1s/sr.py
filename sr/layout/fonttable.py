@@ -11,9 +11,11 @@ can arrive under one name.  Where they write the same entry, every field
 equal, they are one entry, since sharing it renames nothing.  Where they
 differ, the font used first keeps the name and the other is published
 under the first of ``-2``, ``-3`` and so on after the name that the table
-does not hold for something else: the scheme doc/printout.md#data uses
-for a generated blob name.  A text mark names the font it was set in
-by the name it was published under.
+does not hold for something else.  Unlike a generated blob name,
+the suffix steps around only the names published so far, not those
+another template declares: a child's own ``x-2`` can come out as
+``x-2-2``. A text mark names the font it was set in by the name
+it was published under.
 
 """
 

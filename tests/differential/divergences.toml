@@ -34,9 +34,11 @@
 # and `unprinted-blobs-written`; and two decisions,
 # `image-type-removed` and `image-without-pixels`.  After M11 came
 # one decision about the font table, `twin-fonts-merged`.  M12 added
-# one decision about subreports, `subreport-rollback`, and one defect
-# in the reference's, `graft-beside-columns`; two of its probes show
-# `column-floor` and `column-footer-strip` again, inside a subreport.
+# two decisions about subreports, `subreport-rollback` and
+# `subreport-pages-at-a-break`, and three defects in the
+# reference's, `graft-beside-columns`, `graft-without-room`, and
+# `inline-summary-strip`; two of its probes show `column-floor`
+# and `column-footer-strip` again, inside a subreport.
 #
 # The milestone numbers:
 #   M0: Scaffold and oracle
@@ -972,3 +974,60 @@ drawn over anything else.  The reference is the side that changes.\
 ticket = "M12: inline columns, layout.md#pages; filed against the Go engine"
 since = "2026-10-11"
 affects = ["probe/subreport/graft-beside-columns"]
+
+[[divergence]]
+id = "graft-without-room"
+summary = "an inline subreport's columns with too little of the page left begin where the host ejects to here; the reference refuses the template"
+reason = """\
+An inline subreport's columns are grafted onto the host's frame where the \
+host is filled, so how much room their header and footer have depends on \
+the data before them.  Where less is left than the two reserve, the \
+reference refuses the template, with the error a page whose geometry left \
+no room for them would give, and the same template builds over data that \
+leaves a few more points.  doc/layout.md#pages ejects the host first, as \
+for a band that does not fit, to a column of its own with room or to the \
+next page, and grafts the columns there, and keeps the error for a frame \
+no eject could give more room.  The reference is the side that changes.\
+"""
+ticket = "M12: inline columns, layout.md#pages; filed against the Go engine"
+since = "2026-10-11"
+affects = ["probe/subreport/graft-no-room"]
+
+[[divergence]]
+id = "subreport-pages-at-a-break"
+summary = "a page a subreport with pages of its own ends at a group break reads the run that ended here; the reference reads the run that begins"
+reason = """\
+A subreport of negative `seq` with pages of its own, on a group's title or \
+on the first detail band of a group whose title does not print, ends the \
+host's page before anything of the new record is on it.  The reference \
+builds that page's footer against the new record, and counts the page as \
+the new run's first, so the run's `X_PAGE_NUMBER` reads 2 on the page the \
+host resumes on, where its first band is.  doc/layout.md#what-a-header-\
+or-footer-sees and doc/layout.md#sequence already decided both for every \
+other eject while a group is opening, under `footer-at-a-group-break` and \
+`group-opens-where-its-title-lands`, and now name this one among them: the \
+footer reads the runs that ended, and the new run begins on the page the \
+host resumes on.  It is a decision rather than a defect, and the reference \
+is the side that changes.\
+"""
+ticket = "M12: subreports with pages of their own, layout.md#pages"
+since = "2026-10-11"
+affects = ["probe/subreport/pages-at-a-break"]
+
+[[divergence]]
+id = "inline-summary-strip"
+summary = "an inline subreport's summary in its columns' footer strip takes them off the page here; the reference draws their footer over it"
+reason = """\
+An inline subreport's columns come off the host's frame without the last \
+column's footer, so its summary may take the strip that footer would have, \
+and in both engines it does.  The reference keeps the columns on until the \
+summary's own subreports have run, so where one of those breaks the page, \
+the column ends with it: its footer is drawn over the summary, and the \
+next page opens the columns again, with nothing in them.  doc/layout.md#\
+pages takes the columns off as soon as any of the summary is on the page, \
+so a page break after that draws no footer and opens no columns.  The \
+reference is the side that changes.\
+"""
+ticket = "M12: inline columns, layout.md#pages; filed against the Go engine"
+since = "2026-10-11"
+affects = ["probe/subreport/summary-strip-eject"]

@@ -4,9 +4,10 @@
 // so the page has four.  doc/expressions.md said only "current column
 // number", which for a block inside a block could be either block's.
 //
-// The reference counts every column on the page from the left: the inner
-// block's columns read 1 and 2 in the outer block's first column, and 3
-// and 4 in its second.  doc/expressions.md#predefined-variables now says so.
+// The reference counts the columns the page has opened, one more
+// at each column break: the inner block's columns read 1 and 2
+// in the outer block's first column, and 3 and 4 in its second.
+// doc/expressions.md#predefined-variables now says so.
 
 report name="pagination/nested-column-number" {
   font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5

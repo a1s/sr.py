@@ -500,6 +500,28 @@ def test_a_column_opened_later_begins_below_a_band_across_it(
     assert (at(page, "r5").x, at(page, "r5").y) == (105, 15)
 
 
+def test_column_number_counts_the_columns_the_page_has_opened(
+    tmp_path: Path,
+) -> None:
+    """doc/expressions.md#predefined-variables: one more at each break.
+
+    The group's summary, across the inner block's columns, does not
+    fit below its rows, so the outer block breaks while the inner one
+    is in its first column.  The inner block's first column in the
+    outer's second is the page's second column, not the third of four.
+
+    """
+    detail = band(
+        "detail", said("'r%d %d' % (ITEM_NUMBER, COLUMN_NUMBER)"), "height=20"
+    )
+    summary = band("summary", said("'S %d' % COLUMN_NUMBER"), "height=40")
+    inner = group(COLUMNS, detail, summary, props="mintailrows=0")
+    printout = built(
+        tmp_path, COLUMNS + inner, [{"a": 1}] * 3 + [{"a": 2}], members=KEYED
+    )
+    assert texts(printout.pages[0]) == ["r1 1", "r2 1", "r3 1", "S 2", "r4 2"]
+
+
 def test_a_band_under_a_band_across_the_columns_moves_to_the_next_page(
     tmp_path: Path,
 ) -> None:

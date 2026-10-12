@@ -4,11 +4,11 @@
 // inline subreport opens a block of two more, so the second invocation
 // runs out of its own columns and goes on in the host's second column.
 //
-// The reference: the grafted block stays where the host was filled
-// when the invocation began for the rest of that page, in the host's
-// next column as in its first, and a page break puts it back at the top.
-// COLUMN_NUMBER counts every column on the page, so the block's columns
-// in the host's second column read 3 and 4.
+// The reference: the grafted block stays where the host was filled when
+// the invocation began for the rest of that page, in the host's next
+// column as in its first, and a page break puts it back at the top.
+// COLUMN_NUMBER counts the columns the page has opened, so the block's
+// columns in the host's second column read 3 and 4.
 //
 // doc/layout.md#pages and doc/expressions.md#predefined-variables.
 

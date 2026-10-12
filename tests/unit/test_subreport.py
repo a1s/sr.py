@@ -25,6 +25,7 @@ from sr.fonts.resolve import Resolver
 from sr.layout.blobs import DataTable
 from sr.layout.fonttable import FontTable
 from sr.layout.frame import Frame
+from sr.layout.subreport import typed
 from sr.printout.model import Page, Printout, Text
 from sr.settle import is_of_type
 from sr.template.model import Font, Member
@@ -487,3 +488,158 @@ def test_a_grafted_frame_is_walked_after_the_hosts_own() -> None:
     assert page.end == 80.0
     page.prune(graft)
     assert list(page.descendants()) == [own, inner]
+
+
+def test_an_ending_graft_leaves_its_footer_strip() -> None:
+    """Its last footer is not drawn, and nor are those of frames inside it."""
+    page = Frame(top=0.0, bottom=100.0)
+    graft = Frame(count=2, parent=page, bottom=90.0, grafted=True)
+    inner = Frame(count=2, parent=graft, bottom=85.0)
+    page.graft(graft)
+    graft.graft(inner)
+    assert page.end == 85.0
+    graft.ending = True
+    assert page.end == 100.0
+    assert list(page.lasting()) == []
+
+
+# -- the grafted columns ----------------------------------------------------
+
+# An embedded layout of two columns with a header and a footer, and a summary.
+COLUMNED = """
+    embedded "notes" {
+      records {
+        member "n" type="int"
+      }
+      columns count=2 gap=4 {
+        header height=HH { field text="head" left=0 top=0 height=6 }
+        footer height=HH { field text="foot" left=0 top=0 height=6 }
+      }
+      detail height=6 {
+        field expr="'note %d' % n" left=0 top=0 height=6
+      }
+      summary height=8 {
+        field expr="'summary vs %s' % VERTICAL_SPACE" left=0 top=0 height=6
+        MORE
+      }
+    }
+    embedded "more" {
+      detail height=6 {
+        field expr="'more %d' % ITEM_NUMBER" left=0 top=0 height=6
+      }
+    }
+"""
+
+# The host's records: how many rows each host row's subreport runs over.
+COUNTED = """  records {
+    member "n" type="int"
+  }
+"""
+
+
+def columned(height: int = 6, more: str = "") -> str:
+    """Return the bands of a report whose rows run a columned subreport.
+
+    Args:
+        height: What the columns' header and footer each reserve.
+        more: What the child's summary runs after it.
+
+    """
+    extra = COLUMNED.replace("HH", str(height)).replace("MORE", more)
+    return host(
+        'subreport embedded="notes" seq=1 inline=#true when="n > 0"'
+        " data=\"[{'n': at + 1} for at in range(n)]\"",
+        extra,
+    )
+
+
+def test_columns_with_no_room_left_begin_where_the_host_ejects_to(
+    tmp_path: Path,
+) -> None:
+    """doc/layout.md#pages: the host ejects first, as for a band.
+
+    Seven host rows leave 8pt of the page, and the header and footer
+    reserve 12pt, so the columns open at the top of the next page.
+
+    """
+    rows = [{"n": 0}] * 6 + [{"n": 2}]
+    printout = built(tmp_path, columned(), rows, members=COUNTED)
+    first, second = printout.pages
+    assert texts(first) == ["host"] * 7
+    assert texts(second)[:3] == ["head", "note 1", "note 2"]
+
+
+def test_columns_no_page_has_room_for_are_an_error(tmp_path: Path) -> None:
+    """Where no eject could give them more room, the reservations exceed it."""
+    with pytest.raises(BuildError, match="reservations together exceed"):
+        built(tmp_path, columned(height=30), [{"n": 1}], members=COUNTED)
+
+
+def test_the_summary_takes_the_strip_of_the_footer_never_drawn(
+    tmp_path: Path,
+) -> None:
+    """The last column's footer is not drawn, so the summary may go there."""
+    printout = built(tmp_path, columned(), [{"n": 5}], members=COUNTED)
+    (page,) = printout.pages
+    notes = [f"note {at}" for at in range(1, 6)]
+    assert texts(page) == ["host", "head", *notes, "summary vs 8.0"]
+
+
+def test_the_columns_come_off_once_the_summary_is_placed(tmp_path: Path) -> None:
+    """A page break after the summary draws no footer over it.
+
+    And the next page does not open the columns again, with nothing
+    in them: what follows the summary is not in them.
+
+    """
+    more = 'subreport embedded="more" seq=1 data="[{}] * 3" inline=#true'
+    printout = built(tmp_path, columned(more=more), [{"n": 5}], members=COUNTED)
+    first, second = printout.pages
+    assert texts(first)[-1] == "summary vs 8.0"
+    assert "foot" not in texts(first)
+    assert texts(second) == ["more 1", "more 2", "more 3"]
+
+
+def test_a_float_in_a_string_member_of_the_data_is_an_error() -> None:
+    """doc/layout.md#names-and-values: it has no one spelling as text."""
+    with pytest.raises(BadValue, match="want text, got float"):
+        typed(1.5, member("s", "string"))
+    assert typed(2, member("s", "string")) == "2"
+    assert typed(1.5, member("d", "decimal")) == Decimal("1.5")
+
+
+def test_a_page_ended_at_a_group_break_reads_the_run_that_ended(
+    tmp_path: Path,
+) -> None:
+    """doc/layout.md#what-a-header-or-footer-sees, for a child's pages.
+
+    The child runs before the first band of each new record
+    and ends the host's page, which holds nothing of that record:
+    its footer reads the previous one, and the new run begins where the host
+    resumes, so its page number is 1 there.
+
+    """
+    grouped = (
+        NOTES
+        + """
+    group "g" expr="g" {
+      detail height=6 {
+        field expr="'row %s gpn %d' % (g, g_PAGE_NUMBER)" left=0 top=0 height=6
+        subreport embedded="notes" seq=-1 data="[{'n': 1}]"
+      }
+    }
+    footer height=6 {
+      field expr="'footer %s gpn %d' % (THIS.g if THIS else None, g_PAGE_NUMBER)" \\
+            left=0 top=0 height=6
+    }
+"""
+    )
+    members = '  records {\n    member "g" type="string"\n  }\n'
+    printout = built(tmp_path, grouped, [{"g": "a"}, {"g": "b"}], members=members)
+    assert [texts(page) for page in printout.pages] == [
+        ["footer None gpn 1"],
+        ["note 1"],
+        ["row a gpn 1", "footer a gpn 1"],
+        ["note 1"],
+        ["row b gpn 1", "footer b gpn 1"],
+    ]

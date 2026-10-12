@@ -271,10 +271,13 @@ renames nothing. Two that share a name and differ are published under
 distinct names, as layout.md says. **The font used first keeps the name**,
 whichever template declares it, and the other is published under the first
 of `-2`, `-3` and so on after the name that the table does not hold for a
-different entry: `x`, then `x-2`. It is the scheme [`data`](#data) uses for
-a generated name, and "first" means the same: the first element built whose
-style walk resolves to the font. A [text mark](#text) names the font it was
-set in by the name it was published under, and so does a `glyph` warning.
+different entry: `x`, then `x-2`. Unlike a generated [`data`](#data) name,
+it steps around only the names published so far, not the names a template
+declares: where the host has used its `x` and a child declares `x` and `x-2`,
+the child's two are published as `x-2` and `x-2-2`. "First" means what it
+does for `data`, the first element built whose style walk resolves to the
+font. A [text mark](#text) names the font it was set in by the name it was
+published under, and so does a `glyph` warning.
 
 ```json
 {

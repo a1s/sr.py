@@ -1,0 +1,48 @@
+// probes/subreport/column-number.kdl -- COLUMN_NUMBER around an
+// inline subreport's columns that begin in the host's second column.
+//
+// The host's detail band sits in a block of two columns.  The subreport
+// on its ninth row, the first in the host's second column, opens a block
+// of two more, without a footer, and breaks into its second at its third row.
+// The host goes on below the invocation, and its page footer is built
+// once the block has come off.
+//
+// The reference counts the columns the page has opened: the block's
+// first column reads 2, as the host's second did, and its second reads 3.
+// The count does not go back when the block comes off, so the host's rows
+// below it and its page footer read 3 as well.
+//
+// doc/expressions.md#predefined-variables and doc/layout.md#pages.
+
+report name="subreport/column-number" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "name" type="string"
+    member "rows" type="int"
+  }
+  layout width=200 height=66 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    embedded "notes" {
+      parameter "tag" type="string"
+      columns count=2 gap=4 {
+        header height=6 {
+          field expr="'%s ch cn %d' % (tag, COLUMN_NUMBER)" left=0 top=0 height=6
+        }
+      }
+      detail height=6 {
+        eject type="column" when="ITEM_NUMBER == 3"
+        field expr="'%s %d cn %d' % (tag, ITEM_NUMBER, COLUMN_NUMBER)" left=0 top=0 height=6
+      }
+    }
+    footer height=6 {
+      field expr="'page footer cn %d' % COLUMN_NUMBER" left=0 top=0 height=6
+    }
+    columns count=2 gap=10
+    detail height=6 {
+      field expr="'host %s cn %d' % (name, COLUMN_NUMBER)" left=0 top=0 height=6
+      subreport embedded="notes" seq=1 data="[{}] * rows" inline=#true when="rows > 0" {
+        arg "tag" value="name"
+      }
+    }
+  }
+}

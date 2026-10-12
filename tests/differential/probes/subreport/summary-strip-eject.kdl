@@ -1,0 +1,58 @@
+// probes/subreport/summary-strip-eject.kdl -- a page break after an inline
+// subreport's summary in its columns' footer strip.
+//
+// summary-strip.kdl with a subreport on the child's summary,
+// which runs after the summary and does not fit below it.
+//
+// The reference keeps the child's columns on the host's frame until
+// the summary's subreports have run, so the page break ends the column:
+// its footer is drawn over the summary, and the next page opens the columns
+// again with nothing in them.  doc/layout.md#pages takes the columns off
+// as soon as any of the summary is on the page, so neither happens.
+//
+// Registered under the divergence `inline-summary-strip`.
+//
+// doc/layout.md#pages.
+
+report name="subreport/summary-strip-eject" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "name" type="string"
+    member "rows" type="int"
+  }
+  layout width=100 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    embedded "notes" {
+      parameter "tag" type="string"
+      columns count=2 gap=4 {
+        header height=6 {
+          field expr="'%s ch cn %d' % (tag, COLUMN_NUMBER)" left=0 top=0 height=6
+        }
+        footer height=6 {
+          field expr="'%s cf cn %d' % (tag, COLUMN_NUMBER)" left=0 top=0 height=6
+        }
+      }
+      detail height=6 {
+        field expr="'%s %d' % (tag, ITEM_NUMBER)" left=0 top=0 height=6
+      }
+      summary height=8 {
+        field expr="'%s summary vp %s vs %s' % (tag, VERTICAL_POSITION, VERTICAL_SPACE)" left=0 top=0 height=6
+        subreport embedded="more" seq=1 data="[{}] * 3" inline=#true {
+          arg "tag" value="tag"
+        }
+      }
+    }
+    embedded "more" {
+      parameter "tag" type="string"
+      detail height=6 {
+        field expr="'%s more %d' % (tag, ITEM_NUMBER)" left=10 top=0 height=6
+      }
+    }
+    detail height=6 {
+      field expr="'host %s' % name" left=0 top=0 height=6
+      subreport embedded="notes" seq=1 data="[{}] * rows" inline=#true {
+        arg "tag" value="name"
+      }
+    }
+  }
+}

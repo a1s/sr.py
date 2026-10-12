@@ -522,6 +522,8 @@ class Sheet:
         fragments: What each balanced frame was given since the page opened.
         placed_on: The page the last band was committed to, the first
             before any has been: a band that fits nowhere is carried from it once.
+        column_number: ``COLUMN_NUMBER``: 1 on a new page,
+            and one more at each column break on it.
 
     """
 
@@ -531,6 +533,7 @@ class Sheet:
     marks: list[Mark] = field(default_factory=list)
     fragments: dict[Frame, Fragment] = field(default_factory=dict)
     placed_on: int = 1
+    column_number: int = 1
 
 
 @dataclass(frozen=True)
@@ -653,7 +656,7 @@ class Builder:
             self.sheet.owners[page] = self
         else:
             self.sheet = self.host.sheet
-            self.context.column_number = self.host.context.column_number
+            self.context.column_number = self.sheet.column_number
         self.grafted: Frame | None = None
         self.own: list[Frame] = []
         self.levels = self.tree()
@@ -848,6 +851,8 @@ class Builder:
         not its host's page's: its deferrals resolve as its summary is
         placed, and its columns come off the host's frame without the
         last one's footer, since that column does not end.
+        So its summary may take the strip that footer would have,
+        and the columns come off as soon as any of it is on the page.
 
         """
         self.close(0)
@@ -858,7 +863,12 @@ class Builder:
             if summary.swapfooter:
                 self.swapped_summary(summary)
             else:
-                self.place(summary, root.outer, self.walk(summary, root))
+                self.place(
+                    summary,
+                    root.outer,
+                    self.walk(summary, root),
+                    fitting=self.ending,
+                )
         if self.host is not None:
             self.resolve(None)
             self.ungraft()
@@ -870,17 +880,24 @@ class Builder:
         """Put an inline subreport's columns onto its host's frame, and open them.
 
         doc/layout.md#pages: the frames begin where the host is filled,
-        and stay there for the rest of that page.
+        and stay there for the rest of that page.  Where too little
+        of the host's frame is left there for their headers and footers,
+        the host ejects first, as for a band that does not fit, and they
+        begin where that leaves it.  Where no eject could give them more
+        room, :meth:`open_column` refuses them.
 
         """
         frame = self.grafted
         if frame is None:
             return
-        assert self.base is not None
-        frame.begins = self.base.fill
-        self.base.graft(frame)
+        base = self.base
+        assert base is not None
+        frame.begins = base.fill
+        while not base.empty and not self.room_for(frame):
+            self.eject(base, "column", None)
+            frame.begins = base.fill
+        base.graft(frame)
         self.open_columns([frame, *frame.descendants()])
-        self.set_column_number()
 
     def ungraft(self) -> None:
         """Take an inline subreport's columns off its host's frame.
@@ -890,16 +907,27 @@ class Builder:
 
         """
         frame = self.grafted
-        if frame is None:
+        if frame is None or self.base is None or frame not in self.base.children:
             return
-        assert self.base is not None
         self.base.prune(frame)
         for one in self.own:
             self.sheet.owners.pop(one, None)
             self.sheet.fragments.pop(one, None)
         frame.begins = None
+        frame.ending = False
         self.base.advance(self.base.fill)
-        self.set_column_number()
+
+    def ending(self) -> None:
+        """Leave an inline subreport's last column footer strip to its summary.
+
+        doc/layout.md#pages: that footer is not drawn, since
+        the columns come off the host's frame as soon as any
+        of the summary is on the page.  A page break before then
+        ends the column all the same, and its footer is drawn.
+
+        """
+        if self.grafted is not None:
+            self.grafted.ending = True
 
     # -- the record loop --------------------------------------------------
 
@@ -1393,6 +1421,7 @@ class Builder:
         fold: Fold | None = None,
         eject: bool = True,
         last: bool = False,
+        fitting: Callable[[], None] | None = None,
         committed: Callable[[], None] | None = None,
     ) -> bool:
         """Measure a band, decide where it goes, and commit it.
@@ -1415,6 +1444,8 @@ class Builder:
             eject: Whether its `eject` nodes are tested before it.
             last: Whether they are tested after it instead,
                 as a report's own title's are.
+            fitting: What to do once nothing is left to run before it,
+                as it is measured to be placed.
             committed: What to do once it is on the page.
 
         Returns:
@@ -1442,6 +1473,8 @@ class Builder:
                     self.invoke(subreport, frame)
             finally:
                 self.pending = None
+        if fitting is not None:
+            fitting()
         self.fit(section, frame, walk, fold)
         if committed is not None:
             committed()
@@ -1615,6 +1648,8 @@ class Builder:
         A band an inline subreport commits is something of its host's
         band on the page too, so each host in the chain begins the runs
         its band begins, as it would on committing a band of its own.
+        Its columns come off the host's frame once any of its summary
+        is committed, so no eject after that draws their footer over it.
 
         Args:
             measured: What measuring the band produced.
@@ -1628,6 +1663,8 @@ class Builder:
         self.sheet.placed_on = self.context.page_number
         for builder in self.chain():
             builder.begun(builder.beginning)
+        if self.grafted is not None and self.grafted.ending:
+            self.ungraft()
 
     def emit(
         self, measured: Measurement, frame: Frame, across: float, down: float
@@ -2000,6 +2037,7 @@ class Builder:
         for frame in ejecting.descendants():
             frame.column = 0
             frame.floor = ejecting.floor
+        self.sheet.column_number += 1
         self.set_column_number()
         self.open_columns(participants)
 
@@ -2089,6 +2127,7 @@ class Builder:
             frame.floor = 0.0
             frame.lead = 0.0
             frame.begins = None
+        sheet.column_number = 1
         self.set_column_number()
 
     def open_frames(self) -> None:
@@ -2123,11 +2162,6 @@ class Builder:
         the context as it stands when the column begins, which is when
         they are reserved.  The header is then built again and placed.
 
-        A grafted frame is placed where a band of its parent would be:
-        below whatever else its parent holds has drawn above it, or
-        where its parent was filled when the invocation began, and
-        above whatever else its parent holds draws below.
-
         Args:
             frame: The frame whose current column opens.
 
@@ -2139,27 +2173,7 @@ class Builder:
             BuildError: The two reservations together exceed the column.
 
         """
-        parent = frame.parent
-        if parent is not None:
-            frame.place_across()
-            frame.outer_top = parent.top
-            frame.outer_bottom = parent.bottom
-            if frame.grafted:
-                beside = [
-                    inner
-                    for one in parent.children
-                    if one is not frame
-                    for inner in (one, *one.descendants())
-                ]
-                frame.outer_top = (
-                    frame.begins
-                    if frame.begins is not None
-                    else max([parent.top, *(one.drawn for one in beside)])
-                )
-                frame.outer_bottom = min(
-                    [parent.bottom, *(one.bottom for one in beside)]
-                )
-        whole = Window(frame.x, frame.width, frame.outer_top, frame.outer_bottom)
+        whole = self.column_window(frame)
         walk = self.walk_of(frame)
         header = self.reserve(frame.header, whole, walk)
         footer = self.reserve(frame.footer, whole, walk)
@@ -2183,6 +2197,65 @@ class Builder:
         frame.reach(drawn)
         frame.drawn = drawn
         return drawn
+
+    @staticmethod
+    def column_window(frame: Frame) -> Window:
+        """Place a frame's current column, and return it whole.
+
+        A grafted frame is placed where a band of its parent would be:
+        below whatever else its parent holds has drawn above it,
+        or where its parent was filled when the invocation began,
+        and above whatever else its parent holds draws below.
+
+        Args:
+            frame: The frame whose current column opens.
+
+        Returns:
+            The column before its header and footer are taken out of it.
+
+        """
+        parent = frame.parent
+        if parent is not None:
+            frame.place_across()
+            frame.outer_top = parent.top
+            frame.outer_bottom = parent.bottom
+            if frame.grafted:
+                beside = [
+                    inner
+                    for one in parent.children
+                    if one is not frame
+                    for inner in (one, *one.descendants())
+                ]
+                frame.outer_top = (
+                    frame.begins
+                    if frame.begins is not None
+                    else max([parent.top, *(one.drawn for one in beside)])
+                )
+                frame.outer_bottom = min(
+                    [parent.bottom, *(one.bottom for one in beside)]
+                )
+        return Window(frame.x, frame.width, frame.outer_top, frame.outer_bottom)
+
+    def room_for(self, frame: Frame) -> bool:
+        """Report whether a grafted frame's columns would open where it begins.
+
+        Their reservations are measured as :meth:`open_column`
+        measures them, each frame inside the grafted one
+        in the room its parent leaves, and nothing is drawn.
+
+        Args:
+            frame: The grafted frame, not on the host's frame yet.
+
+        """
+        for one in [frame, *frame.descendants()]:
+            whole = self.column_window(one)
+            walk = self.walk_of(one)
+            header = self.reserve(one.header, whole, walk)
+            footer = self.reserve(one.footer, whole, walk)
+            if round_points(header + footer) > whole.height:
+                return False
+            one.settle(header, footer)
+        return True
 
     def reserve(self, section: Section | None, window: Window, walk: Walk) -> float:
         """Return the height a header or footer reserves.
@@ -2320,27 +2393,19 @@ class Builder:
             self.put(now)
 
     def set_column_number(self) -> None:
-        """Set ``COLUMN_NUMBER``: the current column among all the page's.
+        """Set ``COLUMN_NUMBER`` for every builder printing on the sheet.
 
-        doc/expressions.md#predefined-variables counts every column on the
-        page from the left.  A block inside another block's columns repeats
-        in each of them and is numbered on across them, so its first column
-        in its parent's second column is its own column count plus one.
-        The walk goes down the frames being filled, which is the last frame
-        at each level: a subreport's grafted columns, while they are there.
-
-        Every builder printing on the sheet reads the same, since the
-        frames are one tree: inside a subreport's grafted columns, a host
-        footer built at an eject reports the column the subreport was in.
+        doc/expressions.md#predefined-variables counts the columns the
+        page has opened: it is 1 on a new page and goes up by one at each
+        column break, whichever frame breaks.  So a block inside another
+        block's columns numbers on across them, and a subreport's grafted
+        columns go on from the column the host was in.  Every builder on
+        the sheet reads the same, the host as well as the subreport,
+        and the count does not go back when the grafted columns come off.
 
         """
-        frame = self.sheet.page
-        number = frame.column
-        while frame.children:
-            frame = frame.children[-1]
-            number = number * frame.count + frame.column
         for builder in self.chain():
-            builder.context.column_number = number + 1
+            builder.context.column_number = self.sheet.column_number
 
     # -- balancing --------------------------------------------------------
 

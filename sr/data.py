@@ -29,11 +29,12 @@ The same coercion turns the elements of
 a [subreport](doc/layout.md#names-and-values)'s data into its records,
 and those can arrive typed rather than as JSON gave them, since the data
 is an expression: a decimal the host computed, a time, a list built by
-a comprehension.  A value is written as text the way ``str`` writes it
-and read by the declared type, as JSON's scalars are, with three exceptions
-that keep a value as it is: a time in a `date` or `datetime` member, which
-a `date` takes at the start of its day; a record or a dict in an `object`
-member; and a list or a tuple in a `list` member.
+a comprehension.  A value is written as text and read by the declared type,
+as JSON's scalars are: a decimal as its digits and a time as RFC 3339,
+without fractions of a second.  Three exceptions keep a value as it is:
+a time in a `date` or `datetime` member, which a `date` takes at the start
+of its day; a record or a dict in an `object` member; and a list or a tuple
+in a `list` member.
 
 """
 
@@ -324,9 +325,9 @@ def as_text(value: Any) -> str:
 
     A string is itself.  Everything else is written the way JSON writes
     it, so that one reader per declared type covers both the data that
-    quotes its numbers and the data that does not.  A decimal and a time,
-    which reach here only from a subreport's data, are written the way
-    ``str`` writes them, a time as RFC 3339.
+    quotes its numbers and the data that does not.  A decimal is written
+    as its digits and a time as RFC 3339, without fractions of a second:
+    those reach here only from a subreport's data.
 
     Args:
         value: A JSON scalar, or a decimal or a time.

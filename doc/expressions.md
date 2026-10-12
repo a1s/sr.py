@@ -100,7 +100,7 @@ Nested objects come from nested JSON and are declared
 | `COLUMN_COUNT` | int | Detail sections printed since the start of the column. |
 | *group*`_COUNT` | int | Detail sections printed since the start of the named group. |
 | `PAGE_NUMBER` | int | Current page number, 1-based. |
-| `COLUMN_NUMBER` | int | Current column number, 1-based, counting every column on the page from the left. A block of columns inside another block's columns is repeated in each of them and numbered on across them: two columns inside each of two read 1 and 2 in the outer block's first column, and 3 and 4 in its second. |
+| `COLUMN_NUMBER` | int | Current column number, 1-based, counting the columns the page has opened: 1 on a new page, and one more at each column break, whichever block of columns breaks. So a block inside another block's columns numbers on across them: two columns inside each of two read 1 and 2 in the outer block's first column, and 3 and 4 in its second, while an inner block that the outer one breaks away from in its first column reads 2 in its first column again. |
 | *group*`_PAGE_NUMBER` | int | Page number relative to the start of the named group, 1-based. |
 | `VERTICAL_POSITION` | float, points | Distance from the top of the frame to where the section being measured begins. |
 | `VERTICAL_SPACE` | float, points | Space from there to the frame's reserved bottom — what the section has left to grow into. Across columns, that stops above their footers. |
@@ -772,10 +772,10 @@ as [names and values](layout.md#names-and-values) says.
 
 An expression in a subreport that has to react to where its bands landed --
 `VERTICAL_POSITION`, `VERTICAL_SPACE` -- reads the frame it is printing in,
-which under `inline` is the host's. `COLUMN_NUMBER` reads the column the
-subreport is printing in, which is one of its own where an inline subreport
-opened a `columns` block, counted among the page's as any other column is,
-and the host's otherwise.
+which under `inline` is the host's. `COLUMN_NUMBER` counts the columns
+the page has opened, and an inline subreport's own `columns` block breaks
+columns of the page like any other: its first column reads what the host's
+did, and the count does not go back when its columns come off.
 
 Every deferral a subreport registers resolves when its invocation ends, or
 earlier if a page it is printing on ends first. `FINAL` in a subreport therefore

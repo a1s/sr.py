@@ -1,0 +1,37 @@
+// probes/pagination/column-number-skip.kdl -- COLUMN_NUMBER
+// where the outer block of nested columns breaks before the inner one has.
+//
+// nested-column-number.kdl with a group summary across the inner block's
+// columns, which does not fit below the group's rows in the outer block's
+// first column, so the outer block breaks while the inner one is still
+// in its first column.  `mintailrows` is off, so that the rows stay
+// where the fill puts them.
+//
+// The reference counts the columns the page has opened, one more at each
+// column break, so the inner block's first column in the outer block's
+// second reads 2, not the 3 a position among four columns would give.
+// doc/expressions.md#predefined-variables says so.
+
+report name="pagination/column-number-skip" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "g" type="string"
+  }
+  layout width=200 height=40 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    columns count=2 gap=10
+    group "grp" expr="g" mintailrows=0 {
+      columns count=2 gap=4 {
+        header height=6 {
+          field expr="'ch cn %d' % COLUMN_NUMBER" left=0 top=0 height=6
+        }
+      }
+      detail height=6 {
+        field expr="'%s %d cn %d' % (g, ITEM_NUMBER, COLUMN_NUMBER)" left=0 top=0 height=6
+      }
+      summary height=10 {
+        field expr="'sum %s cn %d' % (g, COLUMN_NUMBER)" left=0 top=0 height=6
+      }
+    }
+  }
+}
