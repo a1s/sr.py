@@ -1,0 +1,43 @@
+// probes/subreport/group-pages.kdl -- a group's page number across a child's
+// pages.
+//
+// Each detail band of a group carries a subreport with pages of its own.
+//
+// The reference: the group's `_PAGE_NUMBER` counts the host's pages, one more
+// across the child's pages however many there are, as across any page eject.
+//
+// doc/layout.md#pages.
+
+report name="subreport/group-pages" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "g" type="string"
+    member "rows" type="int"
+  }
+  layout width=100 height=40 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    embedded "sheet" {
+      parameter "tag" type="string"
+      detail height=6 {
+        field expr="'%s %d pn %d' % (tag, ITEM_NUMBER, PAGE_NUMBER)" left=0 top=0 height=6
+      }
+    }
+    footer height=6 {
+      field expr="'footer pn %d gpn %d this %s' % (PAGE_NUMBER, grp_PAGE_NUMBER, THIS.g if THIS else None)" left=0 top=0 height=6
+    }
+    group "grp" expr="g" {
+      title height=6 {
+        field expr="'group %s pn %d gpn %d' % (g, PAGE_NUMBER, grp_PAGE_NUMBER)" left=0 top=0 height=6
+      }
+      summary height=6 {
+        field expr="'end %s pn %d gpn %d' % (g, PAGE_NUMBER, grp_PAGE_NUMBER)" left=0 top=0 height=6
+      }
+      detail height=6 {
+        field expr="'row %s pn %d gpn %d' % (g, PAGE_NUMBER, grp_PAGE_NUMBER)" left=0 top=0 height=6
+        subreport embedded="sheet" seq=1 data="[{}] * rows" {
+          arg "tag" value="g"
+        }
+      }
+    }
+  }
+}

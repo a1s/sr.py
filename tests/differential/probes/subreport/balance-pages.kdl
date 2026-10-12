@@ -1,0 +1,26 @@
+// probes/subreport/balance-pages.kdl -- the same, with pages of its own.
+//
+// balance.kdl with a subreport that paginates itself on the third row.
+//
+// The reference leaves the page that subreport ends as the fill left it,
+// all three rows in the first column, and balances the next page, where
+// the subreport is not, two and one.
+//
+// doc/layout.md#what-is-left-where-the-fill-put-it.
+
+report name="subreport/balance-pages" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=100 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    embedded "note" {
+      detail height=6 {
+        field expr="'note cn %d' % COLUMN_NUMBER" left=0 top=0 height=6
+      }
+    }
+    columns count=2 gap=10 balance=#true
+    detail height=6 {
+      field expr="'row %d cn %d' % (ITEM_NUMBER, COLUMN_NUMBER)" left=0 top=0 height=6
+      subreport embedded="note" seq=1 data="[{}]" when="ITEM_NUMBER == 3"
+    }
+  }
+}

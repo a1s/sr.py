@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from sr import api
+from sr import api, settle
 from sr.api import Options, build
 from sr.errors import BuildError
 from sr.fonts.hostenum import Catalog
@@ -137,7 +137,7 @@ def test_the_host_diagnostics_are_asked_for_rather_than_produced(
     def noisy(**asked: Any) -> Resolver:
         return Resolver(**asked, catalog=catalog)
 
-    monkeypatch.setattr(api, "Resolver", noisy)
+    monkeypatch.setattr(settle, "Resolver", noisy)
     assert result(tmp_path).diagnostics == ()
     assert result(tmp_path, verbose=True).diagnostics == (
         "a face this machine skipped",

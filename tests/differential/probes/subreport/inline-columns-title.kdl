@@ -1,0 +1,53 @@
+// probes/subreport/inline-columns-title.kdl -- a title across the child's columns.
+//
+// The child of inline-columns.kdl with a title, which belongs to the host's
+// frame and spans the child's two columns, placed below their header.
+// When the first column fills, where does the second begin?
+//
+// The reference begins it at the top of the grafted frame, beside the title,
+// and draws its rows over the title's band, as it does for a report title
+// across the report's own columns.  doc/layout.md#extent-and-fill begins it
+// below the title, which is the same answer to the same question.
+//
+// Registered under the divergence `column-floor`.
+
+report name="subreport/inline-columns-title" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "name" type="string"
+    member "items" type="list"
+  }
+  layout width=200 height=90 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    embedded "items" {
+      records {
+        member "n" type="int"
+      }
+      variable "childcol" expr="n" calc="sum" reset="column"
+      title height=8 {
+        field expr="'title cn %d vp %s vs %s' % (COLUMN_NUMBER, VERTICAL_POSITION, VERTICAL_SPACE)" left=0 top=0 height=6
+      }
+      columns count=2 gap=10 {
+        header height=6 {
+          field expr="'colhead cn %d pn %d cc %s' % (COLUMN_NUMBER, PAGE_NUMBER, childcol)" left=0 top=0 height=5
+        }
+      }
+      detail height=8 {
+        field expr="'item %d cn %d vp %s vs %s cc %s' % (n, COLUMN_NUMBER, VERTICAL_POSITION, VERTICAL_SPACE, childcol)" left=0 top=0 height=6
+      }
+      summary height=8 {
+        field expr="'summary cn %d vp %s' % (COLUMN_NUMBER, VERTICAL_POSITION)" left=0 top=0 height=6
+      }
+    }
+    header height=8 {
+      field expr="'header pn %d cn %d' % (PAGE_NUMBER, COLUMN_NUMBER)" left=0 top=0 height=6
+    }
+    footer height=8 {
+      field expr="'footer pn %d cn %d' % (PAGE_NUMBER, COLUMN_NUMBER)" left=0 top=0 height=6
+    }
+    detail height=10 {
+      field expr="'host %s pn %d cn %d vp %s' % (name, PAGE_NUMBER, COLUMN_NUMBER, VERTICAL_POSITION)" left=0 top=0 height=6
+      subreport embedded="items" seq=1 data="items" inline=#true
+    }
+  }
+}

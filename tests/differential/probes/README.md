@@ -210,6 +210,8 @@ the reference gave, and names the section of `doc/` that answer became.
 | `pagination/swapped-title-floor` | the page below a swapped title |
 | `pagination/balance` | spreading a page's bands over the columns |
 | `pagination/balance-unreached` | a column the fill never reached |
+| `pagination/nested-column-number` | `COLUMN_NUMBER` in columns inside columns |
+| `pagination/column-number-skip` | the same, where the outer block breaks first |
 | `pagination/item-order` | when `iter="item"` folds |
 | `pagination/scope-resets` | `reset="item"` and `reset="detail"` |
 | `pagination/first-page-init` | `init` from the start of the report, in every scope |
@@ -266,6 +268,42 @@ the reference gave, and names the section of `doc/` that answer became.
 | `image/split` | an image in a band that splits |
 | `image/type` | an image given a `type` |
 | `image/no-pixels` | an image with no pixels |
+| `subreport/inline` | an inline subreport's own context |
+| `subreport/inline-eject` | an eject inside an inline subreport |
+| `subreport/inline-before` | a negative-seq subreport that ejects |
+| `subreport/inline-columns` | an inline subreport's own columns |
+| `subreport/inline-columns-title` | a title across a subreport's columns |
+| `subreport/host-columns` | an inline subreport in the host's columns |
+| `subreport/graft-in-columns` | a subreport's columns in the host's columns |
+| `subreport/group-title` | an inline subreport on a group's title |
+| `subreport/graft-beside-columns` | a subreport's columns beside a level's own |
+| `subreport/graft-no-room` | a subreport's columns with too little room left |
+| `subreport/summary-strip` | a subreport's summary in its columns' footer strip |
+| `subreport/summary-strip-eject` | the same, and a page break after the summary |
+| `subreport/column-number` | `COLUMN_NUMBER` around a subreport's columns |
+| `subreport/pages` | a subreport with pages of its own |
+| `subreport/ownpageno` | `ownpageno`, and a negative seq |
+| `subreport/paper` | a template's own page geometry |
+| `subreport/title-summary` | subreports on the report's title and summary |
+| `subreport/split` | a host band that splits |
+| `subreport/printwhen` | `printwhen`, answered once per placement |
+| `subreport/eject-order` | a band's `eject` nodes and its subreports |
+| `subreport/inputs` | what a subreport's `when`, `data` and `arg` read of the host |
+| `subreport/parameters` | a subreport's parameters, and their defaults |
+| `subreport/coercion` | a subreport's records, from values that arrive typed |
+| `subreport/empty` | a subreport over an empty list and over null |
+| `subreport/deferred` | deferred values inside subreports |
+| `subreport/group-pages` | a group's page number across a subreport's pages |
+| `subreport/at-a-break` | a subreport's band at a group break |
+| `subreport/pages-at-a-break` | a subreport with pages of its own at a group break |
+| `subreport/balance` | a subreport in a balanced block of columns |
+| `subreport/balance-pages` | the same, with pages of its own |
+| `subreport/nested` | subreports inside subreports |
+| `subreport/names` | two templates' fonts, data and groups |
+| `subreport/names-order` | who keeps a name two templates use |
+| `subreport/names-reserved` | a subreport's declared `data` names, reserved |
+| `subreport/font-suffix` | a suffixed font name another font is declared under |
+| `subreport/blob-once` | when a template's `data` is produced |
 | `expressions/strings` | `len`, indexing and slicing over non-ASCII text |
 | `expressions/string-methods` | the string type's iteration methods |
 | `expressions/escapes` | what a literal's escapes name, where Python's and Starlark's part |

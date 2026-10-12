@@ -1,0 +1,42 @@
+// probes/subreport/empty.kdl -- a subreport over nothing.
+//
+// The data is an empty list on the first record and null on the second,
+// in a `nullable` list member.
+//
+// The reference treats both alike: the subreport runs over no records, so its
+// title and summary print and its detail does not.  An inline one prints them
+// beside the host band; one with pages of its own on a page of its own, after
+// which the host resumes on a fresh one, so the report ends on an empty page.
+//
+// doc/layout.md#names-and-values and doc/layout.md#pages.
+
+report name="subreport/empty" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "rows" type="list" nullable=#true
+  }
+  layout width=100 height=50 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    embedded "child" {
+      parameter "tag" type="string"
+      title height=6 {
+        field expr="'%s title dc %d' % (tag, DATA_COUNT)" left=0 top=0 height=6
+      }
+      detail height=6 {
+        field text="never" left=0 top=0 height=6
+      }
+      summary height=6 {
+        field expr="'%s summary rc %d' % (tag, REPORT_COUNT)" left=0 top=0 height=6
+      }
+    }
+    detail height=6 {
+      field expr="'host %d' % ITEM_NUMBER" left=0 top=0 height=6
+      subreport embedded="child" seq=1 data="rows" inline=#true {
+        arg "tag" value="'inline %d' % ITEM_NUMBER"
+      }
+      subreport embedded="child" seq=2 data="rows" {
+        arg "tag" value="'pages %d' % ITEM_NUMBER"
+      }
+    }
+  }
+}

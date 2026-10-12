@@ -1,0 +1,49 @@
+// probes/subreport/summary-strip.kdl -- an inline subreport's summary
+// and its columns' footer strip.
+//
+// The child opens a block of two columns with a header and a footer,
+// and its summary follows them across the host's frame.  The first
+// invocation's summary fits only in the strip the last column's
+// footer would take; the second's fits nowhere on its page.
+//
+// The reference: the last column's footer is not drawn at the end of
+// the invocation, so the summary takes its strip, and VERTICAL_SPACE
+// reaches the page's bottom.  A summary that moves on ends the column
+// with the page, so that column's footer is drawn, and the columns open
+// again above it on the next page.  doc/layout.md#pages says the same.
+//
+// doc/layout.md#pages and doc/layout.md#extent-and-fill.
+
+report name="subreport/summary-strip" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "name" type="string"
+    member "rows" type="int"
+  }
+  layout width=100 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    embedded "notes" {
+      parameter "tag" type="string"
+      columns count=2 gap=4 {
+        header height=6 {
+          field expr="'%s ch cn %d' % (tag, COLUMN_NUMBER)" left=0 top=0 height=6
+        }
+        footer height=6 {
+          field expr="'%s cf cn %d' % (tag, COLUMN_NUMBER)" left=0 top=0 height=6
+        }
+      }
+      detail height=6 {
+        field expr="'%s %d' % (tag, ITEM_NUMBER)" left=0 top=0 height=6
+      }
+      summary height=8 {
+        field expr="'%s summary vp %s vs %s' % (tag, VERTICAL_POSITION, VERTICAL_SPACE)" left=0 top=0 height=6
+      }
+    }
+    detail height=6 {
+      field expr="'host %s' % name" left=0 top=0 height=6
+      subreport embedded="notes" seq=1 data="[{}] * rows" inline=#true {
+        arg "tag" value="name"
+      }
+    }
+  }
+}

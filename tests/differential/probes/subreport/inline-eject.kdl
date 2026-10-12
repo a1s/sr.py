@@ -1,0 +1,47 @@
+// probes/subreport/inline-eject.kdl -- an eject inside an inline subreport.
+//
+// The first record's line items do not fit on the page they start on.
+//
+// The reference: the eject is the host's.  The host's footer is built in the
+// host's context and counts the host band, PAGE_COUNT 1 and the page-scoped
+// total 1, and the host's header on the next page in the host's context too,
+// with the host's page-scoped variables reset.  The child's page- and
+// column-scoped variables and its PAGE_COUNT reset with the same eject.
+// The page the child alone fills ends with a footer whose PAGE_COUNT is 0.
+//
+// doc/layout.md#pages.
+
+report name="subreport/inline-eject" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "name" type="string"
+    member "items" type="list"
+  }
+  variable "hostpage" expr="1" calc="count" reset="page"
+  layout width=200 height=80 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    embedded "items" {
+      records {
+        member "n" type="int"
+      }
+      variable "childpage" expr="n" calc="sum" reset="page"
+      variable "childcol" expr="n" calc="sum" reset="column"
+      detail height=8 {
+        field expr="'item %d pn %d pc %d cp %s cc %s cn %d' % (n, PAGE_NUMBER, PAGE_COUNT, childpage, childcol, COLUMN_NUMBER)" left=10 top=0 height=6
+      }
+      summary height=8 {
+        field expr="'summary pn %d pc %d cp %s' % (PAGE_NUMBER, PAGE_COUNT, childpage)" left=10 top=0 height=6
+      }
+    }
+    header height=8 {
+      field expr="'header pn %d pc %d hp %s this %s' % (PAGE_NUMBER, PAGE_COUNT, hostpage, THIS.name if THIS else None)" left=0 top=0 height=6
+    }
+    footer height=8 {
+      field expr="'footer pn %d pc %d hp %s this %s' % (PAGE_NUMBER, PAGE_COUNT, hostpage, THIS.name if THIS else None)" left=0 top=0 height=6
+    }
+    detail height=10 {
+      field expr="'host %s pn %d pc %d hp %s' % (name, PAGE_NUMBER, PAGE_COUNT, hostpage)" left=0 top=0 height=6
+      subreport embedded="items" seq=1 data="items" inline=#true
+    }
+  }
+}

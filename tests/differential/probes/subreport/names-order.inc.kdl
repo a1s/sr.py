@@ -1,0 +1,16 @@
+// probes/subreport/names-order.inc.kdl -- the child names-order.kdl
+// and names-reserved.kdl run.
+
+report name="subreport/names-order, the child" {
+  font "x" file="../../../../example/fonts/Go-Bold.ttf" size=6
+  data "pic.png" encoding="base64" {
+    content "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAF0lEQVR42mP4//8/A8N/TJKJAQcYnBIAuyUP/zAXBNgAAAAASUVORK5CYII="
+  }
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="x" color="black"
+    detail height=8 {
+      field text="child" left=0 top=0 height=6
+      image data="pic.png" left=100 top=0 width=4 height=4
+    }
+  }
+}

@@ -380,7 +380,9 @@ A band in a frame with columns inside it stops above their footers,
 at the innermost column's `bottom` rather than the frame's own.
 Those footers are drawn when their columns end, flush with the bottom,
 and a band placed across the columns before then would be under them.
-`VERTICAL_SPACE` for such a band is measured to there.
+`VERTICAL_SPACE` for such a band is measured to there. The one footer
+that is never drawn leaves its strip free: the last column's of an inline
+subreport's columns, below the subreport's summary, as [pages](#pages) says.
 
 A column eject resets the frames inside the ejecting one to their
 first column; a page eject resets every frame, and every floor.
@@ -465,7 +467,9 @@ runs which ended are on, and begin the one the new runs start on. That is
 so while nothing of the new record has been placed: an eject a keep-together
 rule causes as a group opens, one of its title's `eject` nodes, the title
 not fitting, and for a group whose title does not print, the first detail
-band not fitting or one of its `eject` nodes. Such an eject's footers are
+band not fitting or one of its `eject` nodes. So is the end of the page
+that a [subreport with pages of its own](#pages) makes when it runs before
+one of those bands, with a negative `seq`. Such an eject's footers are
 built against the context the break's summaries were built in: `THIS` and
 `ITEM_NUMBER` are the previous record's, every group of the break reads
 as its ended run left it, and every variable holds what it held then.
@@ -1159,7 +1163,8 @@ A group is **opening** from its break, where the record loop starts its
 new run, until a band of that run has been placed: its title, or for
 a group whose title does not print, the first band inside it. An eject
 in that time -- one of the title's `eject` nodes, a
-[keep-together](#keeping-content-together) rule, or the title not fitting --
+[keep-together](#keeping-content-together) rule, the title not fitting, or
+a [subreport with pages of its own](#pages) that runs before the band --
 moves the group to the page that band lands on rather than making that page
 its second, so `_PAGE_NUMBER` is 1 wherever a run's first band is.
 
@@ -1240,8 +1245,11 @@ in it:
   not reproduce. An eject that starts a new page decides nothing about the
   fragment it starts, so that one leaves it alone.
 - **A band split.** Its two halves belong at the column edge they were cut on.
-- **A subreport.** Its bands are the child engine's rather than a band of the
-  host's, and the frame has no way to carry them along when it moves one.
+- **A subreport** on a band of the fragment, of either kind. An inline one's
+  bands are the child engine's rather than a band of the host's, and
+  the frame has no way to carry them along when it moves one. One with pages
+  of its own ends the page where it runs, and that page is left as the fill
+  left it too: the band it hangs off was placed with the page about to end.
 - **A `column` deferral.** It is resolved when the column ends, against
   the column it ended in, and moving bands afterwards would leave it
   counting rows that are elsewhere. One counts here when it is placed
@@ -1412,7 +1420,9 @@ usually depends on them.
 
 The same holds for every eject a band causes before it is committed:
 one of its `eject` nodes, a [keep-together](#keeping-content-together)
-rule, or its not fitting. The fold is undone, so the footers of the page
+rule, or its not fitting, and for one a
+[subreport of negative `seq`](#where-a-subreports-bands-go) causes
+before the band is placed. The fold is undone, so the footers of the page
 it leaves do not count it; the eject resets what it resets; and the fold
 is applied again, evaluated afresh, so the band counts on the page it
 lands on. A `reset="page"` total therefore neither counts a row twice
@@ -1665,7 +1675,18 @@ and one data table for the whole document, so a face two templates both resolve
 is measured once and [embedded once](render.md#fonts-in-the-file).
 The fonts that name it are still listed under their own names,
 as [printout.md](printout.md#fonts) describes, and a name two templates
-give to different things is published under distinct names.
+give to different things is published under distinct names: the one
+used first keeps it, and the other is suffixed, by the rule
+[printout.md](printout.md#fonts) gives for fonts and
+[the one](printout.md#data) it gives for `data` entries.
+
+A layout named by `template=` has its `data` nodes produced and its fonts
+resolved when it **first runs**, against the parameters of that first
+invocation, and keeps them for the rest of the build. A `data` node written
+as `expr` needs parameters, and a subreport has none until an invocation
+supplies them; a document that never runs resolves nothing, and a font of
+its that cannot be found is not an error until it does. The report's own
+fonts are resolved before anything is built, as ever.
 
 - **Non-inline** (default): the child builds complete pages, which are spliced into
   the parent's page list at the point the subreport occurs. `ownpageno` restarts
@@ -1689,7 +1710,10 @@ with it.
 Nesting is bounded at 32. A subreport may name the layout it is written in,
 which is how a template walks a tree, and the data normally ends that walk;
 nothing guarantees it does, so the recursion stops with an error naming the node
-rather than running out of stack.
+rather than running out of stack. Thirty-two invocations may be open at once,
+one inside another, and the thirty-third is the error. A subreport whose `when`
+is false is never invoked and does not count; one over an empty sequence is
+invoked, since it still prints its title and summary, and it counts.
 
 ### Where a subreport's bands go
 
@@ -1705,6 +1729,17 @@ as a whole:
 Ties break on document order. Either way the subreport consumes frame space
 of its own; it takes nothing from the host band's height, and the host band's
 height is unaffected by it.
+
+The band's [`eject` nodes](#eject-nodes) are tested before any of it:
+first the `eject` nodes, then the negative-seq subreports, then the band,
+then the non-negative ones. A report's own `title`, which tests its `eject`
+nodes after itself, tests them after its non-negative subreports too, so an
+`eject` there gives the title and everything it carries a page of their own.
+
+A detail band is counted -- `REPORT_COUNT`, `PAGE_COUNT`, `COLUMN_COUNT` and
+each group's `_COUNT` -- once it is committed, and before the subreports
+after it run: they print after it, and the footer of a page one of them ends
+counts it.
 
 When the host band splits, the subreport goes outside the whole split,
 not between the fragments: `seq` negative places it before the head,
@@ -1733,6 +1768,13 @@ band is measured, so if the host band then turns out not to fit and ejects,
 the subreport's bands stay where they were placed and the host band follows
 them onto the next page -- which is what "the host band follows them" means.
 
+An eject the subreport itself causes is an eject before the host band is
+committed, so the band's fold is [rolled back](#rollback) around it,
+as around an eject the band causes: the footers of the page the subreport
+leaves do not count the band, and the band counts on the page it lands on.
+A subreport that paginates itself ends the host's page, and the fold is
+rolled back around that too, and applied again when the host resumes.
+
 ### Pages
 
 **Inline.** The child prints in the frame the host band belongs to, from
@@ -1741,16 +1783,65 @@ the host's current fill position. It shares the host's `PAGE_NUMBER` and
 footers are placed, the host's page-scoped variables reset, and the host's
 header is reserved on the next page, all alongside the child's own. An inline
 subreport therefore has no page of its own to attach a header or a footer to,
-and defines none.
+and defines none. Each frame's footer and header is built in the context of
+the report that owns the frame, the host's or the child's, and each report's
+scopes end with the page or the column its bands were printing in. Its own
+counters, `PAGE_COUNT` and `COLUMN_COUNT` among them, start again with the
+host's page and column.
+
+A band the child commits is something of the host band's on the page. So a host
+band at a group break, with nothing of its new record placed yet, has begun its
+new runs once the child commits a band: a page the child ends after that ends
+the new runs, and its footers are built against the new record, per
+[what a header or footer sees](#what-a-header-or-footer-sees).
 
 It may open a `columns` block. That reserves a frame inside the host's rather
 than one of its own, so it is grafted onto the host frame for the length of the
 invocation and removed again at the end of it. The frames begin where the host
-is filled -- the space above belongs to the host -- and stay there for the rest
-of that page, so a column the child opens on the page it started on begins
-beside the first, not above it. A page break puts them back at the top of
-the host's frame. The child's own `columns` header and footer are placed and
-measured in the child's context, which is live for as long as the frames are.
+is filled -- the space above belongs to the host -- and stay there
+for the rest of that page, so a column the child opens on the page
+it started on begins beside the first, not above it, and so does
+one it opens in the host's next column on that page. A page break
+puts them back at the top of the host's frame.
+
+They begin only where there is room for their headers and footers.
+Where less of the host's frame is left below its fill than those reserve,
+the host ejects first, as for a band that does not fit -- to a column
+of its own with room, or to the next page -- and the frames begin where
+that leaves it. Where no eject could give them more room, the reservations
+exceed the frame, which is the [error](#errors) it is for any frame.
+Nothing more than that is asked for, since the child's own bands are not
+[measured in advance](#what-the-lookahead-does-not-see). So a column with
+no room for one between its header and its footer ends as a full column does,
+with both drawn, and the child goes on in the next.
+
+The child's own `columns` header and footer are placed and measured in the
+child's context, which is live for as long as the frames are. While they are,
+they are frames of the host's tree like any other: each of their column breaks
+is a column break of the page, which `COLUMN_NUMBER` counts for the host
+as well. So a host footer built at an eject inside them reports the column
+the child was in, and the count does not go back when they come off.
+
+The host's frame can hold columns of its own as well, where the host band is
+the `title` or the `summary` of a level that opened some. The grafted frame then
+takes the room a band of the host's frame would have: below whatever the host's
+own columns have drawn above it, and above their footers. Nothing draws over
+anything else.
+
+At the end of the invocation the columns come off the host's frame without the
+last column's footer: that column does not end, and the page goes on below it.
+What the host's frame holds below the invocation continues below it, as it
+continues below any band placed across its columns -- below a column footer,
+too, where a column of the child's ended in a column break on that page.
+
+The child's summary is the last band placed while the columns are on,
+so the strip that last footer would have taken is the summary's, and its
+`VERTICAL_SPACE` reaches past it. The columns come off as soon as any of the
+summary is on the page, so nothing after that -- the rest of a summary that
+splits, or the summary's own subreports -- ends their column. A page break
+before then ends it as any does: a summary that does not fit moves on,
+the column's footer is drawn, and the columns open again above the summary
+on the next page.
 
 **Its own pages.** The host's current page is closed -- footers placed, page
 and column deferrals resolved -- the child builds complete pages, and the host
@@ -1766,7 +1857,18 @@ printout's [per-page overrides](printout.md#page-lines) are for.
 Without `ownpageno` the child continues the host's numbering and the host
 resumes after it: a host on page 3 whose subreport takes three pages resumes
 on page 7. With `ownpageno` the child numbers from 1 and the host's numbering
-is untouched, so the host resumes on page 4.
+is untouched, so the host resumes on page 4. Either way the child's pages
+are not the host's: a group's `_PAGE_NUMBER` goes up by one across them,
+as across any page eject, and the host's page-scoped variables reset once.
+A group that is still [opening](#sequence) is the exception, as it is for
+any page eject: at a group break, a subreport that runs before the first band
+of the new record ends a page that holds none of it, so that page's footers
+read the runs that ended, and the new runs begin on the page the host resumes on.
+
+An empty sequence still runs the child, which still begins on a page of its own
+and prints its title and summary there. And the host resumes on a fresh page
+whether or not anything of it follows, so a subreport on the last band of
+a report that has no summary leaves an empty page at the end.
 
 ### What the lookahead does not see
 
@@ -1785,12 +1887,44 @@ The child's parameters are bound from the `arg` nodes, which are evaluated in
 the **host's** context before the child has one, and type-checked against the
 declaration rather than parsed for it. A parameter with neither an `arg` nor a
 default is a load-time error: a subreport has no command line to fall back on.
+A parameter with no `arg` takes its `default`, or its `defaultexpr` evaluated
+as a report's is, against `BUILD_TIME` and the parameters settled before it.
+
+The check is exact. A `string` takes a string, an `int` an int and not a
+boolean, a `decimal` a decimal and a `float` a float, neither taking the
+other or an int, a `bool` a boolean, a `date` or a `datetime` a time,
+a `list` a list and not a tuple, and an `object` a record and not a dict,
+since a dict has no attribute access. `None` is of no type.
 
 The `data` expression is evaluated in the host's context too, and must yield
 a sequence. Its elements are coerced by the child's own
-[`records`](template.md#records), exactly as the input file is coerced
-by the report's -- a `list` member arrives from JSON untyped, and that
+[`records`](template.md#records), as the input file is coerced by
+the report's -- a `list` member arrives from JSON untyped, and that
 declaration is what turns its fields into ints, decimals and times.
+
+`None` is an empty sequence, which a `nullable` list member can be.
+Text is not a sequence, and nor is a time; anything else that can be
+iterated is, a dict yielding its keys. Each element must be an object:
+a record or a dict. Since the data is an expression, an element's fields
+can arrive typed rather than as JSON gave them, and each is read by its
+declared type as a JSON value is: written as text, and parsed. A boolean,
+an int, and a float are written as JSON spells them, a decimal as its digits,
+and a time as RFC 3339 without fractions of a second, so a decimal reaches
+an `int` member as its digits and a time a `string` member as RFC 3339.
+A `string` member refuses a float, though, since a float the host computed
+has no one spelling as text. Three values are kept as they are: a time
+in a `date` or `datetime` member, which a `date` takes at the start of
+its day; a record or a dict in an `object` member; and a list or a tuple
+in a `list` member. The host's context is the host's as it stands
+when the subreport runs, with one refinement. `VERTICAL_POSITION`
+and `VERTICAL_SPACE` there are the host band's: for a non-negative
+`seq`, as the band was measured, which holds where the band split;
+for a negative one, where the band would begin with nothing before it,
+since it has not been measured yet. Everything else -- the counters,
+the page number, the variables -- reads the report as it stands,
+so after the band the counters count it. `when` is evaluated the same way,
+and first: a subreport whose `when` is false evaluates neither its `data`
+nor its `arg` nodes.
 
 Every deferral a child registered resolves when its invocation ends. For a child
 with its own pages that is the ordinary end-of-report resolution. For an inline
@@ -1840,7 +1974,8 @@ Each of these names the template node, the record index, and the measured values
 | `FINAL` without `evaltime`, or `evaltime` without `FINAL` | error, at template validation |
 | Column count so high that column width is non-positive | error, at template validation |
 | A subreport's `data` yields something that is not a sequence | error |
-| An `arg` value whose type is not the parameter's | error |
+| A subreport's `data` element that is not an object, or a member of one that will not coerce | error |
+| An `arg` value, or a `defaultexpr` result, whose type is not the parameter's | error |
 | Subreports nested more than 32 deep | error |
 | A subreport parameter with no `arg` and no default | error, at template validation |
 | A template that reaches itself through a subreport | error, at template load |

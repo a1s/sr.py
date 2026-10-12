@@ -1,0 +1,49 @@
+// probes/subreport/graft-no-room.kdl -- an inline subreport's columns
+// with too little of the page left for them.
+//
+// The host's detail band sits in a block of two columns, and the subreport
+// on it opens a block of two more, with a header and a footer.
+// It is invoked first where the host's first column has 8 pt left, and then
+// where its second has 8 pt left, and the header and footer reserve 12 pt.
+//
+// The reference refuses the template: the reservations exceed the frame,
+// as they would where the page's geometry left no room.  doc/layout.md#pages
+// ejects the host first, as for a band that does not fit, so the columns open
+// at the top of the host's second column, and then at the top of the next
+// page.
+//
+// Registered under the divergence `graft-without-room`.
+//
+// doc/layout.md#pages.
+
+report name="subreport/graft-no-room" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "name" type="string"
+    member "rows" type="int"
+  }
+  layout width=200 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    embedded "notes" {
+      parameter "tag" type="string"
+      columns count=2 gap=4 {
+        header height=6 {
+          field expr="'%s ch pn %d cn %d' % (tag, PAGE_NUMBER, COLUMN_NUMBER)" left=0 top=0 height=6
+        }
+        footer height=6 {
+          field expr="'%s cf cn %d' % (tag, COLUMN_NUMBER)" left=0 top=0 height=6
+        }
+      }
+      detail height=6 {
+        field expr="'%s %d cn %d' % (tag, ITEM_NUMBER, COLUMN_NUMBER)" left=0 top=0 height=6
+      }
+    }
+    columns count=2 gap=10
+    detail height=6 {
+      field expr="'host %s cn %d' % (name, COLUMN_NUMBER)" left=0 top=0 height=6
+      subreport embedded="notes" seq=1 data="[{}] * rows" inline=#true when="rows > 0" {
+        arg "tag" value="name"
+      }
+    }
+  }
+}

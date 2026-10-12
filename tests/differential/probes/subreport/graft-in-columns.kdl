@@ -1,0 +1,42 @@
+// probes/subreport/graft-in-columns.kdl -- a subreport's columns in the host's.
+//
+// The host's detail band sits in a block of two columns, and its
+// inline subreport opens a block of two more, so the second invocation
+// runs out of its own columns and goes on in the host's second column.
+//
+// The reference: the grafted block stays where the host was filled when
+// the invocation began for the rest of that page, in the host's next
+// column as in its first, and a page break puts it back at the top.
+// COLUMN_NUMBER counts the columns the page has opened, so the block's
+// columns in the host's second column read 3 and 4.
+//
+// doc/layout.md#pages and doc/expressions.md#predefined-variables.
+
+report name="subreport/graft-in-columns" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "name" type="string"
+    member "rows" type="int"
+  }
+  layout width=200 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    embedded "notes" {
+      parameter "tag" type="string"
+      columns count=2 gap=4 {
+        header height=6 {
+          field expr="'%s ch cn %d' % (tag, COLUMN_NUMBER)" left=0 top=0 height=6
+        }
+      }
+      detail height=6 {
+        field expr="'%s %d cn %d' % (tag, ITEM_NUMBER, COLUMN_NUMBER)" left=0 top=0 height=6
+      }
+    }
+    columns count=2 gap=10
+    detail height=6 {
+      field expr="'host %s cn %d' % (name, COLUMN_NUMBER)" left=0 top=0 height=6
+      subreport embedded="notes" seq=1 data="[{}] * rows" inline=#true {
+        arg "tag" value="name"
+      }
+    }
+  }
+}

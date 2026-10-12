@@ -1,0 +1,50 @@
+// probes/subreport/inline-before.kdl -- a negative-seq subreport that ejects.
+//
+// The report of inline-eject.kdl, with the line items before the invoice row.
+// The first record's do not fit, so the host band follows them onto the
+// second page.
+//
+// The host band's fold, the count `hostpage` reset each page, runs before
+// its subreport.  The reference keeps it across the eject the subreport
+// causes: the first page's footer counts the band, which is not on that
+// page, and the reset loses it on the second, where the band reads 0.
+// doc/layout.md#rollback rolls a band's fold back around every eject
+// before it is committed, and now says this is one: the first footer
+// reads 0, and the band and the second footer 1.
+//
+// Registered as the divergence `subreport-rollback`.
+
+report name="subreport/inline-before" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "name" type="string"
+    member "items" type="list"
+  }
+  variable "hostpage" expr="1" calc="count" reset="page"
+  layout width=200 height=80 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    embedded "items" {
+      records {
+        member "n" type="int"
+      }
+      variable "childpage" expr="n" calc="sum" reset="page"
+      variable "childcol" expr="n" calc="sum" reset="column"
+      detail height=8 {
+        field expr="'item %d pn %d pc %d cp %s cc %s cn %d' % (n, PAGE_NUMBER, PAGE_COUNT, childpage, childcol, COLUMN_NUMBER)" left=10 top=0 height=6
+      }
+      summary height=8 {
+        field expr="'summary pn %d pc %d cp %s' % (PAGE_NUMBER, PAGE_COUNT, childpage)" left=10 top=0 height=6
+      }
+    }
+    header height=8 {
+      field expr="'header pn %d pc %d hp %s this %s' % (PAGE_NUMBER, PAGE_COUNT, hostpage, THIS.name if THIS else None)" left=0 top=0 height=6
+    }
+    footer height=8 {
+      field expr="'footer pn %d pc %d hp %s this %s' % (PAGE_NUMBER, PAGE_COUNT, hostpage, THIS.name if THIS else None)" left=0 top=0 height=6
+    }
+    detail height=10 {
+      field expr="'host %s pn %d pc %d hp %s' % (name, PAGE_NUMBER, PAGE_COUNT, hostpage)" left=0 top=0 height=6
+      subreport embedded="items" seq=-1 data="items" inline=#true
+    }
+  }
+}

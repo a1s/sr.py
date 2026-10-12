@@ -1,0 +1,31 @@
+// probes/subreport/names.inc.kdl -- the child names.kdl runs, with names of the host's.
+
+report name="subreport/names, the child" {
+  parameter "who" type="string"
+  records {
+    member "k" type="string"
+  }
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  font "big" file="../../../../example/fonts/Go-Bold.ttf" size=7
+  font "child" file="../../../../example/fonts/Go-Bold.ttf" size=6
+  data "shared" encoding="base64" {
+    content "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAF0lEQVR42mP4//8/A8N/TJKJAQcYnBIAuyUP/zAXBNgAAAAASUVORK5CYII="
+  }
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    group "g" expr="k" {
+      title height=8 {
+        field expr="'child group %s %s' % (k, who)" left=0 top=0 height=6 {
+          style font="big"
+        }
+      }
+      detail height=8 {
+        field expr="'child row %s' % k" left=0 top=0 height=6 {
+          style font="child"
+        }
+        image data="shared" left=100 top=0 width=4 height=4
+        image file="../data/two/pic.png" left=110 top=0 width=4 height=4
+      }
+    }
+  }
+}

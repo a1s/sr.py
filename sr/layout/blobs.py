@@ -19,6 +19,15 @@ the names, and each is visible in :class:`DataTable`.
   and a generated name that is taken gets ``-2``, ``-3`` and so on
   after the whole name until it is free.
 
+A [subreport](doc/layout.md#subreports) named by ``template=``
+brings `data` nodes of its own, and the document still has one table.
+Every document's declared names are reserved from the start, the
+subreports' along with the report's, so a generated name steps around
+them all. Two documents may declare one name for different bytes, and
+then the node built first holds the name and the other is suffixed as
+a generated name would be.  Nothing a declared node is named by depends
+on which document declared it, only on its name and its bytes.
+
 Which entries are written is a separate question with a separate answer,
 since a name can be taken without its entry being needed: only those
 something in the finished document refers to.
@@ -38,8 +47,8 @@ class DataTable:
     Attributes:
         declared: The report's `data` nodes' contents, by name,
             in document order.
-        taken: Every name spoken for: the declared ones, and
-            every one generated since.
+        taken: Every name spoken for: the declared ones,
+            every document's, and every one generated since.
 
     """
 
@@ -61,21 +70,46 @@ class DataTable:
         for name, content in self.declared.items():
             self.holders.setdefault(content, name)
 
-    def named(self, name: str) -> str:
+    def reserve(self, names: Iterable[str], contents: Mapping[str, bytes]) -> None:
+        """Reserve another document's declared names.
+
+        Called for each template a subreport names, before the build
+        starts, so that what is reserved is the same whichever of them
+        runs first.  Its contents are known only where a node holds
+        them literally, since an ``expr`` is evaluated when it runs.
+
+        Args:
+            names: Every `data` node name the document declares.
+            contents: The contents its literal nodes hold, by name,
+                in document order.
+
+        """
+        self.taken.update(names)
+        for name, content in contents.items():
+            self.holders.setdefault(content, name)
+
+    def named(self, name: str, content: bytes | None = None) -> str:
         """Return the entry a `data` node's content is stored under.
 
         That is the node's own name, unless an entry built earlier
         already holds the same bytes: one content, one entry.
+        And unless an entry built earlier holds that name
+        for other bytes, which a node of another document can:
+        then it is suffixed, as a generated name is.
 
         Args:
             name: The node's name.
+            content: Its bytes; the report's own node's by default.
 
         """
-        content = self.declared[name]
+        if content is None:
+            content = self.declared[name]
         found = self.names.get(content)
-        if found is None:
-            found = self.enter(name, content)
-        return found
+        if found is not None:
+            return found
+        if name not in self.contents:
+            return self.enter(name, content)
+        return self.enter(self.free(name), content)
 
     def generated(self, base: str, content: bytes) -> str:
         """Return the entry an unnamed blob is stored under.
@@ -91,14 +125,23 @@ class DataTable:
             return found
         holder = self.holders.get(content)
         if holder is not None:
-            return self.named(holder)
+            return self.named(holder, content)
+        return self.enter(self.free(base), content)
+
+    def free(self, base: str) -> str:
+        """Return the first of a name and its suffixed forms nothing has.
+
+        Args:
+            base: The name it would have if it were free.
+
+        """
         name = base
         suffix = 2
-        while name in self.taken:
+        while name in self.taken or name in self.contents:
             name = f"{base}-{suffix}"
             suffix += 1
         self.taken.add(name)
-        return self.enter(name, content)
+        return name
 
     def enter(self, name: str, content: bytes) -> str:
         """Record an entry, and return its name.

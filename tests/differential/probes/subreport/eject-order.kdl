@@ -1,0 +1,44 @@
+// probes/subreport/eject-order.kdl -- a band's eject nodes and its subreports.
+//
+// A report title with an unconditional `eject`, and a detail band
+// with one on its second record, each with a subreport on both sides.
+//
+// The reference: a detail band's `eject` is tested before its negative-seq
+// subreport runs, so both land on the next page.  The report title tests
+// its `eject` after itself and after both its subreports, so all three
+// share the first page and the rows begin on the second.
+//
+// doc/layout.md#where-a-subreports-bands-go.
+
+report name="subreport/eject-order" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=100 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    embedded "note" {
+      parameter "tag" type="string"
+      detail height=6 {
+        field expr="'%s pn %d' % (tag, PAGE_NUMBER)" left=10 top=0 height=6
+      }
+    }
+    title height=6 {
+      eject
+      field expr="'title pn %d' % PAGE_NUMBER" left=0 top=0 height=6
+      subreport embedded="note" seq=-1 data="[{}]" inline=#true {
+        arg "tag" value="'before title'"
+      }
+      subreport embedded="note" seq=1 data="[{}]" inline=#true {
+        arg "tag" value="'after title'"
+      }
+    }
+    detail height=6 {
+      eject when="ITEM_NUMBER == 2"
+      field expr="'row %d pn %d' % (ITEM_NUMBER, PAGE_NUMBER)" left=0 top=0 height=6
+      subreport embedded="note" seq=-1 data="[{}]" inline=#true {
+        arg "tag" value="'before row %d' % ITEM_NUMBER"
+      }
+      subreport embedded="note" seq=1 data="[{}]" inline=#true {
+        arg "tag" value="'after row %d' % ITEM_NUMBER"
+      }
+    }
+  }
+}

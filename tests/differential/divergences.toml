@@ -33,7 +33,12 @@
 # `cut-crop-ignores-alignment`, `grow-ignores-valign`,
 # and `unprinted-blobs-written`; and two decisions,
 # `image-type-removed` and `image-without-pixels`.  After M11 came
-# one decision about the font table, `twin-fonts-merged`.
+# one decision about the font table, `twin-fonts-merged`.  M12 added
+# two decisions about subreports, `subreport-rollback` and
+# `subreport-pages-at-a-break`, and three defects in the
+# reference's, `graft-beside-columns`, `graft-without-room`, and
+# `inline-summary-strip`; two of its probes show `column-floor`
+# and `column-footer-strip` again, inside a subreport.
 #
 # The milestone numbers:
 #   M0: Scaffold and oracle
@@ -380,6 +385,7 @@ since = "2026-09-27"
 affects = [
     "probe/pagination/column-after-title",
     "probe/pagination/column-after-group-title",
+    "probe/subreport/inline-columns-title",
 ]
 
 [[divergence]]
@@ -625,6 +631,7 @@ affects = [
   "probe/pagination/summary-above-column-footers",
   "probe/pagination/swapfooter-column-footers",
   "probe/pagination/column-footer-full",
+  "probe/subreport/group-title",
 ]
 
 [[divergence]]
@@ -746,7 +753,8 @@ of that; and under `grow` the module is the box's side over the modules, \
 a grown module down, so that the symbol never outgrows the box it was \
 made to fill.  Any barcode whose module is not a whole number of \
 points shows it, which is why every other probe here uses a module of \
-one point, and the sakila example will show it too once it can be built.\
+one point.  The invoices example shows it, in the one QR symbol that keeps \
+it from agreeing, and the sakila example will too once it can be built.\
 """
 ticket = "M10: a barcode in its box, layout.md#a-barcode-in-its-box; filed against the Go engine"
 since = "2026-10-04"
@@ -927,3 +935,99 @@ cost nothing in the PDF.  The reference is the side that changes.\
 ticket = "M7: the font table, printout.md#fonts"
 since = "2026-10-11"
 affects = ["probe/printout/twin-fonts"]
+
+[[divergence]]
+id = "subreport-rollback"
+summary = "a host band's fold rolls back around an eject its negative-seq subreport causes here; the reference keeps it, and loses it to the reset"
+reason = """\
+A subreport of negative `seq` runs after its host band's variables have \
+folded and before the band is placed.  Where the subreport ejects, inline \
+or by ending the page for pages of its own, the reference keeps the fold \
+across the eject: the footer of the page the subreport leaves counts a band \
+that is not on that page, and the page's reset then loses it, so a \
+`reset="page"` total reads the band on a page it is not on and not on the \
+page it is.  doc/layout.md#rollback rolls a band's fold back around every \
+eject before it is committed so that a row is neither counted twice nor \
+lost, and now names this eject among them, so the fold is undone around it \
+and applied again where the band lands.  It is a decision rather than \
+a defect, and the reference is the side that changes.\
+"""
+ticket = "M12: rollback, layout.md#rollback"
+since = "2026-10-11"
+affects = ["probe/subreport/inline-before", "probe/subreport/ownpageno"]
+
+[[divergence]]
+id = "graft-beside-columns"
+summary = "an inline subreport's columns beside its host frame's own keep clear of them here; the reference draws one block over the other"
+reason = """\
+An inline subreport on the title or summary of a level that opened columns \
+grafts its own columns onto a frame that already holds the level's.  The \
+reference places the grafted block as though the level's were not there: on \
+a page the subreport begins, the grafted header goes over the level's, the \
+two footers over each other, and once the invocation ends the level's rows \
+go back to the top of its columns, over the subreport's.  \
+doc/layout.md#pages gives the grafted frame the room a band of the host's \
+frame would have, below the level's column header and above its footer, and \
+continues the level's columns below the invocation, so that nothing is \
+drawn over anything else.  The reference is the side that changes.\
+"""
+ticket = "M12: inline columns, layout.md#pages; filed against the Go engine"
+since = "2026-10-11"
+affects = ["probe/subreport/graft-beside-columns"]
+
+[[divergence]]
+id = "graft-without-room"
+summary = "an inline subreport's columns with too little of the page left begin where the host ejects to here; the reference refuses the template"
+reason = """\
+An inline subreport's columns are grafted onto the host's frame where the \
+host is filled, so how much room their header and footer have depends on \
+the data before them.  Where less is left than the two reserve, the \
+reference refuses the template, with the error a page whose geometry left \
+no room for them would give, and the same template builds over data that \
+leaves a few more points.  doc/layout.md#pages ejects the host first, as \
+for a band that does not fit, to a column of its own with room or to the \
+next page, and grafts the columns there, and keeps the error for a frame \
+no eject could give more room.  The reference is the side that changes.\
+"""
+ticket = "M12: inline columns, layout.md#pages; filed against the Go engine"
+since = "2026-10-11"
+affects = ["probe/subreport/graft-no-room"]
+
+[[divergence]]
+id = "subreport-pages-at-a-break"
+summary = "a page a subreport with pages of its own ends at a group break reads the run that ended here; the reference reads the run that begins"
+reason = """\
+A subreport of negative `seq` with pages of its own, on a group's title or \
+on the first detail band of a group whose title does not print, ends the \
+host's page before anything of the new record is on it.  The reference \
+builds that page's footer against the new record, and counts the page as \
+the new run's first, so the run's `X_PAGE_NUMBER` reads 2 on the page the \
+host resumes on, where its first band is.  doc/layout.md#what-a-header-\
+or-footer-sees and doc/layout.md#sequence already decided both for every \
+other eject while a group is opening, under `footer-at-a-group-break` and \
+`group-opens-where-its-title-lands`, and now name this one among them: the \
+footer reads the runs that ended, and the new run begins on the page the \
+host resumes on.  It is a decision rather than a defect, and the reference \
+is the side that changes.\
+"""
+ticket = "M12: subreports with pages of their own, layout.md#pages"
+since = "2026-10-11"
+affects = ["probe/subreport/pages-at-a-break"]
+
+[[divergence]]
+id = "inline-summary-strip"
+summary = "an inline subreport's summary in its columns' footer strip takes them off the page here; the reference draws their footer over it"
+reason = """\
+An inline subreport's columns come off the host's frame without the last \
+column's footer, so its summary may take the strip that footer would have, \
+and in both engines it does.  The reference keeps the columns on until the \
+summary's own subreports have run, so where one of those breaks the page, \
+the column ends with it: its footer is drawn over the summary, and the \
+next page opens the columns again, with nothing in them.  doc/layout.md#\
+pages takes the columns off as soon as any of the summary is on the page, \
+so a page break after that draws no footer and opens no columns.  The \
+reference is the side that changes.\
+"""
+ticket = "M12: inline columns, layout.md#pages; filed against the Go engine"
+since = "2026-10-11"
+affects = ["probe/subreport/summary-strip-eject"]

@@ -84,9 +84,11 @@ from sr.errors import (
 )
 from sr.expr import Namespace, apply_format
 from sr.expr.values import quote
+from sr.fonts.resolve import Resolution
 from sr.fonts.text import Metrics, missing_glyph, wrap
 from sr.layout.context import Context, condition, evaluate, evaluate_at
 from sr.layout.defer import Deferral, scope_of, snapshot
+from sr.layout.fonttable import FontTable
 from sr.layout.frame import Window
 from sr.layout.images import Picture, Pictures
 from sr.printout.model import Barcode as BarcodeMark
@@ -108,7 +110,14 @@ from sr.template.model import Line as LineElement
 from sr.template.model import Rectangle as RectangleElement
 from sr.units import fill_points, fits, round_points
 
-__all__ = ["Extent", "Measurement", "Measurer", "Styling", "resolve_span"]
+__all__ = [
+    "Extent",
+    "Measurement",
+    "Measurer",
+    "Shared",
+    "Styling",
+    "resolve_span",
+]
 
 # The colour a mark is drawn in when no `style` in the walk set one.
 # doc/template.md leaves a text mark's `color` required and a
@@ -126,6 +135,29 @@ HALIGN = {"left": 0.0, "center": 0.5, "right": 1.0}
 # direction, or a quarter of an inch where that is more.
 BAR_SHARE = 0.15
 BAR_MINIMUM = 18.0
+
+
+@dataclass
+class Shared:
+    """What the measurers of one build share, one per template document.
+
+    A [subreport](doc/layout.md#subreports) named by ``template=``
+    is measured against fonts and blobs of its own, and the document
+    still has one font table and one list of warnings, and raises a
+    `glyph` warning once per font and character whichever template
+    met the character first.
+
+    Attributes:
+        fonts: The printout's font table.
+        warnings: What measuring had to say, in the order found.
+        reported: The fonts and characters a `glyph` warning has named,
+            by the name the font is published under.
+
+    """
+
+    fonts: FontTable = field(default_factory=FontTable)
+    warnings: list[BuildWarning] = field(default_factory=list)
+    reported: set[tuple[str, str]] = field(default_factory=set)
 
 
 @dataclass(frozen=True)
@@ -346,20 +378,21 @@ def reached(placements: list[Placement], marks: tuple[Mark, ...]) -> float:
 
 
 class Measurer:
-    """Measures bands against one report's fonts and blobs.
+    """Measures bands against one template document's fonts and blobs.
 
     Attributes:
         fonts: The metrics of each `font` node, by name.
-        blobs: The report's `data` nodes' contents, by name.
+        blobs: The document's `data` nodes' contents, by name.
         file: The template, for a diagnostic.
         pictures: What resolves an `image`, and names its `data` entry.
-        embedded: The `data` node each font read out of one was read from,
-            by font name.
-        warnings: What the build has to say, in the order found.
+        resolutions: What resolving each `font` node produced, by name.
+        shared: What every measurer of the build shares.
         used: The fonts some measured element's style walk resolved to,
             which are the ones doc/printout.md#fonts lists.
-        font_data: The `data` entry name for each embedded font,
-            by font name.
+        published: The name each used font is published under,
+            by the name its template gave it.
+        faces: The metrics of each used font, by published name,
+            which is the name a text mark carries.
 
     """
 
@@ -368,29 +401,38 @@ class Measurer:
         fonts: dict[str, Metrics],
         blobs: dict[str, str],
         pictures: Pictures,
-        embedded: Mapping[str, str],
+        resolutions: Mapping[str, Resolution],
         file: str | None = None,
+        shared: Shared | None = None,
     ) -> None:
-        """Hold what every band in one report is measured against.
+        """Hold what every band in one template document is measured against.
 
         Args:
             fonts: The metrics of each `font` node, by name.
-            blobs: The contents of the report's `data` nodes, by name.
-            pictures: What resolves the report's images, and holds
+            blobs: The contents of the document's `data` nodes, by name.
+            pictures: What resolves the document's images, and holds
                 the data table their entries and the fonts' are named in.
-            embedded: The `data` nodes for font data, keyed by font name.
+            resolutions: What resolving each `font` node produced, by name.
             file: The template, for a diagnostic.
+            shared: What the other measurers of the build hold,
+                for a subreport's document; a fresh one otherwise.
 
         """
         self.fonts = fonts
         self.blobs = blobs
         self.file = file
         self.pictures = pictures
-        self.embedded = dict(embedded)
-        self.warnings: list[BuildWarning] = []
-        self.reported: set[tuple[str, str]] = set()
+        self.resolutions = dict(resolutions)
+        self.shared = Shared() if shared is None else shared
+        self.shared.fonts.document(self, tuple(self.resolutions.values()))
         self.used: set[str] = set()
-        self.font_data: dict[str, str] = {}
+        self.published: dict[str, str] = {}
+        self.faces: dict[str, Metrics] = {}
+
+    @property
+    def warnings(self) -> list[BuildWarning]:
+        """Return what measuring has had to say, every document's."""
+        return self.shared.warnings
 
     def prints(self, section: Section, frame: Window, context: Context) -> bool:
         """Report whether a band's ``printwhen`` lets it print.
@@ -644,10 +686,13 @@ class Measurer:
     def use(self, font: str) -> None:
         """Note that an element's style walk resolved to a font.
 
-        The first use of a font read out of a `data` node is
-        what names that node's entry in the printout's `data` table,
-        which is the node's own name unless an entry built earlier
-        holds the same bytes.
+        The first use publishes it in the printout's font table, under
+        its own name unless a font of another document holds that name
+        for something else.  The first use of a font read out of a `data`
+        node is also what names that node's entry in the printout's `data`
+        table, which is the node's own name unless an entry built earlier
+        holds the same bytes.  A name the template does not declare is
+        not published, and measuring the element is the error that says so.
 
         Args:
             font: The name of the `font` node.
@@ -655,10 +700,26 @@ class Measurer:
         """
         if font in self.used:
             return
+        resolution = self.resolutions.get(font)
+        if resolution is None:
+            return
         self.used.add(font)
-        data = self.embedded.get(font)
+        data = resolution.origin.data
+        entry = None
         if data is not None:
-            self.font_data[font] = self.pictures.table.named(data)
+            entry = self.pictures.table.named(data, self.pictures.blobs[data])
+        published = self.shared.fonts.publish(self, resolution, entry)
+        self.published[font] = published
+        self.faces[published] = self.fonts[font]
+
+    def font_name(self, font: str | None) -> str:
+        """Return the name a used font is published under.
+
+        Args:
+            font: The name of the `font` node, which has been used.
+
+        """
+        return self.published[font or ""]
 
     def xref(
         self,
@@ -903,7 +964,7 @@ class Measurer:
         wrapped = wrap(text, placed.width, metrics)
         if placed.deferral is None:
             for character in wrapped.missing:
-                self.missing(placed.style.font or "", character, field.path)
+                self.missing(self.font_name(placed.style.font), character, field.path)
         placed.lines = tuple(wrapped.lines)
         if field.stretch:
             placed.content_height = round_points(len(wrapped.lines) * metrics.leading)
@@ -1242,7 +1303,7 @@ class Measurer:
         assert isinstance(field, Field)
         record = deferral.record
         text = self.resolved(deferral, final)
-        metrics = self.fonts[mark.font]
+        metrics = self.faces[mark.font]
         wrapped = wrap(text, mark.box.width, metrics)
         for character in wrapped.missing:
             self.missing(mark.font, character, field.path)
@@ -1410,7 +1471,7 @@ class Measurer:
         box = Box(placed.x, round_points(placed.top + offset), placed.width, height)
         return Text(
             box,
-            placed.style.font or "",
+            self.font_name(placed.style.font),
             placed.style.color or DEFAULT_COLOR,
             field.align or field.halign,
             metrics.leading,
@@ -1427,16 +1488,16 @@ class Measurer:
         per row would bury the document's other diagnostics.
 
         Args:
-            font: The name the template gave the `font` node.
+            font: The name the font is published under.
             character: The character with no glyph.
             path: The node being set.
 
         """
         key = (font, character)
-        if key in self.reported:
+        if key in self.shared.reported:
             return
-        self.reported.add(key)
-        self.warnings.append(missing_glyph(font, character, str(path)))
+        self.shared.reported.add(key)
+        self.shared.warnings.append(missing_glyph(font, character, str(path)))
 
     def refuse_unsupported(self, section: Section) -> None:
         """Refuse a band that asks for work a later milestone brings.
@@ -1451,8 +1512,6 @@ class Measurer:
         where = Location(file=self.file, path=section.path)
         if section.outlines:
             raise Unsupported("an outline entry arrives in M13", where)
-        if section.subreports:
-            raise Unsupported("a subreport arrives in M12", where)
 
     def refuse_unsupported_element(self, element: Element | Xref) -> None:
         """Refuse an element that asks for work a later milestone brings.

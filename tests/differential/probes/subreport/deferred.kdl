@@ -1,0 +1,54 @@
+// probes/subreport/deferred.kdl -- deferred values inside subreports.
+//
+// An inline subreport whose title waits for the report scope and
+// whose rows wait for the page, and a subreport with pages of its own
+// whose footer waits for the report scope.
+//
+// The reference: the inline child's `report` scope is the invocation, so
+// its title counts its own rows.  Its `page` deferrals resolve at the host's
+// page ejects, counting the child's rows on that page, and those left when
+// the invocation ends resolve then.  The paginating child's report scope
+// ends on its last page, so "of 5" is the last page it printed.  The host's
+// own footer resolves at its own page ends.
+//
+// doc/layout.md#names-and-values.
+
+report name="subreport/deferred" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "name" type="string"
+    member "rows" type="int"
+  }
+  variable "seen" expr="1" calc="count" reset="page"
+  layout width=100 height=50 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    embedded "lines" {
+      parameter "tag" type="string"
+      variable "lines" expr="1" calc="count" reset="page"
+      title height=6 {
+        field expr="'%s of %d rows' % (tag, FINAL.REPORT_COUNT)" evaltime="report" text="WWWWWWWWWWWW" left=0 top=0 height=6
+      }
+      detail height=6 {
+        field expr="'%s %d, %d here' % (tag, ITEM_NUMBER, FINAL.lines)" evaltime="page" text="WWWWWWWWWWWW" left=10 top=0 height=6
+      }
+    }
+    embedded "sheet" {
+      footer height=6 {
+        field expr="'sheet page %d of %d' % (PAGE_NUMBER, FINAL.PAGE_NUMBER)" evaltime="report" text="WWWWWWWWWWWW" left=0 top=0 height=6
+      }
+      detail height=6 {
+        field expr="'sheet %d' % ITEM_NUMBER" left=0 top=0 height=6
+      }
+    }
+    footer height=6 {
+      field expr="'page %d of %d, %d here' % (PAGE_NUMBER, FINAL.PAGE_NUMBER, FINAL.seen)" evaltime="page" text="WWWWWWWWWWWWWWWWWWWW" left=0 top=0 height=6
+    }
+    detail height=6 {
+      field expr="'host %s' % name" left=0 top=0 height=6
+      subreport embedded="lines" seq=1 data="[{}] * rows" inline=#true {
+        arg "tag" value="name"
+      }
+      subreport embedded="sheet" seq=2 data="[{}] * rows" when="rows > 4"
+    }
+  }
+}

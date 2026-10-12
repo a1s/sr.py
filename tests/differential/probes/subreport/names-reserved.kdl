@@ -1,0 +1,29 @@
+// probes/subreport/names-reserved.kdl -- a subreport's declared names are reserved.
+//
+// names-order.kdl with the host's image on the detail band too, so that
+// it is built on the first record, before the subreport has run at all.
+//
+// The reference names it `pic.png-2` all the same: the subreport's declared
+// `pic.png` is reserved from the start, as the host's own would be, and keeps
+// the name when its turn comes.
+//
+// doc/printout.md#data.
+
+report name="subreport/names-reserved" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  font "x" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    detail height=8 {
+      field text="host" left=0 top=0 height=6
+      image file="../data/one/pic.png" left=100 top=0 width=4 height=4
+      subreport template="names-order.inc.kdl" seq=1 data="[{}]" when="ITEM_NUMBER > 1" inline=#true
+    }
+    summary height=8 {
+      field text="summary" left=0 top=0 height=6 {
+        style font="x"
+      }
+      image file="../data/one/pic.png" left=100 top=0 width=4 height=4
+    }
+  }
+}

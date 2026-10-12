@@ -201,7 +201,7 @@ Making the printout's own directory self-contained is a separate, deliberate act
 | `strictFonts` | Whether font guessing was disabled for this run. |
 | `pages` | Number of page lines that follow. |
 | `groupRuns` | Per group name, how many times it opened. Group names are per-report namespaces, and this table is the document's, so a host and a [subreport](layout.md#subreports) that both call a group `region` are counted together here. |
-| `groupKeys` | Per group name, how many distinct key values it saw. A `groupRuns` value larger than its `groupKeys` value means the input was not ordered by that group's key. |
+| `groupKeys` | Per group name, how many distinct key values it saw. A `groupRuns` value larger than its `groupKeys` value means the input was not ordered by that group's key. Like `groupRuns` it counts by name, so the keys of every group of one name, the host's and each invocation's of a subreport's, are one set. |
 | `page` | Default page geometry, inherited by every page that does not override it. |
 | `fonts` | Resolved font table. |
 | `data` | Shared blobs, keyed by name. |
@@ -251,7 +251,8 @@ it was measured, while a font no walk reached -- one on a `style` whose
 `when` was false, one on an element its `printwhen` suppressed, one a
 nearer `style` shadowed -- is left out. Every declared font is still
 resolved when the template loads, so a font that cannot be found is refused
-whether or not it would have been listed.
+whether or not it would have been listed. A subreport's template is the
+exception: its fonts are resolved when it [first runs](layout.md#subreports).
 
 **A font is listed under the name its template gave it, and is never
 merged into an entry of another name.** Two `font` nodes can resolve
@@ -267,7 +268,16 @@ a template with fonts of its own. Two fonts with different names stay
 two entries, however alike they resolve. Two that share a name and write
 the same entry, every field equal, are one entry, since sharing it
 renames nothing. Two that share a name and differ are published under
-distinct names, as layout.md says.
+distinct names, as layout.md says. **The font used first keeps the name**,
+whichever template declares it, and the other is published under the first
+of `-2`, `-3` and so on after the name that the table does not hold for a
+different entry: `x`, then `x-2`. Unlike a generated [`data`](#data) name,
+it steps around only the names published so far, not the names a template
+declares: where the host has used its `x` and a child declares `x` and `x-2`,
+the child's two are published as `x-2` and `x-2-2`. "First" means what it
+does for `data`, the first element built whose style walk resolves to the
+font. A [text mark](#text) names the font it was set in by the name it was
+published under, and so does a `glyph` warning.
 
 ```json
 {
@@ -393,6 +403,15 @@ unless an entry built earlier holds the same bytes, and a font is built when
 the first element whose [style walk](layout.md#building-a-band) resolves to
 it is. Its `resolvedData` names the entry, which is another node's name
 where two fonts read identical bytes.
+
+A [subreport](layout.md#subreports) named by `template=` brings `data` nodes
+of its own, and the document still has one table. **Every document's declared
+names are reserved from the start**, the subreports' with the report's, so a
+generated name steps around a name a subreport declares even before that
+subreport runs. Two documents can declare one name for different bytes,
+and then the node built first holds the name and the other is suffixed as
+a generated name would be: `shared`, then `shared-2`. Nothing else about
+a declared node's entry depends on which document declared it.
 
 **Only entries something refers to are written.** A `data` node nothing
 references does not appear, and neither does one a `field` consumed —

@@ -1,0 +1,23 @@
+// probes/subreport/blob-once.kdl -- when a template's `data` is produced.
+//
+// blob-once.inc.kdl has a `data` node written as an expression of its
+// parameter, and runs once per record with a different parameter.
+//
+// The reference produces it once, when the template first runs, against that
+// invocation's parameter, and keeps it: both records show the first record's
+// blob, and each shows its own parameter.
+//
+// doc/layout.md#subreports.
+
+report name="subreport/blob-once" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    detail height=6 {
+      field expr="'host %d' % ITEM_NUMBER" left=0 top=0 height=6
+      subreport template="blob-once.inc.kdl" seq=1 data="[{}]" inline=#true {
+        arg "p" value="'record %d' % ITEM_NUMBER"
+      }
+    }
+  }
+}

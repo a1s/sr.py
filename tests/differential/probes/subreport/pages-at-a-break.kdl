@@ -1,0 +1,46 @@
+// probes/subreport/pages-at-a-break.kdl -- a subreport with pages of its own at a group break.
+//
+// at-a-break.kdl without `inline`: at the first record of each run,
+// the negative-seq subreport ends the host's page before anything
+// of the new record is on it.
+//
+// The reference builds the footer of the page it ends against the new record
+// and counts that page as the new run's first, so the run's _PAGE_NUMBER reads
+// 2 on the page the host resumes on.  doc/layout.md takes that end of page as
+// any eject while a group is opening: its footer reads the runs that ended,
+// and the new run begins on the page the host resumes on.
+//
+// Registered under the divergence `subreport-pages-at-a-break`.
+//
+// doc/layout.md#what-a-header-or-footer-sees and doc/layout.md#pages.
+
+report name="subreport/pages-at-a-break" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "g" type="string"
+    member "rows" type="int"
+  }
+  layout width=100 height=50 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    embedded "notes" {
+      parameter "tag" type="string"
+      detail height=6 {
+        field expr="'%s %d pn %d' % (tag, ITEM_NUMBER, PAGE_NUMBER)" left=10 top=0 height=6
+      }
+    }
+    footer height=6 {
+      field expr="'footer pn %d gpn %d this %s gc %d' % (PAGE_NUMBER, grp_PAGE_NUMBER, THIS.g if THIS else None, grp_COUNT)" left=0 top=0 height=6
+    }
+    header height=6 {
+      field expr="'header pn %d gpn %d this %s' % (PAGE_NUMBER, grp_PAGE_NUMBER, THIS.g if THIS else None)" left=0 top=0 height=6
+    }
+    group "grp" expr="g" {
+      detail height=6 {
+        field expr="'row %s pn %d gpn %d' % (g, PAGE_NUMBER, grp_PAGE_NUMBER)" left=0 top=0 height=6
+        subreport embedded="notes" seq=-1 data="[{}] * rows" {
+          arg "tag" value="g"
+        }
+      }
+    }
+  }
+}
