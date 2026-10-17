@@ -6,7 +6,7 @@ and doc/expressions.md adds the record index for an error raised while
 a band is being built.  Those four parts are what a :class:`Location` holds,
 and assembling them is all this module does.
 
-Five shapes of failure, because they behave differently:
+Six shapes of failure, because they behave differently:
 
 * A **bad value** is local.  ``units`` and ``color`` raise :class:`BadValue`
   with the message and nothing else, since a parser that knew about node
@@ -33,6 +33,9 @@ Five shapes of failure, because they behave differently:
   against a page that is already wrong.  :class:`Unsupported` is the
   same thing for work a later milestone brings, kept apart because
   it is not about the template.
+* A **failed render** is about a printout rather than a template.
+  :class:`RenderError` names the mark, the font or the file
+  that could not be drawn, since a printout has no node paths.
 
 The section a band belongs to is not a separate field.  A node path
 ends up naming it (``report > layout > detail > field`` says `detail`),
@@ -56,6 +59,7 @@ __all__ = [
     "FontError",
     "Location",
     "NodePath",
+    "RenderError",
     "SrError",
     "Step",
     "TemplateError",
@@ -324,6 +328,20 @@ class BuildError(SrError):
         """
         filled = self.diagnostic.at(**where)  # type: ignore[arg-type]
         return BuildError(filled.message, filled.location)
+
+
+class RenderError(SrError):
+    """A printout that could not be drawn, naming what was in the way.
+
+    doc/render.md#errors lists the conditions: a font or an image
+    that will not read, a face with outlines this renderer does
+    not embed, an xref to an outline entry no entry claims, and a
+    printout with no pages.  Rendering fails rather than producing
+    a page with something missing from it, so this stops the render
+    as :class:`BuildError` stops a build.  The message says which mark,
+    font or file it is about, which is the location a printout has.
+
+    """
 
 
 class Unsupported(BuildError):

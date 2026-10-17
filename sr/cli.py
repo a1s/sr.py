@@ -1,15 +1,16 @@
 """The command line of doc/cli.md.
 
-Partial, deliberately.  ``build``, ``validate``, ``inspect``, ``version``
-and ``help`` are here; ``render`` names the milestone that brings it and
-exits 1, because a command that printed nothing and exited 0 would be
-worse than one that says it is not there.  :data:`COMMANDS` holds what
-works, which is also what the differential harness asks before deciding
-whether this engine can be compared against the reference yet.
-:data:`PARTIAL` holds the one that works but not to the end of its
-specification, ``build``, which writes a printout and not yet a PDF,
-so ``help`` says which part is missing rather than leaving a reader
-to find out from the output.
+Every command is here: ``build``, ``validate``, ``render``, ``inspect``,
+``version`` and ``help``.  :data:`COMMANDS` holds them, which is also
+what the differential harness asks before deciding whether this engine
+can be compared against the reference.
+
+The two routes to a PDF are one route.  ``build`` with a ``.pdf`` output
+hands the printout it built straight to the renderer, and ``render``
+reads one back from a file first; doc/render.md#reproducibility makes
+the two give the same bytes.  Either renders the whole document before
+it opens the output, so a render that fails leaves the previous file
+where it was.
 
 ``validate`` resolves the fonts a template declares, which is the one
 part of the check that depends on the machine rather than on the
@@ -52,7 +53,10 @@ from sr.errors import (
 from sr.expr import evaluate
 from sr.expr.values import go_shortest, quote
 from sr.fonts.resolve import Resolution, Resolver
+from sr.pdf import render as render_pdf
 from sr.printout.inspect import dump, pages_wanted, read_printout
+from sr.printout.model import Printout
+from sr.printout.read import read as read_model
 from sr.printout.verify import violations
 from sr.printout.write import write_cbor, write_jsonl
 from sr.template import load as load_template
@@ -68,14 +72,13 @@ from sr.template.model import Blob, Font, Parameter, Report, parse_text
 __all__ = [
     "COMMANDS",
     "FORMATS",
-    "PARTIAL",
-    "PLANNED",
     "Fonts",
     "Usage",
     "as_written",
     "build",
     "inspect_printout",
     "main",
+    "render",
     "resolve_fonts",
     "validate",
     "version",
@@ -91,22 +94,6 @@ SUMMARY = {
     "help": "print usage, for one command or for all of them",
 }
 
-# The commands this engine does not have yet, and the milestone each
-# arrives in.  A command here parses its arguments like any other and
-# then says so, rather than failing as though the file were at fault.
-PLANNED = {
-    "render": "M14",
-}
-
-# The commands that work, and the parts of doc/cli.md each of them does
-# not reach yet, with the milestone that brings each.  Kept apart from
-# PLANNED because the difference matters to a reader: one of these
-# produces the right answer over a narrower input, and a planned command
-# produces nothing at all.
-PARTIAL = {
-    "build": (("M14", "PDF output; a printout is written as NDJSON or CBOR"),),
-}
-
 # What each output extension names, per doc/cli.md#sr-build.
 FORMATS = {
     ".pdf": "pdf",
@@ -114,9 +101,6 @@ FORMATS = {
     ".ndjson": "jsonl",
     ".cbor": "cbor",
 }
-
-# The milestone that brings each output format this one cannot write.
-FORMAT_MILESTONE = {"pdf": "M14"}
 
 # What a printout does with the one thing UTF-8 cannot encode, a lone
 # surrogate from a file name that was not valid text, on either route.
@@ -184,6 +168,12 @@ BUILD_FLAGS = (
     ("verbose", "v", False),
 )
 
+# The flags `render` takes, per doc/cli.md#sr-render.
+RENDER_FLAGS = (
+    ("out", "o", True),
+    ("uncompressed", None, False),
+)
+
 # The flags `inspect` takes, per doc/cli.md#sr-inspect.
 INSPECT_FLAGS = (
     ("pages", None, True),
@@ -223,14 +213,10 @@ def main(argv: Sequence[str] | None = None, out: TextIO | None = None) -> int:
             return validate(rest, stream)
         if command == "build":
             return build(rest, stream)
+        if command == "render":
+            return render(rest, stream)
         if command == "inspect":
             return inspect_printout(rest, stream)
-        if command in PLANNED:
-            print(
-                f"{command} is not implemented yet; it arrives in {PLANNED[command]}",
-                file=sys.stderr,
-            )
-            return FAILED
     except Usage as refused:
         print(f"{refused}", file=sys.stderr)
         return USAGE
@@ -319,10 +305,6 @@ def help_for(arguments: Sequence[str], out: TextIO) -> int:
     if arguments and arguments[0] in SUMMARY:
         name = arguments[0]
         print(f"sr.py {name}  {SUMMARY[name]}", file=out)
-        if name in PLANNED:
-            print(f"  not implemented yet; it arrives in {PLANNED[name]}", file=out)
-        for milestone, missing in PARTIAL.get(name, ()):
-            print(f"  not yet: {missing} ({milestone})", file=out)
         if name == "build":
             print("  -t, --template FILE   the template to apply", file=out)
             print("  -d, --data FILE       the records, - for stdin", file=out)
@@ -336,7 +318,11 @@ def help_for(arguments: Sequence[str], out: TextIO) -> int:
                 "  --accept NAME         take one name in silence, repeatable", file=out
             )
             print("  --allow-overflow      an oversized band is a warning", file=out)
+            print("  --uncompressed        leave PDF streams uncompressed", file=out)
             print("  -v, --verbose         report host font diagnostics", file=out)
+        if name == "render":
+            print("  -o, --out FILE        where to write, - for stdout", file=out)
+            print("  --uncompressed        leave PDF streams uncompressed", file=out)
         if name == "inspect":
             print("  --pages RANGES        which pages to dump, as 1,4-6", file=out)
             print("  --summary             the header only, no pages", file=out)
@@ -353,8 +339,7 @@ def help_for(arguments: Sequence[str], out: TextIO) -> int:
         return OK
     print("usage: sr.py <command> [options]", file=out)
     for name, what in SUMMARY.items():
-        planned = f"  (not implemented yet: {PLANNED[name]})" if name in PLANNED else ""
-        print(f"  {name:<9}{what}{planned}", file=out)
+        print(f"  {name:<9}{what}", file=out)
     return OK
 
 
@@ -362,7 +347,7 @@ def help_for(arguments: Sequence[str], out: TextIO) -> int:
 
 
 def build(arguments: Sequence[str], out: TextIO) -> int:
-    """Apply a template to data and write a printout.
+    """Apply a template to data and write a printout or a PDF.
 
     What the command produces goes to the file ``--out`` names,
     and everything about the run to standard error: the warnings,
@@ -384,12 +369,6 @@ def build(arguments: Sequence[str], out: TextIO) -> int:
         raise Usage("build needs an output, as -o")
     target = str(destination)
     encoding = format_of(target, given.flags.get("format"))
-    if encoding in FORMAT_MILESTONE:
-        print(
-            f"sr: {encoding} output arrives in {FORMAT_MILESTONE[encoding]}",
-            file=sys.stderr,
-        )
-        return FAILED
     options = api.Options(
         params=dict(given.params),
         build_time=text_of(given.flags.get("build-time")),
@@ -405,7 +384,14 @@ def build(arguments: Sequence[str], out: TextIO) -> int:
         # not there and a template that will not load are both the
         # run failing, and both are reported as `sr:` and exit 1
         # rather than as a traceback.
-        write_printout(result, target, out, encoding)
+        if encoding == "pdf":
+            document = render_pdf(
+                result.printout,
+                compress=not given.flags.get("uncompressed"),
+            )
+            write_document(document, target, out)
+        else:
+            write_printout(result, target, out, encoding)
     except TemplateError as refused:
         for diagnostic in refused.diagnostics:
             print(diagnostic, file=sys.stderr)
@@ -422,7 +408,7 @@ def build(arguments: Sequence[str], out: TextIO) -> int:
         print(f"warning: {note}", file=sys.stderr)
     for warning in result.warnings:
         print(f"warning: {warning}", file=sys.stderr)
-    print(f"{target}: {counted(result)}", file=sys.stderr)
+    print(f"{target}: {counted(result.printout)}", file=sys.stderr)
     return OK
 
 
@@ -586,29 +572,90 @@ def byte_stream(out: TextIO) -> BinaryIO:
     return buffer  # type: ignore[no-any-return]
 
 
-def counted(result: api.Result) -> str:
+def counted(printout: Printout) -> str:
     """Return the summary line doc/cli.md#sr-build ends a build with.
 
     What it names is the document rather than the run: pages, fonts,
     blobs, warnings.  The file it went to is the caller's to print,
     because the caller is the one that knows what the user wrote.
+    A render ends with the same line, since it is the same document.
 
     Args:
-        result: What the build produced.
+        printout: The document.
 
     """
-    printout = result.printout
     counts = (
         (len(printout.pages), "page", "pages"),
         (len(printout.fonts), "font", "fonts"),
         (len(printout.data), "data blob", "data blobs"),
-        (len(result.warnings), "warning", "warnings"),
+        (len(printout.warnings), "warning", "warnings"),
     )
     return ", ".join(
         f"{value} {one if value == 1 else many}"
         for value, one, many in counts
         if value or one == "page"
     )
+
+
+def write_document(document: bytes, target: str, out: TextIO) -> None:
+    """Write a rendered PDF where ``--out`` said.
+
+    The document is whole before this is called, so a render that
+    failed never reaches here and the previous file stays as it was.
+
+    Args:
+        document: The PDF.
+        target: What ``--out`` named.
+        out: Where a document written to standard output goes.
+
+    Raises:
+        OSError: The file will not write, or standard output takes no bytes.
+
+    """
+    if target == "-":
+        byte_stream(out).write(document)
+        return
+    Path(target).write_bytes(document)
+
+
+# -- render -----------------------------------------------------------
+
+
+def render(arguments: Sequence[str], out: TextIO) -> int:
+    """Read a printout and write it as a PDF.
+
+    doc/cli.md#sr-render: the printout is positional, and its extension
+    says which encoding to read.  The warnings it carries, recorded when
+    it was built, are repeated on standard error, because this is where
+    somebody looks at the document; then the summary line.
+
+    Args:
+        arguments: What followed the command.
+        out: Where a document written to standard output goes.
+
+    """
+    given = parse(arguments, RENDER_FLAGS)
+    if len(given.positional) != 1:
+        raise Usage("render takes one printout")
+    destination = given.flags.get("out")
+    if destination is None or isinstance(destination, bool):
+        raise Usage("render needs an output, as -o")
+    path = Path(given.positional[0])
+    try:
+        printout = read_model(path)
+        compress = not given.flags.get("uncompressed")
+        document = render_pdf(printout, compress=compress)
+        write_document(document, destination, out)
+    except SrError as refused:
+        print(f"sr: {refused}", file=sys.stderr)
+        return FAILED
+    except OSError as refused:
+        print(f"sr: {refused}", file=sys.stderr)
+        return FAILED
+    for warning in printout.warnings:
+        print(f"warning: {warning}", file=sys.stderr)
+    print(f"{destination}: {counted(printout)}", file=sys.stderr)
+    return OK
 
 
 # -- inspect ----------------------------------------------------------
@@ -1302,6 +1349,7 @@ def parameter(found: Arguments, value: str | None, pending: list[str]) -> None:
 COMMANDS = {
     "build": build,
     "inspect": inspect_printout,
+    "render": render,
     "validate": validate,
     "version": version,
 }

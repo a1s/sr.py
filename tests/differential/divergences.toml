@@ -43,6 +43,9 @@
 # printout that breaks one of the invariants: `margins-unchecked`,
 # `outline-target-missing`, `outline-level-gaps`, and `outline-balance`;
 # and one decision, `outline-names-untargeted`.
+# M14 added one decision about rendering, `image-past-its-pixels`.
+# Its case is a render, which the harness names `render/` and then
+# the case whose printout was rendered.
 #
 # The milestone numbers:
 #   M0: Scaffold and oracle
@@ -1113,3 +1116,19 @@ the side that changes.\
 ticket = "M13: outline entries, printout.md#outline"
 since = "2026-10-17"
 affects = ["probe/outline/names"]
+
+[[divergence]]
+id = "image-past-its-pixels"
+summary = "an image whose data runs on past its last pixel is drawn here; the reference refuses to render it"
+reason = """\
+`screen.gif` holds all 288 of its pixels and then, where the end code \
+belongs, codes that mean nothing.  The reference's decoder reports an \
+invalid code and the render fails.  doc/render.md#images now draws an \
+image whose bytes give every pixel its header states, and refuses one \
+whose data ends, or turns into codes that mean nothing, before the last \
+pixel, so what follows the pixels is not read.  A decision, since doc/ never said how \
+far a renderer reads; the reference is the side that changes.\
+"""
+ticket = "M14: images, render.md#images; filed against the Go engine"
+since = "2026-10-17"
+affects = ["render/probe/image/natural"]

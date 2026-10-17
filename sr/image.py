@@ -39,6 +39,7 @@ __all__ = [
     "BadImage",
     "CutShort",
     "Header",
+    "jpeg_frame_segment",
     "read_file_header",
     "read_header",
     "sniff",
@@ -244,8 +245,27 @@ def png_header(data: bytes) -> Header:
 def jpeg_header(data: bytes) -> Header:
     """Return a JPEG's natural size, from its first frame header.
 
+    Args:
+        data: The image's bytes, start-of-image marker included.
+
+    Raises:
+        CutShort: The segments run past the end of the bytes.
+        BadImage: No frame header comes before the first scan,
+            a segment is damaged, or the frame is of a kind
+            a renderer does not decode.
+
+    """
+    _, segment = jpeg_frame_segment(data)
+    return jpeg_frame(segment)
+
+
+def jpeg_frame_segment(data: bytes) -> tuple[int, bytes]:
+    """Return a JPEG's first frame header, and the marker that opened it.
+
     The segments before it are stepped over by their lengths.
     A scan or the end of the image reached first means there is no frame.
+    The marker says which kind of frame it is, which is what decides
+    whether doc/render.md#images embeds the bytes as they stand.
 
     Args:
         data: The image's bytes, start-of-image marker included.
@@ -294,7 +314,7 @@ def jpeg_header(data: bytes) -> Header:
                 " decode; save it as baseline or progressive"
             )
         if marker in JPEG_READ:
-            return jpeg_frame(data[position + 2 : position + length])
+            return marker, data[position + 2 : position + length]
         position += length
 
 

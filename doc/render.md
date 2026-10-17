@@ -202,6 +202,13 @@ Progressive and CMYK JPEGs take the decoding road too: the first is not
 universally supported by readers, and the second needs an inverted decode
 array that is easy to get wrong.
 
+An image that is decoded is drawn when its bytes give every pixel
+its header states. What follows the last pixel is not read, so a GIF
+whose image data runs on past it, into codes that mean nothing, is drawn
+all the same. An image whose data ends, or turns into codes that mean nothing,
+before its last pixel cannot be read, and the render [fails](#errors)
+naming it, rather than drawing a picture with part of it invented.
+
 ## Barcodes
 
 A [`barcode` mark](printout.md#barcode) carries its geometry in modules.
@@ -282,6 +289,8 @@ therefore get two codes, and a character the face
 [does not have](template.md#missing-glyphs) gets a code that draws the empty
 glyph. So the text reads back out of the file as exactly what the printout
 said, missing glyphs included, and stays searchable where a glyph is absent.
+What reads it back is the font's `ToUnicode` map, which takes each code
+to the one character it was given for.
 
 The widths the font dictionary states are the advances the engine measured.
 They are in thousandths of an em, so one dictionary serves every size the
@@ -289,9 +298,9 @@ face is set at, and are written to **three decimal places** of a thousandth
 of an em rather than rounded to whole thousandths. The file's numbers are
 then exact for the usual units per em, and the pen inside a shown string
 lands where the printout measured it to well under a thousandth of a point.
-Rounding to whole thousandths, which is what every writer surveyed in
-[decisions.md](decisions.md#font-metrics-and-pdf) does, is what leaves
-a hundredth-of-a-point drift across a long line.
+Rounding to whole thousandths, which is what the PDF writers the reference
+engine surveyed all do, is what leaves a hundredth-of-a-point drift across
+a long line.
 
 The embedded program carries `glyf`, `loca`, `head`, `hhea`, `hmtx` and `maxp`,
 rebuilt for the subset, plus the hinting programs where the face has them.
@@ -372,5 +381,5 @@ so that a reader is not left guessing:
   PDF asks of a CIDFontType2 program, which does not include `cmap`. So it
   cannot be opened as a font file by anything that insists on one --
   which is every font library, correctly. That is a property of the format,
-  not a defect: the [Stage 1 spike](decisions.md#font-metrics-and-pdf)
-  found the same of all three candidate writers' output.
+  not a defect: the reference engine's survey of PDF writers found the same
+  of all three candidates' output.

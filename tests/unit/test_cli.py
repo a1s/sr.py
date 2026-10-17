@@ -5,13 +5,14 @@ from __future__ import annotations
 import base64
 import io
 import json
+import shutil
 import sys
 from pathlib import Path
 
 import pytest
 
 from sr import meta
-from sr.cli import COMMANDS, PARTIAL, PLANNED, as_written, main
+from sr.cli import COMMANDS, as_written, main
 from sr.printout.inspect import read_printout
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -70,24 +71,23 @@ def test_a_commands_own_help_is_the_same_as_asking_for_it(spelling: str) -> None
     assert asked[0] == 0
 
 
-@pytest.mark.parametrize("name", sorted(PLANNED))
-def test_a_command_that_is_not_written_yet_says_so(name: str) -> None:
-    code, said = run(name, "-t", str(SAKILA))
-    assert code == 1
-    assert said == ""
-
-
 def test_the_commands_that_work_are_the_ones_listed() -> None:
-    assert set(COMMANDS) == {"build", "inspect", "validate", "version"}
+    assert set(COMMANDS) == {
+        "build",
+        "inspect",
+        "render",
+        "validate",
+        "version",
+    }
 
 
-def test_a_command_that_works_but_not_to_the_end_says_which_part() -> None:
-    for name, parts in PARTIAL.items():
-        code, said = run("help", name)
+def test_help_names_no_milestone_any_more() -> None:
+    """Every command works, so none of them says which milestone it awaits."""
+    for name in ("", "build", "render"):
+        code, said = run("help", *([name] if name else []))
         assert code == 0
-        for milestone, missing in parts:
-            assert milestone in said
-            assert missing.split(";")[0].split(",")[0] in said
+        assert "not implemented" not in said
+        assert "M14" not in said
 
 
 # -- the flag parser --------------------------------------------------
@@ -691,7 +691,11 @@ def test_an_extension_that_names_no_format_is_a_usage_error(tmp_path: Path) -> N
     assert code == 2
 
 
-def test_a_format_this_engine_cannot_write_yet_says_so(tmp_path: Path) -> None:
+def test_build_writes_a_pdf(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    out = tmp_path / "out.pdf"
     code = run(
         "build",
         "-t",
@@ -699,10 +703,12 @@ def test_a_format_this_engine_cannot_write_yet_says_so(tmp_path: Path) -> None:
         "-d",
         str(FILMS),
         "-o",
-        str(tmp_path / "out.pdf"),
+        str(out),
         *REPRODUCIBLE,
     )[0]
-    assert code == 1
+    assert code == 0
+    assert out.read_bytes().startswith(b"%PDF-1.7\n")
+    assert capsys.readouterr().err.endswith(f"{out}: 1 page, 1 font\n")
 
 
 def test_build_writes_cbor_holding_the_records_ndjson_does(tmp_path: Path) -> None:
@@ -805,6 +811,168 @@ def test_a_build_time_that_is_not_a_time_fails_the_build(tmp_path: Path) -> None
         "--strict-fonts",
     )
     assert code == 1
+
+
+# -- render -----------------------------------------------------------
+
+SAKILA_DATA = ROOT / "example" / "sakila" / "payments.jsonl"
+
+
+def built(tmp_path: Path, name: str, *source: str) -> Path:
+    """Build a report to a file of the given name, and return the file.
+
+    Args:
+        tmp_path: Where to write it.
+        name: Its name, whose extension chooses the format.
+        *source: The template and data flags; the minimal example's
+            when none are given.
+
+    """
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    out = tmp_path / name
+    given = source or ("-t", str(MINIMAL), "-d", str(FILMS))
+    code, _ = run("build", *given, "-o", str(out), *REPRODUCIBLE)
+    assert code == 0
+    return out
+
+
+@pytest.mark.parametrize("printout", ["out.srp.jsonl", "out.srp.cbor"])
+def test_render_gives_the_pdf_build_gives(
+    tmp_path: Path,
+    printout: str,
+) -> None:
+    """doc/cli.md: the two routes to a PDF produce the same bytes.
+
+    Sakila has images by data and by file, barcodes, an outline,
+    and links of both kinds, so every path the printout carries
+    has to resolve from where the printout was written.
+
+    """
+    sakila = ("-t", str(SAKILA), "-d", str(SAKILA_DATA))
+    direct = built(tmp_path, "direct.pdf", *sakila)
+    written = built(tmp_path / "elsewhere", printout, *sakila)
+    rendered = tmp_path / "rendered.pdf"
+    code, _ = run("render", str(written), "-o", str(rendered))
+    assert code == 0
+    assert rendered.read_bytes() == direct.read_bytes()
+
+
+def test_render_writes_to_standard_output_as_bytes(tmp_path: Path) -> None:
+    printout = built(tmp_path, "out.srp.jsonl")
+    direct = built(tmp_path, "out.pdf")
+    raw = io.BytesIO()
+    out = io.TextIOWrapper(raw, encoding="utf-8")
+    code = main(["render", str(printout), "-o", "-"], out)
+    out.flush()
+    assert code == 0
+    assert raw.getvalue() == direct.read_bytes()
+
+
+def test_build_writes_a_pdf_to_standard_output(tmp_path: Path) -> None:
+    direct = built(tmp_path, "out.pdf")
+    raw = io.BytesIO()
+    out = io.TextIOWrapper(raw, encoding="utf-8")
+    code = main(
+        [
+            "build",
+            "-t",
+            str(MINIMAL),
+            "-d",
+            str(FILMS),
+            "-o",
+            "-",
+            "--format",
+            "pdf",
+            *REPRODUCIBLE,
+        ],
+        out,
+    )
+    out.flush()
+    assert code == 0
+    assert raw.getvalue() == direct.read_bytes()
+
+
+def test_render_repeats_the_warnings_the_printout_carries(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """doc/cli.md#sr-render: this is where somebody looks at the document."""
+    printout = built(tmp_path, "out.srp.jsonl", "-t", str(UNKNOWN))
+    capsys.readouterr()
+    out = tmp_path / "out.pdf"
+    code, _ = run("render", str(printout), "-o", str(out))
+    said = capsys.readouterr().err.splitlines()
+    assert code == 0
+    assert [one.split(":")[:2] for one in said[:2]] == [
+        ["warning", " unknown"],
+        ["warning", " unknown"],
+    ]
+    assert said[-1] == f"{out}: 1 page, 2 warnings"
+
+
+def test_a_render_that_fails_leaves_the_previous_file_alone(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The whole document is rendered before the output is opened."""
+    shutil.copytree(FONTS, tmp_path / "fonts")
+    shutil.copytree(MINIMAL.parent, tmp_path / "minimal")
+    printout = built(
+        tmp_path / "minimal",
+        "out.srp.jsonl",
+        "-t",
+        str(tmp_path / "minimal" / "minimal.kdl"),
+        "-d",
+        str(FILMS),
+    )
+    (tmp_path / "fonts" / "Go-Regular.ttf").unlink()
+    previous = tmp_path / "out.pdf"
+    previous.write_bytes(b"previous")
+    capsys.readouterr()
+    code, _ = run("render", str(printout), "-o", str(previous))
+    assert code == 1
+    said = capsys.readouterr().err
+    assert said.startswith("sr: font 'body': cannot read ")
+    assert "Go-Regular.ttf" in said
+    assert previous.read_bytes() == b"previous"
+
+
+def test_uncompressed_leaves_the_streams_readable(tmp_path: Path) -> None:
+    printout = built(tmp_path, "out.srp.jsonl")
+    out = tmp_path / "out.pdf"
+    code, _ = run("render", "--uncompressed", str(printout), "-o", str(out))
+    assert code == 0
+    data = out.read_bytes()
+    assert b"/FlateDecode" not in data
+    assert b"\nBT\n" in data
+
+
+def test_render_takes_one_printout_and_an_output(tmp_path: Path) -> None:
+    printout = built(tmp_path, "out.srp.jsonl")
+    pdf = str(tmp_path / "out.pdf")
+    assert run("render", "-o", pdf)[0] == 2
+    assert run("render", str(printout), str(printout), "-o", pdf)[0] == 2
+    assert run("render", str(printout))[0] == 2
+    assert run("render", str(printout), "-o", pdf, "--pages", "1")[0] == 2
+
+
+def test_render_of_a_file_that_is_not_a_printout_fails(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    junk = tmp_path / "junk.srp.jsonl"
+    junk.write_text('{"sr":1,"kind":"header"}\n', encoding="utf-8")
+    code, _ = run("render", str(junk), "-o", str(tmp_path / "out.pdf"))
+    assert code == 1
+    assert "not a printout" in capsys.readouterr().err
+    assert not (tmp_path / "out.pdf").exists()
+
+
+def test_the_help_names_the_render_flags() -> None:
+    code, said = run("help", "render")
+    assert code == 0
+    assert "--out" in said
+    assert "--uncompressed" in said
 
 
 # -- inspect ----------------------------------------------------------
