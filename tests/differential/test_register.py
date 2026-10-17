@@ -13,7 +13,13 @@ from pathlib import Path
 
 import pytest
 
-from tests.differential.cases import corpus, example_cases, probe_cases
+from tests.differential.cases import (
+    corpus,
+    example_cases,
+    probe_cases,
+    render_cases,
+    rendered,
+)
 from tests.differential.register import load_register
 
 WELL_FORMED = """
@@ -55,8 +61,10 @@ def test_the_examples_are_never_excused() -> None:
     """
     register = load_register()
     for case in example_cases():
-        entry = register.entry_for(case.ident)
-        assert entry is None, f"{case.ident} is covered by divergence {entry.ident}"
+        for ident in (case.ident, rendered(case)):
+            entry = register.entry_for(ident)
+            said = f"{ident} is covered by divergence"
+            assert entry is None, f"{said} {entry.ident}"
 
 
 def test_every_entry_covers_a_case_that_exists() -> None:
@@ -72,6 +80,7 @@ def test_every_entry_covers_a_case_that_exists() -> None:
     if not probes:
         pytest.skip("no probes yet; M1 adds them, and this starts enforcing")
     identifiers = [case.ident for case in corpus()]
+    identifiers += [rendered(case) for case in render_cases()]
     for entry in load_register().entries:
         assert any(entry.matches(ident) for ident in identifiers), (
             f"divergence {entry.ident!r} matches no case; its patterns are "

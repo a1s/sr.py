@@ -94,6 +94,25 @@ than a place to file things.
 No entry may cover a case in `example/`. Those are the broadest comparison
 the corpus has, and excusing one excuses the whole report.
 
+## Renders
+
+A printout is compared byte for byte, and a PDF is not: two writers
+lay a file out differently, and [doc/render.md](../../doc/render.md)
+does not ask them to agree on objects, subsets or compression. What it
+does specify is what a reader draws. So [test_render.py](test_render.py)
+builds each case's printout once, with this engine, renders it with
+both renderers, draws every page of both files with pdfium at 144 dots
+per inch, and compares the pixels. Two levels on a channel is the most
+two pixels may differ by: room for an edge whose path runs the other
+way round, and not for a glyph a hundredth of a point out of place.
+
+A render goes by its own identifier, `render/` and then its case's,
+so the register can name a render that differs while its printout
+agrees. A case this engine does not build is skipped here, since its
+printout test already says why.
+
+pdfium comes from the `oracles` extra. Without it the renders skip.
+
 ## The pending list
 
 A second list, [pending.toml](pending.toml), holds the cases this engine

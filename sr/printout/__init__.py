@@ -1,12 +1,13 @@
 """The printout: the document a renderer consumes.
 
-Four modules, layered downward and importing in that order:
+Five modules, layered downward and importing in that order:
 
 =============  ============================================================
 ``model``      the header, the pages, and the marks on them
 ``write``      the NDJSON and CBOR encodings, byte for byte
 ``verify``     the twelve invariants every printout satisfies
 ``inspect``    a printout read back and dumped as text
+``read``       a printout read back into the model, for the renderer
 =============  ============================================================
 
 doc/printout.md calls the in-memory structure the primary artifact:

@@ -120,5 +120,12 @@ strict = true
 warn_unreachable = true
 
 [[tool.mypy.overrides]]
-module = ["ckdl.*", "cbor2.*", "qrcode.*", "PIL.*", "fontTools.*"]
+module = [
+    "ckdl.*",
+    "cbor2.*",
+    "qrcode.*",
+    "PIL.*",
+    "fontTools.*",
+    "pypdfium2.*",
+]
 ignore_missing_imports = true

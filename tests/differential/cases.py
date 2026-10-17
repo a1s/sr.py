@@ -20,6 +20,8 @@ __all__ = [
     "corpus",
     "example_cases",
     "probe_cases",
+    "render_cases",
+    "rendered",
     "within_root",
 ]
 
@@ -42,6 +44,9 @@ HOST_FONTS = "!host-fonts"
 
 # The extension for each printout encoding, per doc/cli.md.
 SUFFIXES = {"jsonl": ".srp.jsonl", "cbor": ".srp.cbor"}
+
+# What a render's identifier starts with, ahead of its case's.
+RENDER_PREFIX = "render/"
 
 TEMPLATE_SUFFIX = ".kdl"
 
@@ -280,3 +285,25 @@ def probe_cases(directory: Path = PROBE_DIR) -> list[Case]:
 def corpus() -> list[Case]:
     """Return every case, examples first and probes after."""
     return example_cases() + probe_cases()
+
+
+def rendered(case: Case) -> str:
+    """Return the identifier a render of a case's printout goes by.
+
+    A render is compared apart from the printout it was made from,
+    so it has an identifier of its own, which the divergence register
+    can name: ``render/`` and then the case's.
+
+    """
+    return RENDER_PREFIX + case.ident
+
+
+def render_cases() -> list[Case]:
+    """Return the cases whose printouts are rendered and compared.
+
+    Every case in the corpus, once: the CBOR builds hold the
+    same documents as the NDJSON ones, so rendering them again
+    would compare nothing new.
+
+    """
+    return [case for case in corpus() if case.encoding == "jsonl"]

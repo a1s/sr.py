@@ -14,8 +14,8 @@ printout another engine wrote still dumps, and so does one holding
 something this engine would not have built.  That is also what
 :mod:`sr.printout.verify` checks the
 [invariants](doc/printout.md#invariants) on, which doc/cli.md asks
-this command to do after the dump.  The typed reader arrives with
-the renderer, which needs one.
+this command to do after the dump.  The typed reader is
+:mod:`sr.printout.read`, which the renderer draws from.
 
 So the dump reads every field as the check does, defensively:
 an object where a number belongs is shown as it is, and an
@@ -96,10 +96,16 @@ def read_jsonl(path: Path) -> list[Any]:
         path: The file to read.
 
     Raises:
-        BuildError: The file is not NDJSON, or holds no header.
+        BuildError: The file is not UTF-8 NDJSON, or holds no header.
 
     """
-    text = path.read_text(encoding="utf-8")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as refused:
+        raise BuildError(
+            f"not a printout: byte {refused.start} is not UTF-8",
+            Location(file=str(path)),
+        ) from None
     records = []
     for index, line in enumerate(text.split("\n")):
         if not line.strip():
