@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -280,6 +281,11 @@ class Fields:
     def length(self, key: str) -> float:
         """Return a number of points.
 
+        NDJSON as Python reads it, and CBOR, can both carry a NaN
+        or an infinity, and so can an integer too large for a double.
+        None is a length: doc/printout.md rounds every length
+        to three decimals.
+
         Args:
             key: The field.
 
@@ -287,7 +293,13 @@ class Fields:
         value = self.need(key)
         if isinstance(value, bool) or not isinstance(value, int | float):
             raise self.wrong(f"`{key}` is not a number")
-        return float(value)
+        try:
+            points = float(value)
+        except OverflowError:
+            points = math.inf
+        if not math.isfinite(points):
+            raise self.wrong(f"`{key}` is not a finite number")
+        return points
 
     def optional_length(self, key: str) -> float | None:
         """Return a number of points that may be absent.

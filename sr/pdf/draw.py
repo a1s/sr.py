@@ -47,6 +47,7 @@ __all__ = [
     "barcode",
     "baseline",
     "colour",
+    "draws",
     "image",
     "line",
     "placed",
@@ -394,6 +395,23 @@ def outline_of(box: Box, radius: float, height: float) -> list[str]:
     ]
 
 
+def draws(mark: Image) -> bool:
+    """Return whether an image mark draws anything.
+
+    It does when its box has area, and its crop where it has one:
+    either with none would make a matrix with no inverse.
+
+    Args:
+        mark: The image mark.
+
+    """
+    box = mark.box
+    crop = mark.crop
+    if box.width <= 0 or box.height <= 0:
+        return False
+    return crop is None or (crop.width > 0 and crop.height > 0)
+
+
 def image(mark: Image, picture: Picture, height: float) -> list[str]:
     """Return an image mark's operators.
 
@@ -409,9 +427,9 @@ def image(mark: Image, picture: Picture, height: float) -> list[str]:
         height: The page's height.
 
     """
-    box = mark.box
-    if box.width <= 0 or box.height <= 0:
+    if not draws(mark):
         return []
+    box = mark.box
     crop = mark.crop
     if crop is None:
         return [
@@ -421,8 +439,6 @@ def image(mark: Image, picture: Picture, height: float) -> list[str]:
             f"/{picture.resource} Do",
             "Q",
         ]
-    if crop.width <= 0 or crop.height <= 0:
-        return []
     across = box.width / crop.width
     down = box.height / crop.height
     wide = picture.width * across

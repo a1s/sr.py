@@ -11,14 +11,16 @@ which keeps the bytes each test reads visible beside it.
 from __future__ import annotations
 
 import io
+import struct
+import zlib
 from pathlib import Path
 
 import pytest
 from PIL import Image as Pillow
 
 from sr.errors import RenderError
-from sr.pdf.images import picture_of
-from sr.printout.model import Box, Image
+from sr.pdf.images import channels, picture_of
+from sr.printout.model import Box, Crop, Image
 from tests.pdfcheck import entry, references, stream_of
 from tests.unit.documents import document, rendered
 
@@ -39,6 +41,18 @@ def encoded(image: Pillow.Image, format_name: str, **options: object) -> bytes:
     out = io.BytesIO()
     image.save(out, format_name, **options)
     return out.getvalue()
+
+
+def chunk(kind: bytes, body: bytes) -> bytes:
+    """Return a PNG chunk, its length and checksum around its body.
+
+    Args:
+        kind: The chunk's four-letter type.
+        body: What it holds.
+
+    """
+    checksum = struct.pack(">I", zlib.crc32(kind + body))
+    return struct.pack(">I", len(body)) + kind + body + checksum
 
 
 def test_a_baseline_jpeg_is_embedded_as_it_stands() -> None:
@@ -123,6 +137,22 @@ def test_sixteen_bit_grey_keeps_its_high_byte() -> None:
     assert found.stream.data == bytes([0, 1, 128, 255])
 
 
+def test_thirty_two_bit_grey_is_read_as_sixteen() -> None:
+    """How some versions of the library hand over a sixteen-bit PNG.
+
+    The clear value is a sixteen-bit one, so it is compared with
+    the samples before they lose their low byte.
+    """
+    source = Pillow.new("I", (3, 1))
+    for at, level in enumerate((0, 4660, 65535)):
+        source.putpixel((at, 0), level)
+    source.info["transparency"] = 4660
+    samples, alpha, space = channels(source)
+    assert samples == bytes([0, 0x12, 0xFF])
+    assert alpha == bytes([255, 0, 255])
+    assert space == "DeviceGray"
+
+
 def test_a_gif_is_decoded_from_its_palette_to_rgb() -> None:
     source = Pillow.new("P", (2, 1))
     source.putpalette([0, 0, 0, 255, 0, 0] + [0] * 762)
@@ -160,9 +190,52 @@ def test_codes_that_mean_nothing_before_the_last_pixel_are_refused() -> None:
         picture_of(bytes(data), "Im1", "tall")
 
 
+def test_a_png_damaged_after_its_header_is_refused() -> None:
+    """The engine read only the header, so the build let it through."""
+    whole = encoded(Pillow.effect_noise((16, 16), 50), "PNG")
+    start = whole.index(b"IDAT") - 4
+    (size,) = struct.unpack(">I", whole[start : start + 4])
+    payload = whole[start + 8 : start + 8 + size]
+    half = len(payload) // 2
+    damaged = (
+        whole[:start]
+        + chunk(b"IDAT", payload[:half])
+        + chunk(b"\0\0\0\0", payload[half:])
+        + whole[start + 12 + size :]
+    )
+    with pytest.raises(RenderError, match=r"broken: .* broken PNG file"):
+        picture_of(damaged, "Im1", "broken")
+
+
+def test_a_gif_frame_past_its_logical_screen_is_refused() -> None:
+    """The engine sized it by its screen, and the library by its frame."""
+    data = bytearray(encoded(Pillow.new("P", (8, 8)), "GIF"))
+    data[6:10] = struct.pack("<HH", 4, 4)
+    said = "past the 4 by 4 its header states"
+    with pytest.raises(RenderError, match=said):
+        picture_of(bytes(data), "Im1", "frame")
+
+
 def test_bytes_that_are_no_image_are_refused() -> None:
-    with pytest.raises(RenderError, match="junk: the image will not decode"):
+    said = "junk: the content is not a PNG, a JPEG or a GIF"
+    with pytest.raises(RenderError, match=said):
         picture_of(b"not an image at all", "Im1", "junk")
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        encoded(Pillow.new("RGB", (4, 2)), "BMP"),
+        encoded(Pillow.new("RGB", (4, 2)), "TIFF"),
+        b"%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 4 2\n",
+    ],
+    ids=["bmp", "tiff", "eps"],
+)
+def test_a_format_the_engine_does_not_read_is_refused(data: bytes) -> None:
+    """The library would decode each, and the engine never sized one."""
+    said = "other: the content is not a PNG, a JPEG or a GIF"
+    with pytest.raises(RenderError, match=said):
+        picture_of(data, "Im1", "other")
 
 
 def test_two_marks_reading_one_source_share_one_object(tmp_path: Path) -> None:
@@ -186,6 +259,39 @@ def test_two_marks_reading_one_source_share_one_object(tmp_path: Path) -> None:
     content = stream_of(parsed.objects[drawn])
     assert content.count(b"/Im1 Do") == 3
     assert content.count(b"/Im2 Do") == 1
+
+
+def test_an_image_nothing_draws_is_checked_and_not_embedded() -> None:
+    """A box or a crop with no area draws nothing, so holds no object.
+
+    The image is still decoded, so one that will not decode
+    fails the render as it would anywhere else on the page.
+    """
+    swatch = (ROOT / "example" / "sakila" / "swatch.png").read_bytes()
+    wide = (PROBES / "wide.jpg").read_bytes()
+    printout = document(
+        Image(Box(0, 0, 0, 16), data="swatch"),
+        Image(Box(0, 0, 16, 16), data="swatch", crop=Crop(0, 0, 0, 4)),
+        Image(Box(20, 0, 24, 12), data="wide"),
+        Image(Box(40, 0, 16, 16), data="swatch"),
+        data={"swatch": swatch, "wide": wide},
+    )
+    _, parsed = rendered(printout)
+    bodies = list(parsed.objects.values())
+    images = [body for body in bodies if b"/Subtype /Image" in body]
+    assert len(images) == 2
+    (page,) = parsed.kind("Page")
+    (drawn,) = references(entry(parsed.objects[page], "Contents"))
+    content = stream_of(parsed.objects[drawn])
+    assert content.count(b"/Im1 Do") == 1
+    assert content.count(b"/Im2 Do") == 1
+    assert content.index(b"/Im1 Do") < content.index(b"/Im2 Do")
+    broken = document(
+        Image(Box(0, 0, 0, 16), data="junk"),
+        data={"junk": swatch[:-40]},
+    )
+    with pytest.raises(RenderError, match="mark 1: data 'junk'"):
+        rendered(broken)
 
 
 def test_a_mask_is_its_own_object_the_image_names(tmp_path: Path) -> None:

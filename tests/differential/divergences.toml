@@ -1119,15 +1119,16 @@ affects = ["probe/outline/names"]
 
 [[divergence]]
 id = "image-past-its-pixels"
-summary = "an image whose data runs on past its last pixel is drawn here; the reference refuses to render it"
+summary = "an image whose data run on past its last pixel is drawn here; the reference refuses to render it"
 reason = """\
 `screen.gif` holds all 288 of its pixels and then, where the end code \
 belongs, codes that mean nothing.  The reference's decoder reports an \
 invalid code and the render fails.  doc/render.md#images now draws an \
 image whose bytes give every pixel its header states, and refuses one \
-whose data ends, or turns into codes that mean nothing, before the last \
-pixel, so what follows the pixels is not read.  A decision, since doc/ never said how \
-far a renderer reads; the reference is the side that changes.\
+whose data end, or turn into codes that mean nothing, before the last \
+pixel, so what follows the pixels is not read.  A decision, since doc/ \
+never said how far a renderer reads; the reference is the side that \
+changes.\
 """
 ticket = "M14: images, render.md#images; filed against the Go engine"
 since = "2026-10-17"

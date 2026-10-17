@@ -96,10 +96,16 @@ def read_jsonl(path: Path) -> list[Any]:
         path: The file to read.
 
     Raises:
-        BuildError: The file is not NDJSON, or holds no header.
+        BuildError: The file is not UTF-8 NDJSON, or holds no header.
 
     """
-    text = path.read_text(encoding="utf-8")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as refused:
+        raise BuildError(
+            f"not a printout: byte {refused.start} is not UTF-8",
+            Location(file=str(path)),
+        ) from None
     records = []
     for index, line in enumerate(text.split("\n")):
         if not line.strip():

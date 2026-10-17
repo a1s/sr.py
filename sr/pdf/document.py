@@ -28,7 +28,8 @@ from __future__ import annotations
 import hashlib
 import re
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
@@ -142,6 +143,21 @@ class Entry:
         return shown
 
 
+@dataclass(frozen=True)
+class Held:
+    """The bytes a font or an image is read from.
+
+    Attributes:
+        data: The bytes.
+        digest: Their SHA-256, which is what tells two sources
+            holding the same bytes from two that do not.
+
+    """
+
+    data: bytes
+    digest: bytes
+
+
 @dataclass
 class Rendering:
     """One render in progress.
@@ -149,11 +165,14 @@ class Rendering:
     Attributes:
         printout: The document.
         writer: The file's object table.
+        held: Each source's bytes once, by where they come from.
         settings: Each font entry by name, as text is set in it.
         faces: Each face once, in the order the header's entries,
             sorted by name, first reach it.
-        pictures: Each image once, by the digest of its bytes.
-        sources: Each image once, by where its bytes come from.
+        decoded: Each image once, by the digest of its bytes,
+            whether a mark draws it or not.
+        pictures: Each image a mark draws, once,
+            by the digest of its bytes.
         pages: Each page's object, in order.
         entries: Every outline entry, in document order.
         named: The first entry carrying each name.
@@ -162,10 +181,11 @@ class Rendering:
 
     printout: Printout
     writer: Writer
+    held: dict[tuple[str, str], Held] = field(default_factory=dict)
     settings: dict[str, Setting] = field(default_factory=dict)
     faces: list[Embedded] = field(default_factory=list)
+    decoded: dict[bytes, Picture] = field(default_factory=dict)
     pictures: dict[bytes, Picture] = field(default_factory=dict)
-    sources: dict[tuple[str, str], Picture] = field(default_factory=dict)
     pages: list[Ref] = field(default_factory=list)
     entries: list[Entry] = field(default_factory=list)
     named: dict[str, Entry] = field(default_factory=dict)
@@ -214,11 +234,12 @@ class Rendering:
         """
         by_face: dict[tuple[bytes, int], Embedded] = {}
         for entry in sorted(self.printout.fonts, key=lambda one: one.name):
-            data, origin = self.font_source(entry)
-            key = (hashlib.sha256(data).digest(), entry.index)
+            held, origin = self.font_source(entry)
+            key = (held.digest, entry.index)
             embedded = by_face.get(key)
             if embedded is None:
-                embedded = self.embedded(entry, data, origin, len(by_face) + 1)
+                ordinal = len(by_face) + 1
+                embedded = self.embedded(entry, held.data, origin, ordinal)
                 by_face[key] = embedded
                 self.faces.append(embedded)
             self.settings[entry.name] = Setting(
@@ -228,7 +249,7 @@ class Rendering:
                 entry.underline,
             )
 
-    def font_source(self, entry: FontEntry) -> tuple[bytes, Origin]:
+    def font_source(self, entry: FontEntry) -> tuple[Held, Origin]:
         """Return the bytes a font entry's face is in, and where they are.
 
         Args:
@@ -239,25 +260,51 @@ class Rendering:
                 or the data entry is not in the header.
 
         """
+        if entry.data is None and entry.file is None:
+            raise RenderError(f"font {entry.name!r}: it names no file and no data")
+        held = self.read(entry.file, entry.data, f"font {entry.name!r}")
         if entry.data is not None:
-            blob = self.printout.data.get(entry.data)
+            return held, Origin(data=entry.data, index=entry.index)
+        return held, Origin(path=entry.file, index=entry.index)
+
+    def read(self, file: Path | None, data: str | None, who: str) -> Held:
+        """Return the bytes a file or a data entry holds, read once.
+
+        Several font entries often read one file, at different sizes
+        and styles, and several marks one image, so a source is read
+        and digested the first time something asks for it.
+
+        Args:
+            file: The file, where the bytes are in one.
+            data: The data entry, where they are in the header.
+            who: What a diagnostic names as reading them.
+
+        Raises:
+            RenderError: The file will not read,
+                or the data entry is not in the header.
+
+        """
+        source = ("data", data) if data is not None else ("file", str(file))
+        known = self.held.get(source)
+        if known is not None:
+            return known
+        if data is not None:
+            blob = self.printout.data.get(data)
             if blob is None:
-                said = f"the header holds no data {entry.data!r}"
-                raise RenderError(f"font {entry.name!r}: {said}")
-            data = blob.encode("utf-8") if isinstance(blob, str) else blob
-            return data, Origin(data=entry.data, index=entry.index)
-        if entry.file is None:
-            raise RenderError(
-                f"font {entry.name!r}: it names no file and no data",
-            )
-        try:
-            data = entry.file.read_bytes()
-        except OSError as refused:
-            raise RenderError(
-                f"font {entry.name!r}: cannot read "
-                f"{near(entry.file).as_posix()}: {refused.strerror or refused}"
-            ) from None
-        return data, Origin(path=entry.file, index=entry.index)
+                raise RenderError(f"{who}: the header holds no data {data!r}")
+            found = blob.encode("utf-8") if isinstance(blob, str) else blob
+        else:
+            assert file is not None
+            try:
+                found = file.read_bytes()
+            except OSError as refused:
+                raise RenderError(
+                    f"{who}: cannot read {near(file).as_posix()}: "
+                    f"{refused.strerror or refused}"
+                ) from None
+        held = Held(found, hashlib.sha256(found).digest())
+        self.held[source] = held
+        return held
 
     def embedded(
         self,
@@ -333,9 +380,12 @@ class Rendering:
             )
         return setting
 
-    def picture(self, mark: Image, where: str) -> Picture:
-        """Return the image a mark shows, embedding it on its first use.
+    def picture(self, mark: Image, where: str) -> Picture | None:
+        """Return the image a mark draws, embedding it on its first use.
 
+        Every image is decoded, so one that will not decode fails
+        the render wherever it is; only one a mark draws is embedded,
+        so the file holds no object that nothing shows.
         Two marks whose bytes are the same share one object,
         which is what makes two marks reading one source share one.
         A source is read and decoded once, however many marks show it.
@@ -344,41 +394,32 @@ class Rendering:
             mark: The image mark.
             where: The mark, as a diagnostic names it.
 
+        Returns:
+            The image, or ``None`` where the mark draws nothing.
+
         Raises:
             RenderError: Its bytes will not read, or will not decode.
 
         """
-        if mark.data is not None:
-            source = ("data", mark.data)
-        else:
-            source = ("file", str(mark.file))
-        known = self.sources.get(source)
-        if known is not None:
-            return known
-        if mark.data is not None:
-            blob = self.printout.data.get(mark.data)
-            if blob is None:
-                raise RenderError(
-                    f"{where}: the header holds no data {mark.data!r}",
-                )
-            data = blob.encode("utf-8") if isinstance(blob, str) else blob
-            shown = f"{where}: data {mark.data!r}"
-        else:
-            assert mark.file is not None
-            try:
-                data = mark.file.read_bytes()
-            except OSError as refused:
-                raise RenderError(
-                    f"{where}: cannot read {near(mark.file).as_posix()}: "
-                    f"{refused.strerror or refused}"
-                ) from None
-            shown = f"{where}: {near(mark.file).as_posix()}"
-        key = hashlib.sha256(data).digest()
-        found = self.pictures.get(key)
+        held = self.read(mark.file, mark.data, where)
+        resource = f"Im{len(self.pictures) + 1}"
+        decoded = self.decoded.get(held.digest)
+        if decoded is None:
+            if mark.data is not None:
+                shown = f"{where}: data {mark.data!r}"
+            else:
+                assert mark.file is not None
+                shown = f"{where}: {near(mark.file).as_posix()}"
+            decoded = picture_of(held.data, resource, shown)
+            self.decoded[held.digest] = decoded
+        if not draw.draws(mark):
+            return None
+        found = self.pictures.get(held.digest)
         if found is None:
-            found = picture_of(data, f"Im{len(self.pictures) + 1}", shown)
-            self.pictures[key] = found
-        self.sources[source] = found
+            # Named again: a mark that drew nothing may have decoded it
+            # while another image took the name it was decoded under.
+            found = replace(decoded, resource=resource)
+            self.pictures[held.digest] = found
         return found
 
     # -- the second pass -------------------------------------------------
@@ -407,7 +448,8 @@ class Rendering:
                 painted.extend(draw.rectangle(mark, height))
             elif isinstance(mark, Image):
                 picture = self.picture(mark, where)
-                painted.extend(draw.image(mark, picture, height))
+                if picture is not None:
+                    painted.extend(draw.image(mark, picture, height))
             elif isinstance(mark, Barcode):
                 painted.extend(draw.barcode(mark, height))
             elif isinstance(mark, Xref):
@@ -510,17 +552,19 @@ class Rendering:
     def outline(self) -> Ref:
         """Write the outline tree, and return its root.
 
-        doc/render.md#outline-and-links: an entry one level deeper
-        than the one before it is that one's child, and an entry that
-        jumps by more than one is one deeper rather than refused.
+        doc/render.md#outline-and-links: an entry's parent is
+        the nearest entry before it with a lower level.  So an entry
+        one level deeper than the one before it is that one's child,
+        and an entry that jumps by more than one is one deeper
+        rather than refused, with the next at its level its sibling.
 
         """
         root = self.writer.reserve()
         top: list[Entry] = []
         path: list[Entry] = []
         for entry in self.entries:
-            depth = max(1, min(entry.mark.level, len(path) + 1))
-            del path[depth - 1 :]
+            while path and path[-1].mark.level >= entry.mark.level:
+                path.pop()
             (path[-1].children if path else top).append(entry)
             path.append(entry)
         self.siblings(top, root)

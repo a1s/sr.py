@@ -131,6 +131,23 @@ def test_one_face_is_one_font_whatever_its_entries_say() -> None:
     assert list(found["Go-Bold"].unicode.values()) == ["d"]
 
 
+def test_a_file_several_entries_name_is_read_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ten styles over one large collection would read it ten times."""
+    reads: list[Path] = []
+    original = Path.read_bytes
+
+    def counted(path: Path) -> bytes:
+        reads.append(path)
+        return original(path)
+
+    monkeypatch.setattr(Path, "read_bytes", counted)
+    fonts = tuple(font_entry(f"size{size}", size=size) for size in (8, 9, 10))
+    rendered(document(text("a", "size9"), fonts=fonts))
+    assert reads.count(REGULAR) == 1
+
+
 def test_a_code_per_character_in_code_point_order() -> None:
     printout = document(text("baA"), text("c", y=20))
     (font,) = fonts_of(rendered(printout)[1])

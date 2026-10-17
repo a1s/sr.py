@@ -193,7 +193,9 @@ or from the `file` the mark names, [resolved against the printout's own
 directory](printout.md#paths). Two marks reading one source share one
 embedded object. How the bytes are embedded follows from what they are,
 read from their own signature as the engine [read them](template.md#image):
-the printout does not record the format.
+the printout does not record the format. Bytes that are none of the three
+formats the engine reads, a PNG, a JPEG, or a GIF, cannot be read,
+whatever else they may be, and the render [fails](#errors) naming them.
 
 A baseline JPEG is embedded as it stands, keeping its own compression. Every
 other format is decoded and re-encoded as eight-bit samples -- grey where the
@@ -204,10 +206,17 @@ array that is easy to get wrong.
 
 An image that is decoded is drawn when its bytes give every pixel
 its header states. What follows the last pixel is not read, so a GIF
-whose image data runs on past it, into codes that mean nothing, is drawn
-all the same. An image whose data ends, or turns into codes that mean nothing,
+whose image data run on past it, into codes that mean nothing, is drawn
+all the same. An image whose data end, or turn into codes that mean nothing,
 before its last pixel cannot be read, and the render [fails](#errors)
 naming it, rather than drawing a picture with part of it invented.
+Neither can a GIF whose first frame reaches past its logical screen,
+which the GIF specification forbids: the engine laid the image out
+at the size of the screen, and its pixels do not fit it.
+
+An image is read and decoded even where its mark draws nothing,
+in a box or a crop with no area, so one that cannot be read fails
+the render wherever it is. It is embedded only where a mark draws it.
 
 ## Barcodes
 
@@ -243,10 +252,14 @@ may ignore both and print the symbol in the only ink it has.
 ## Outline and links
 
 [`outline` marks](printout.md#outline) become the document outline.
-Their `level` builds the tree: an entry one deeper than its predecessor
-is its child. A level that jumps by more than one -- which the printout's
-own [invariants](printout.md#invariants) rule out -- is treated as one deeper
-rather than rejected.
+Their `level` builds the tree: an entry's parent is the nearest entry
+before it whose level is lower, which is how the engine
+[builds it](printout.md#outline) from the levels a template declares.
+So an entry one deeper than its predecessor is its child.
+A level that jumps by more than one -- which the printout's own
+[invariants](printout.md#invariants) rule out -- is one deeper
+rather than rejected, and the next entry at that level is its sibling:
+levels 1, 3, 3 give the first entry two children.
 
 Each entry's destination is `/XYZ` at the entry's own `x` and `y` on the page
 it appeared on, in that page's coordinates. An entry with children states how
@@ -361,6 +374,8 @@ a page with something missing from it:
 - A `text` mark naming a font the header does not carry.
 - A font file or image file that cannot be read, or a data entry
   the header does not hold. The diagnostic names the font or the file.
+- An image that is not a PNG, a JPEG, or a GIF, or that will not
+  [decode](#images). The diagnostic names the mark and its source.
 - A face with PostScript (CFF) outlines; see below.
 - An `xref type="outline"` whose target no outline entry claims -- a
   region that looks clickable and is not is worse than a stopped render.

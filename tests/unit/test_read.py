@@ -137,6 +137,12 @@ def broken(change: str) -> list[dict[str, Any]]:
         text["box"]["x"] = "12"
     elif change == "box flag":
         text["box"]["y"] = True
+    elif change == "box nan":
+        text["box"]["width"] = float("nan")
+    elif change == "box infinity":
+        text["box"]["height"] = float("-inf")
+    elif change == "box huge":
+        text["box"]["x"] = 10**400
     elif change == "unknown kind":
         text["kind"] = "circle"
     elif change == "colour":
@@ -174,6 +180,9 @@ def broken(change: str) -> list[dict[str, Any]]:
         ("no box", "page 1, mark 7.1: `box` is missing"),
         ("box text", "page 1, mark 7.1's `box`: `x` is not a number"),
         ("box flag", "`y` is not a number"),
+        ("box nan", "`width` is not a finite number"),
+        ("box infinity", "`height` is not a finite number"),
+        ("box huge", "`x` is not a finite number"),
         ("unknown kind", "its kind 'circle' is not one the format defines"),
         ("colour", "`color` is 'black', which is not #RRGGBB"),
         ("align", "`align` is 'middle', and not one of left, center"),

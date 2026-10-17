@@ -380,10 +380,23 @@ def build(arguments: Sequence[str], out: TextIO) -> int:
     )
     try:
         result = api.build(Path(str(template)), data_source(given), options)
-        # Inside the same handler as the build: a directory that is
-        # not there and a template that will not load are both the
-        # run failing, and both are reported as `sr:` and exit 1
-        # rather than as a traceback.
+    except TemplateError as refused:
+        for diagnostic in refused.diagnostics:
+            print(diagnostic, file=sys.stderr)
+        return FAILED
+    except (SrError, OSError) as refused:
+        print(f"sr: {refused}", file=sys.stderr)
+        return FAILED
+    # What the build said comes first, even where what follows fails:
+    # a render that refuses a face is explained by the warning that
+    # the face was a substitute, and by the diagnostics of `-v`.
+    for line in result.diagnostics:
+        print(line, file=sys.stderr)
+    for note in result.notes:
+        print(f"warning: {note}", file=sys.stderr)
+    for warning in result.warnings:
+        print(f"warning: {warning}", file=sys.stderr)
+    try:
         if encoding == "pdf":
             document = render_pdf(
                 result.printout,
@@ -392,22 +405,9 @@ def build(arguments: Sequence[str], out: TextIO) -> int:
             write_document(document, target, out)
         else:
             write_printout(result, target, out, encoding)
-    except TemplateError as refused:
-        for diagnostic in refused.diagnostics:
-            print(diagnostic, file=sys.stderr)
-        return FAILED
-    except SrError as refused:
+    except (SrError, OSError) as refused:
         print(f"sr: {refused}", file=sys.stderr)
         return FAILED
-    except OSError as refused:
-        print(f"sr: {refused}", file=sys.stderr)
-        return FAILED
-    for line in result.diagnostics:
-        print(line, file=sys.stderr)
-    for note in result.notes:
-        print(f"warning: {note}", file=sys.stderr)
-    for warning in result.warnings:
-        print(f"warning: {warning}", file=sys.stderr)
     print(f"{target}: {counted(result.printout)}", file=sys.stderr)
     return OK
 
@@ -506,7 +506,7 @@ def write_printout(
     """
     if encoding == "cbor":
         if target == "-":
-            write_cbor(result.printout, byte_stream(out), None)
+            write_cbor(result.printout, byte_stream(out, "a CBOR printout"))
             return
         path = Path(target)
         with path.open("wb") as handle:
@@ -552,14 +552,16 @@ def as_written(out: TextIO) -> TextIO:
     )
 
 
-def byte_stream(out: TextIO) -> BinaryIO:
-    """Return the byte stream beneath a text stream, for a CBOR printout.
+def byte_stream(out: TextIO, document: str) -> BinaryIO:
+    """Return the byte stream beneath a text stream, for a binary document.
 
     Whatever the text stream still holds is written first, so
-    nothing printed to it earlier lands among the printout's bytes.
+    nothing printed to it earlier lands among the document's bytes.
 
     Args:
         out: Where a document written to standard output goes.
+        document: What is written, as the error names it:
+            ``a CBOR printout``, ``a PDF``.
 
     Raises:
         OSError: The stream has no bytes beneath it, as a test's buffer has not.
@@ -568,7 +570,8 @@ def byte_stream(out: TextIO) -> BinaryIO:
     out.flush()
     buffer = getattr(out, "buffer", None)
     if buffer is None:
-        raise OSError("standard output takes no bytes, and a CBOR printout is bytes")
+        said = f"standard output takes no bytes, and {document} is bytes"
+        raise OSError(said)
     return buffer  # type: ignore[no-any-return]
 
 
@@ -613,7 +616,7 @@ def write_document(document: bytes, target: str, out: TextIO) -> None:
 
     """
     if target == "-":
-        byte_stream(out).write(document)
+        byte_stream(out, "a PDF").write(document)
         return
     Path(target).write_bytes(document)
 
@@ -646,10 +649,7 @@ def render(arguments: Sequence[str], out: TextIO) -> int:
         compress = not given.flags.get("uncompressed")
         document = render_pdf(printout, compress=compress)
         write_document(document, destination, out)
-    except SrError as refused:
-        print(f"sr: {refused}", file=sys.stderr)
-        return FAILED
-    except OSError as refused:
+    except (SrError, OSError) as refused:
         print(f"sr: {refused}", file=sys.stderr)
         return FAILED
     for warning in printout.warnings:
@@ -683,10 +683,7 @@ def inspect_printout(arguments: Sequence[str], out: TextIO) -> int:
     try:
         records = read_printout(path)
         wanted = pages_wanted(text_of(given.flags.get("pages")), len(records) - 1)
-    except SrError as refused:
-        print(f"sr: {refused}", file=sys.stderr)
-        return FAILED
-    except OSError as refused:
+    except (SrError, OSError) as refused:
         print(f"sr: {refused}", file=sys.stderr)
         return FAILED
     for line in dump(path, records, wanted, bool(given.flags.get("summary"))):

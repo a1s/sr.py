@@ -937,6 +937,32 @@ def test_a_render_that_fails_leaves_the_previous_file_alone(
     assert previous.read_bytes() == b"previous"
 
 
+@pytest.mark.parametrize("name", ["out.pdf", "out.srp.jsonl"])
+def test_a_build_that_cannot_write_still_says_what_it_warned(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    name: str,
+) -> None:
+    """A render that refuses a face is explained by a warning before it."""
+    out = tmp_path / "missing" / name
+    code, _ = run("build", "-t", str(UNKNOWN), "-o", str(out), *REPRODUCIBLE)
+    said = capsys.readouterr().err.splitlines()
+    assert code == 1
+    assert [one.split(":")[0] for one in said] == ["warning", "warning", "sr"]
+
+
+def test_a_pdf_to_a_stream_that_takes_no_bytes_is_named_a_pdf(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    printout = built(tmp_path, "out.srp.jsonl")
+    capsys.readouterr()
+    code, _ = run("render", str(printout), "-o", "-")
+    assert code == 1
+    said = capsys.readouterr().err
+    assert said == "sr: standard output takes no bytes, and a PDF is bytes\n"
+
+
 def test_uncompressed_leaves_the_streams_readable(tmp_path: Path) -> None:
     printout = built(tmp_path, "out.srp.jsonl")
     out = tmp_path / "out.pdf"
@@ -966,6 +992,20 @@ def test_render_of_a_file_that_is_not_a_printout_fails(
     assert code == 1
     assert "not a printout" in capsys.readouterr().err
     assert not (tmp_path / "out.pdf").exists()
+
+
+@pytest.mark.parametrize("command", ["render", "inspect"])
+def test_a_printout_that_is_not_utf_8_is_not_a_printout(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    command: str,
+) -> None:
+    junk = tmp_path / "junk.srp.jsonl"
+    junk.write_bytes(b'{"sr":1}\n\xff\n')
+    output = ("-o", str(tmp_path / "out.pdf")) if command == "render" else ()
+    code, _ = run(command, str(junk), *output)
+    assert code == 1
+    assert "not a printout: byte 9 is not UTF-8" in capsys.readouterr().err
 
 
 def test_the_help_names_the_render_flags() -> None:

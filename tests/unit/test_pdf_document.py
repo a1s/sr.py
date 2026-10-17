@@ -273,6 +273,26 @@ def test_a_level_that_jumps_is_one_deeper() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    ("levels", "depths"),
+    [
+        ((1, 3, 3, 2), (0, 1, 1, 1)),
+        ((1, 4, 3, 3, 2), (0, 1, 1, 1, 1)),
+        ((2, 2, 1, 3), (0, 0, 0, 1)),
+    ],
+    ids=["a-gap-then-its-level", "deep-then-shallower", "no-parent"],
+)
+def test_an_entry_s_parent_is_the_nearest_with_a_lower_level(
+    levels: tuple[int, ...], depths: tuple[int, ...]
+) -> None:
+    """Two entries at one level are siblings, whatever came before."""
+    printout = document(
+        *(outline(f"E{at}", level) for at, level in enumerate(levels)),
+    )
+    data, _ = rendered(printout)
+    assert tuple(one[0] for one in bookmarks(data)) == depths
+
+
 def test_a_document_without_an_outline_asks_for_no_pane() -> None:
     _, parsed = rendered(document(text("a")))
     (catalog,) = parsed.kind("Catalog")
