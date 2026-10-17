@@ -1,0 +1,49 @@
+// probes/outline/subreports.kdl -- outline entries in subreports.
+//
+// A subreport's bands bring their entries as the host's bands do,
+// each at its own band's top-left and after its own marks, and with
+// the level its template declares.  So the host band's entry follows
+// the host band's marks, which follow the subreport of negative `seq`
+// and precede the one of positive `seq`.  The subreport that paginates
+// itself puts its entries on its own pages, among the host's.
+//
+// The levels run 1, 1, 2, 3, 1, 2, 3 on the inline record and 1, 2,
+// 3, 1, 2, 3 around the paginated one, so no level is more than one
+// deeper than the one before it and both engines write them as declared.
+//
+// doc/printout.md#outline and doc/layout.md#subreports.
+
+report name="outline/subreports" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "name" type="string"
+    member "items" type="list"
+    member "inline" type="bool"
+  }
+  layout width=200 height=200 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    embedded "items" {
+      records {
+        member "n" type="int"
+      }
+      title height=4 {
+        outline title="'child title'" level=2
+      }
+      detail height=8 {
+        outline title="'item %d' % n" level=3
+        field expr="'item %d' % n" left=10 top=1 width=50 height=6
+      }
+    }
+    header height=8 {
+      outline title="'page %d' % PAGE_NUMBER"
+      field expr="'H%d' % PAGE_NUMBER" left=0 top=1 width=50 height=6
+    }
+    detail height=8 {
+      outline title="'host %s' % name"
+      field expr="'host %s' % name" left=0 top=1 width=50 height=6
+      subreport embedded="items" seq=-1 data="items" inline=#true when="inline"
+      subreport embedded="items" seq=1 data="items" inline=#true when="inline"
+      subreport embedded="items" seq=1 data="items" when="not inline"
+    }
+  }
+}

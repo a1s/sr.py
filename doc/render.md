@@ -252,7 +252,9 @@ An [`xref` mark](printout.md#xref) becomes a link annotation over its box,
 with no visible border. Its nested marks are drawn exactly as top-level marks
 are -- they carry page coordinates -- so the box is purely a hit region.
 `type="url"` becomes a URI action; `type="outline"` becomes a destination
-equal to the target entry's. A `caption` becomes the annotation's hover text.
+equal to the target entry's, which is the first entry in the document
+to carry the name where several do. A `caption` becomes the annotation's
+hover text.
 
 ## Fonts in the file
 

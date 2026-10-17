@@ -6,15 +6,24 @@ divergence register covers is allowed to differ, and is required to.
 One field of the reference's is dropped before the comparison, the `type`
 of an image mark, for the reason :func:`without_image_types` gives.
 
+This engine's printout is also read back from the file it wrote and
+held to the twelve [invariants](doc/printout.md#invariants), which is
+what doc/printout.md means by asserting them on every printout the
+test suite produces: the engine checks the document before it writes it,
+and this checks what the writer made of it.
+
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
+from sr.printout.inspect import read_printout
+from sr.printout.verify import violations
 from tests.differential.answers import answer_path, distil
 from tests.differential.cases import ROOT, Case, corpus, probe_cases
 from tests.differential.diff import compare_printouts
@@ -87,6 +96,32 @@ def test_printouts_agree(
     register: Register,
     pending: Register,
 ) -> None:
+    judge(case, oracle, local, build_directory, register, pending)
+
+
+def judge(
+    case: Case,
+    oracle: Engine,
+    local: Engine,
+    build_directory: Path,
+    register: Register,
+    pending: Register,
+    without_types: Callable[[bytes], bytes] | None = None,
+) -> None:
+    """Build a case with both engines and hold the two printouts to each other.
+
+    Args:
+        case: What to build, in the encoding it names.
+        oracle: The reference.
+        local: This engine.
+        build_directory: Where both write.
+        register: The divergences.
+        pending: What this engine does not build yet.
+        without_types: What drops the reference's image `type` fields
+            from its printout, for the case's encoding.
+
+    """
+    strip = without_types or without_image_types
     missing = case.missing_inputs()
     assert not missing, f"{case.ident}: missing input files: " + ", ".join(
         str(path) for path in missing
@@ -115,9 +150,11 @@ def test_printouts_agree(
     local_build = outcomes[local.name]
     assert isinstance(reference_build, Build)
     assert isinstance(local_build, Build)
+    broken = violations(read_printout(local_build.path))
+    assert not broken, f"{case.ident}: the printout breaks " + "; ".join(broken)
 
     comparison = compare_printouts(
-        without_image_types(reference_build.printout),
+        strip(reference_build.printout),
         local_build.printout,
         left_name=oracle.name,
         right_name=local.name,

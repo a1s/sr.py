@@ -1,0 +1,35 @@
+// probes/outline/split.kdl -- an outline entry in a band that splits.
+//
+// The entry is a point at the band's top edge, so no cut falls through it,
+// and the reference does not count it as content a cut divides.
+//
+// - The first row's band holds its three lines 22pt down, and 20pt
+//   is left below the title.  The one cut that room allows, at 20,
+//   would leave nothing above it but the entry, which would be a head
+//   of no content, so the band moves whole to page 2, entry and all.
+// - The second row's band is seven lines from its top, 42pt tall,
+//   and 10pt is left below the first.  It splits after its first line,
+//   and the entry goes with the head, at the band's top edge on page 2.
+//   The tail on page 3 has none.
+//
+// doc/printout.md#outline and doc/layout.md#band-splitting are what
+// this became.
+
+report name="outline/split" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "lines" type="string"
+    member "top" type="int"
+  }
+  layout width=100 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    title height=30 {
+      field text="T" left=0 top=0 width=10 height=6
+    }
+    detail split=#true {
+      outline title="'row %d' % ITEM_NUMBER"
+      field expr="lines" left=2 top=0 width=40 stretch=#true printwhen="top == 0"
+      field expr="lines" left=2 top=22 width=40 stretch=#true printwhen="top == 22"
+    }
+  }
+}

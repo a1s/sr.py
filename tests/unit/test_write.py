@@ -1,8 +1,10 @@
-"""The NDJSON encoding, byte for byte.
+"""The two encodings, byte for byte.
 
 doc/printout.md#encoding fixes what a JSON writer usually chooses
 for itself, so each of those choices is a test here: the number format,
 the escapes, the key order, the path rule and the line ending.
+doc/printout.md#cbor fixes the same for CBOR, where what is left
+to choose is which numbers are integers and how wide a float is.
 
 """
 
@@ -13,6 +15,7 @@ import json
 import sys
 from pathlib import Path
 
+import cbor2
 import pytest
 
 from sr.errors import BuildWarning
@@ -21,6 +24,7 @@ from sr.printout.model import (
     Box,
     FontEntry,
     Line,
+    Outline,
     Page,
     Paper,
     Printout,
@@ -35,6 +39,7 @@ from sr.printout.write import (
     page_object,
     quoted,
     relative_to,
+    write_cbor,
     write_jsonl,
 )
 
@@ -316,6 +321,27 @@ def test_a_2d_barcode_writes_rows_and_no_stripes_or_paper() -> None:
     assert dumps(written["rows"]) == "[[3],[1,1,1],[3]]"
 
 
+def test_an_outline_entry_writes_a_point_and_no_box() -> None:
+    mark = Outline(Box(42.52, 200, 0, 0), "Smith, John", 2, "cust-148", False)
+    written = page_object(Page(1, (mark,)), A4)["marks"][0]
+    assert written == {
+        "kind": "outline",
+        "title": "Smith, John",
+        "level": 2,
+        "name": "cust-148",
+        "closed": False,
+        "x": 42.52,
+        "y": 200,
+    }
+    assert list(written) == ["kind", "title", "level", "name", "closed", "x", "y"]
+
+
+def test_an_outline_entry_with_no_name_leaves_it_out() -> None:
+    mark = Outline(Box(0, 0, 0, 0), "t", 1, None, True)
+    written = page_object(Page(1, (mark,)), A4)["marks"][0]
+    assert list(written) == ["kind", "title", "level", "closed", "x", "y"]
+
+
 def test_a_page_names_only_the_geometry_it_overrides() -> None:
     other = Paper(A4.width, A4.height, 0, 0, 20, 0)
     written = page_object(Page(2, (), other), A4)
@@ -361,3 +387,115 @@ def test_a_path_with_no_relative_form_is_written_absolute() -> None:
     assert relative_to(Path("Z:/elsewhere/font.ttf"), Path("C:/project")) == (
         "Z:/elsewhere/font.ttf"
     )
+
+
+# -- CBOR -------------------------------------------------------------
+
+
+def cbor_of(made: Printout, base: Path | None = None) -> bytes:
+    """Return a printout written as CBOR."""
+    out = io.BytesIO()
+    write_cbor(made, out, base)
+    return out.getvalue()
+
+
+def decoded(data: bytes) -> list[object]:
+    """Return every data item in a CBOR sequence, in order."""
+    stream = io.BytesIO(data)
+    found = []
+    while stream.tell() < len(data):
+        found.append(cbor2.load(stream))
+    return found
+
+
+def with_a_page() -> Printout:
+    """Return a printout with one page holding one text mark."""
+    made = printout()
+    made.pages = (
+        Page(
+            1,
+            (
+                Text(
+                    Box(42.52, 28.35, 200, 10.8),
+                    "body",
+                    "#000000",
+                    "left",
+                    10.8,
+                    ("a",),
+                ),
+            ),
+        ),
+    )
+    return made
+
+
+def test_cbor_holds_the_records_ndjson_does() -> None:
+    made = with_a_page()
+    out = io.StringIO()
+    write_jsonl(made, out, Path("C:/project/out"))
+    lines = [json.loads(line) for line in out.getvalue().splitlines()]
+    assert decoded(cbor_of(made, Path("C:/project/out"))) == lines
+
+
+def test_cbor_records_follow_one_another_with_nothing_between() -> None:
+    """A sequence, RFC 8742: no array around them, no tag before them."""
+    data = cbor_of(with_a_page())
+    assert data[0] == 0xAA, "a map of ten, the header"
+    assert len(decoded(data)) == 2
+
+
+def test_cbor_keys_are_in_the_order_ndjson_writes_them() -> None:
+    header = decoded(cbor_of(with_a_page()))[0]
+    assert isinstance(header, dict)
+    assert list(header) == list(header_object(with_a_page(), None))
+
+
+def test_a_length_is_a_double_even_when_it_is_whole() -> None:
+    data = cbor_of(with_a_page())
+    width = bytes.fromhex("6577696474") + b"h"
+    assert width + bytes.fromhex("fb4069000000000000") in data, "200 as a double"
+
+
+def test_a_count_is_an_integer_in_its_shortest_form() -> None:
+    data = cbor_of(with_a_page())
+    assert b"\x65pages\x01" in data
+    assert b"\x64size\x09" in data
+    assert b"\x66number\x01" in data
+
+
+def test_a_negative_zero_is_written_as_a_zero() -> None:
+    made = printout()
+    made.pages = (
+        Page(1, (Line(Box(-0.0, 0, 10, 0), 0.5, "solid", "#000000", False),)),
+    )
+    data = cbor_of(made)
+    assert bytes.fromhex("fb8000000000000000") not in data
+    assert b"\x61x" + bytes.fromhex("fb0000000000000000") in data
+
+
+def test_a_lone_surrogate_is_written_as_the_replacement_character() -> None:
+    """A CBOR text string has no escape, so the path no longer finds its file."""
+    made = printout()
+    made.fonts = (
+        FontEntry(
+            name="body",
+            size=9,
+            bold=False,
+            italic=False,
+            underline=False,
+            face="Go",
+            step="host",
+            file=Path("C:/fonts/Go\udcff.ttf"),
+        ),
+    )
+    header = decoded(cbor_of(made))[0]
+    assert isinstance(header, dict)
+    assert header["fonts"][0]["resolvedFile"] == "C:/fonts/Go\ufffd.ttf"
+
+
+def test_a_blob_is_base64_text_in_cbor_as_in_ndjson() -> None:
+    made = printout()
+    made.data = {"pic.png": b"\x89PNG"}
+    header = decoded(cbor_of(made))[0]
+    assert isinstance(header, dict)
+    assert header["data"] == {"pic.png": {"encoding": "base64", "content": "iVBORw=="}}

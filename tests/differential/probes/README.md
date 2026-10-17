@@ -154,6 +154,7 @@ the reference gave, and names the section of `doc/` that answer became.
 | `printout/no-fonts` | the table when no element prints |
 | `printout/font-warning` | the warning a substituted typeface gives |
 | `printout/twin-fonts` | two fonts that resolve to one face at one size |
+| `printout/margins` | a mark outside the page's printable area |
 | `layout/band-height` | the two maxima a band's height is |
 | `layout/alignment` | where a field's content sits in its box |
 | `layout/field-format` | what an element's `format` applies to |
@@ -304,6 +305,14 @@ the reference gave, and names the section of `doc/` that answer became.
 | `subreport/names-reserved` | a subreport's declared `data` names, reserved |
 | `subreport/font-suffix` | a suffixed font name another font is declared under |
 | `subreport/blob-once` | when a template's `data` is produced |
+| `outline/placement` | where an outline entry points, and where it is written |
+| `outline/selection` | which outline node a band takes, and what its title says |
+| `outline/split` | an outline entry in a band that splits |
+| `outline/subreports` | outline entries in subreports |
+| `outline/names` | which outline entries keep their names |
+| `outline/levels` | outline levels with a gap |
+| `outline/balance` | an outline entry in a balanced column |
+| `outline/missing-target` | an xref whose outline entry never comes |
 | `expressions/strings` | `len`, indexing and slicing over non-ASCII text |
 | `expressions/string-methods` | the string type's iteration methods |
 | `expressions/escapes` | what a literal's escapes name, where Python's and Starlark's part |
@@ -432,6 +441,34 @@ said "one entry per distinct font used", and the reference reads that as
 merging two `font` nodes that resolve to one face at one size and style.
 It writes one entry, under the name of the font built first, and every
 mark set in either font names it. doc/ now keeps the two apart.
+
+M13 added the `outline/` group and `printout/margins`, and with them
+four defects in the reference, each a printout that breaks one of
+its own invariants, and one decision. In `margins`, the reference
+checks no mark against the page's margins, which doc/layout.md#errors
+makes an overflow; in `missing-target`, it writes an xref to an outline
+entry no entry carries; in `levels`, it writes each entry at the level
+its template declared, gaps and all, where doc/ writes its depth in the
+tree; and in `balance`, it leaves a balanced band's entry where the fill
+put it. The decision is in `names`: doc/printout.md#outline has always
+written an entry's `name` only where an xref targets it, and the
+reference writes every name.
+
+Five older probes put marks outside the margins without meaning to,
+since the reference never said so: `layout/anchored-stretch`,
+`layout/float-gaps`, `printout/numbers`, `rounding/negative`, and
+`values/dimensions`. M13 moved each mark inside, by a band above it,
+a wider page, or an xref to hold an offset that is still negative,
+so that each asks its question as before, and each says how.
+
+The CBOR encoding is compared over a part of the corpus, in
+[test_cbor.py](../test_cbor.py), and agrees wherever the NDJSON does,
+with one thing set right first: the reference writes the tables whose
+keys are names, `data`, `groupRuns` and `groupKeys`, in its hash map's
+order, which changes from one run to the next, where doc/ sorts them.
+A case cannot be registered as differing for a reason that comes and
+goes, so the comparison sorts the reference's, and a test there fails
+once the reference sorts them itself.
 
 Of the rest, every one agrees byte for byte. The three `data/` probes that
 waited for an image to be built were in [pending.toml](../pending.toml)

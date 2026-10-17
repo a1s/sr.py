@@ -1,0 +1,38 @@
+// probes/outline/placement.kdl -- where an outline entry points, and where it is written.
+//
+// An entry has a point rather than a box, and the reference puts it
+// at the top-left corner of the band that selected it: the frame's left
+// edge, which is a column's in a column, and the band's top edge.
+// It is written after every mark of its band, so it follows the band's
+// fields in paint order and precedes whatever the next band draws.
+//
+// - The page header's entry comes again on every page, at the same point.
+// - The column header's entry points at each column in turn.
+// - Each row's entry is at level 2, below the page header's at 1.
+// - The first row's entry is named, and an xref in the page header targets
+//   it, so the name is written; it is `closed`, and that is written too.
+//
+// doc/printout.md#outline is what this became.
+
+report name="outline/placement" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=100 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    header height=6 {
+      outline title="'page %d' % PAGE_NUMBER"
+      xref type="outline" target="'first'" left=2 top=0 width=20 height=6 {
+        field expr="'H%d' % PAGE_NUMBER" left=0 top=0 width=20 height=6
+      }
+    }
+    columns count=2 gap=10 {
+      header height=4 {
+        outline title="'column %d' % COLUMN_NUMBER" level=2
+      }
+    }
+    detail height=10 {
+      outline title="'r1'" level=2 name="'first'" closed=#true when="ITEM_NUMBER == 1"
+      outline title="'r%d' % ITEM_NUMBER" level=2
+      field expr="'r%d' % ITEM_NUMBER" left=1 top=3 width=30 height=6
+    }
+  }
+}

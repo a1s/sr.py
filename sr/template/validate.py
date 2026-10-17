@@ -635,6 +635,7 @@ def band_rules(visit: Visit, space: Space, band: Section) -> None:
     for xref in xrefs_of(band):
         sizes(visit, xref)
     band_height(visit, band)
+    outline_levels(visit, band)
     for subreport in band.subreports:
         subreport_rules(visit, band, subreport)
     collapsing(visit, band)
@@ -1214,6 +1215,26 @@ def outline_names(reports: tuple[Report, ...]) -> frozenset[str] | None:
                     return None
                 names.add(value)
     return frozenset(names)
+
+
+def outline_levels(visit: Visit, band: Section) -> None:
+    """Report an outline entry above the outline's first level.
+
+    Level 1 is the outermost, so an entry at 0 or below
+    has no place in the tree: doc/template.md#outline.
+
+    Args:
+        visit: The document and its collectors.
+        band: The band whose entries to check.
+
+    """
+    for entry in band.outlines:
+        if entry.level < 1:
+            visit.diagnostics.error(
+                f"an outline level must be at least 1, not {entry.level}",
+                path=entry.path,
+                prop="level",
+            )
 
 
 def outline_targets(visit: Visit) -> None:

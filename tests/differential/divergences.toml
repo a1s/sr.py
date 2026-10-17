@@ -39,6 +39,10 @@
 # reference's, `graft-beside-columns`, `graft-without-room`, and
 # `inline-summary-strip`; two of its probes show `column-floor`
 # and `column-footer-strip` again, inside a subreport.
+# M13 added four defects in the reference's printouts, each a
+# printout that breaks one of the invariants: `margins-unchecked`,
+# `outline-target-missing`, `outline-level-gaps`, and `outline-balance`;
+# and one decision, `outline-names-untargeted`.
 #
 # The milestone numbers:
 #   M0: Scaffold and oracle
@@ -1031,3 +1035,81 @@ reference is the side that changes.\
 ticket = "M12: inline columns, layout.md#pages; filed against the Go engine"
 since = "2026-10-11"
 affects = ["probe/subreport/summary-strip-eject"]
+
+[[divergence]]
+id = "margins-unchecked"
+summary = "a mark outside the page's printable area is an overflow here; the reference checks no mark against the margins"
+reason = """\
+doc/layout.md#errors lists a mark that lands outside the page's printable \
+area among the overflows, which --allow-overflow downgrades to a warning, \
+and the printout's seventh invariant rules one out of any printout that \
+carries no such warning.  The reference builds such a template without \
+--allow-overflow and writes no warning, so its printout breaks its own \
+invariant.  Five probes written before the check put marks outside the \
+margins without meaning to, and M13 moved those marks inside, each probe \
+asking its question as before.  The reference is the side that changes.\
+"""
+ticket = "M13: the printable area, layout.md#errors; filed against the Go engine"
+since = "2026-10-17"
+affects = ["probe/printout/margins"]
+
+[[divergence]]
+id = "outline-target-missing"
+summary = "an xref to an outline entry no entry claims is an error here; the reference writes it"
+reason = """\
+An xref of type `outline` whose target no entry in the document carries \
+breaks the printout's fifth invariant, and doc/render.md refuses to \
+render one.  Validation catches a target that is a constant, and the \
+reference does too; one computed from the data reaches the build, where \
+doc/printout.md#xref makes it an error naming the xref and its record. \
+The reference writes the printout, with an xref that goes nowhere.  The \
+reference is the side that changes.\
+"""
+ticket = "M13: outline entries, printout.md#xref; filed against the Go engine"
+since = "2026-10-17"
+affects = ["probe/outline/missing-target"]
+
+[[divergence]]
+id = "outline-level-gaps"
+summary = "an outline entry's level is written as its depth in the tree here; the reference writes the level declared, gaps and all"
+reason = """\
+The printout's tenth invariant has no outline level more than one deeper \
+than the one before it, and a template can declare one, or leave the \
+entry that would have been its parent unprinted.  doc/printout.md#outline \
+writes each entry at its depth in the tree its declared levels describe, \
+whose parent is the nearest entry before it at a lower declared level, so \
+levels declared without a gap are written as they are.  The reference \
+writes the declared level, so its printout breaks its own invariant. \
+The reference is the side that changes.\
+"""
+ticket = "M13: outline entries, printout.md#outline; filed against the Go engine"
+since = "2026-10-17"
+affects = ["probe/outline/levels"]
+
+[[divergence]]
+id = "outline-balance"
+summary = "a balanced band's outline entry moves with the band here; the reference leaves it where the fill put it"
+reason = """\
+An outline entry is a mark of the band that selected it, at the band's \
+top-left corner, and doc/layout.md#balanced-columns moves a band's marks \
+when it moves the band.  The reference moves the band's other marks and \
+leaves its entry pointing at the column the fill put it in, below \
+the bands that stayed there.  The reference is the side that changes.\
+"""
+ticket = "M13: outline entries, printout.md#outline; filed against the Go engine"
+since = "2026-10-17"
+affects = ["probe/outline/balance"]
+
+[[divergence]]
+id = "outline-names-untargeted"
+summary = "an outline entry's name is written only where an xref targets it here; the reference writes every name"
+reason = """\
+doc/printout.md#outline has said from the start that an entry's `name` \
+is present only when some xref targets it: a name nothing targets tells \
+a renderer nothing.  The reference writes every name a template gives. \
+Kept as written, a decision rather than a defect, and the reference is \
+the side that changes.\
+"""
+ticket = "M13: outline entries, printout.md#outline"
+since = "2026-10-17"
+affects = ["probe/outline/names"]

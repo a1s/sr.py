@@ -1,34 +1,45 @@
 """Reading a printout back, and dumping it as text.
 
 doc/cli.md#sr-inspect: one mark per line, in paint order, with a text
-mark's lines quoted under it.  The printout is machine-generated JSON;
+mark's lines quoted under it.  The printout is machine-generated;
 this is the same content in a form that can be read and diffed.
+
+Either encoding is read, and the extension says which, as for
+doc/cli.md#sr-render: ``.cbor`` is CBOR and anything else NDJSON.
+Both give the same records, so everything after reading is one path.
 
 The reader is deliberately **untyped**.  It parses the records into
 plain dictionaries rather than into :mod:`sr.printout.model`, so a
-printout holding a mark this engine does not build yet still dumps,
-and so does one another engine wrote.  That is what makes `inspect`
-useful while the engine is being written: it reads the oracle's output
-as readily as its own.  The typed reader arrives with the renderer,
-which needs one.
-
-The [invariant check](doc/printout.md#invariants) for which doc/cli.md
-asks this command arrives with the rest of the printout in M13.
-What is here is the dump.
+printout another engine wrote still dumps, and so does one holding
+something this engine would not have built.  That is also what
+:mod:`sr.printout.verify` checks the
+[invariants](doc/printout.md#invariants) on, which doc/cli.md asks
+this command to do after the dump.  The typed reader arrives with
+the renderer, which needs one.
 
 """
 
 from __future__ import annotations
 
+import io
 import json
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any
 
+import cbor2
+
 from sr.errors import BuildError, Location
 from sr.printout.write import number
 
-__all__ = ["dump", "pages_wanted", "read_jsonl", "records_of"]
+__all__ = [
+    "dump",
+    "pages_wanted",
+    "read_cbor",
+    "read_jsonl",
+    "read_printout",
+    "records_of",
+]
 
 # The fields each mark kind shows, in the order doc/cli.md#sr-inspect
 # writes them.  A field the mark does not carry is left out rather than
@@ -46,6 +57,10 @@ MARK_FIELDS: dict[str, tuple[str, ...]] = {
 # The fields that are shown as a bare value rather than as `name value`,
 # because the name would repeat what the value already says.
 BARE = {"type", "value", "title", "target"}
+
+# The fields that are text a template wrote or computed, and are quoted
+# so that a space or an empty string inside one cannot be misread.
+QUOTED = {"value", "target", "title", "caption", "name"}
 
 # A true boolean is shown as its name, and these read better spelled out.
 LABELS = {"lastLineJustified": "last line justified"}
@@ -80,6 +95,52 @@ def read_jsonl(path: Path) -> list[Any]:
     if not records or not isinstance(records[0], dict):
         raise BuildError("not a printout: no header line", Location(file=str(path)))
     return records
+
+
+def read_cbor(path: Path) -> list[Any]:
+    """Return the records a CBOR printout holds.
+
+    doc/printout.md#cbor: a CBOR sequence, one data item per record,
+    with nothing between them, so they are decoded one after another
+    until the bytes run out.
+
+    Args:
+        path: The file to read.
+
+    Raises:
+        BuildError: The file is not a CBOR sequence, or holds no header.
+
+    """
+    data = path.read_bytes()
+    stream = io.BytesIO(data)
+    decoder = cbor2.CBORDecoder(stream)
+    records = []
+    while stream.tell() < len(data):
+        at = stream.tell()
+        try:
+            records.append(decoder.decode())
+        except (cbor2.CBORDecodeError, ValueError, EOFError) as refused:
+            raise BuildError(
+                f"not a printout: at byte {at}: {refused}", Location(file=str(path))
+            ) from None
+    if not records or not isinstance(records[0], dict):
+        raise BuildError("not a printout: no header record", Location(file=str(path)))
+    return records
+
+
+def read_printout(path: Path) -> list[Any]:
+    """Return the records a printout holds, in whichever encoding it is.
+
+    Args:
+        path: The file to read; ``.cbor`` is CBOR, anything else NDJSON.
+
+    Raises:
+        BuildError: The file is not a printout in that encoding.
+
+    """
+    if path.suffix.lower() == ".cbor":
+        return read_cbor(path)
+    return read_jsonl(path)
 
 
 def records_of(records: list[Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -411,7 +472,7 @@ def mark_line(mark: dict[str, Any]) -> str:
             if value:
                 parts.append(LABELS.get(key, key))
             continue
-        shown = quote(value) if key in ("value", "target", "title") else spelled(value)
+        shown = quote(value) if key in QUOTED else spelled(value)
         parts.append(shown if key in BARE else f"{key} {shown}")
     if kind == "barcode" and mark.get("stripes"):
         parts.append(f"{len(mark['stripes'])} stripes")

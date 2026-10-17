@@ -1,0 +1,23 @@
+// probes/outline/balance.kdl -- an outline entry in a balanced column.
+//
+// Three rows of 10pt all fit the first column, and balancing moves
+// the third to the second.  Its entry is a mark of its band, so
+// it moves with the band, to the second column's left edge and top.
+//
+// The reference moves the row's field and leaves its entry where the
+// fill put it, pointing at the first column, below the second row.
+// Registered under the divergence `outline-balance`.
+//
+// doc/printout.md#outline and doc/layout.md#balanced-columns.
+
+report name="outline/balance" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=100 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    columns count=2 gap=10 balance=#true
+    detail height=10 {
+      outline title="'r%d' % ITEM_NUMBER"
+      field expr="'r%d' % ITEM_NUMBER" left=0 top=2 width=40 height=6
+    }
+  }
+}

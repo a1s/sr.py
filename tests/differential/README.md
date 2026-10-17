@@ -59,6 +59,16 @@ directory, because a printout's paths are relative to where it lands.
 
 The corpus is the reports in `example/`, plus every probe.
 
+Every case is built as NDJSON. A part of the corpus that between them
+carries every field a printout has is built a second time as CBOR,
+in [test_cbor.py](test_cbor.py), since what is left to compare there
+is the encoding alone. A case keeps its identifier in either encoding,
+so the divergence register and the pending list cover both builds of it.
+
+This engine's printout is read back from the file and held to the
+[invariants](../../doc/printout.md#invariants) as well as compared,
+so what the writer made of a document is checked, and not only the document.
+
 ## Probes
 
 A probe is one template that isolates one specification question.

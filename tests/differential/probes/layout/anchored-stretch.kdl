@@ -18,11 +18,16 @@
 // - `summary`: three boxes of 30, 10 and 30.  The first has no clamp and
 //   keeps five lines; the second has a clamp that does not bind and keeps
 //   one; the third is clamped to 20 and keeps one, at its bottom.
+//
+// An empty page header 40 tall holds the title below the top margin,
+// since the title's text runs 36 above it, and a mark above the margin
+// is an overflow by doc/layout.md#errors.  Everything is 40 lower for it.
 
 report name="layout/anchored-stretch" {
   font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
   layout width=300 height=800 leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
     style font="body" color="black"
+    header height=40
     title {
       field text="1\n2\n3" left=0 width=60 top=14 bottom=0 stretch=#true valign="bottom"
     }

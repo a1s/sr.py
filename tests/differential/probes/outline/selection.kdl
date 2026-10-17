@@ -1,0 +1,31 @@
+// probes/outline/selection.kdl -- which outline node a band takes, and what its title says.
+//
+// A section's `outline` nodes are alternatives: the reference takes the
+// first whose `when` holds, and a band where none holds has no entry.
+// The title and the name reach the printout as text, converted as a
+// field's `expr` is under the default `format` of `%s`: `None` as None,
+// a decimal with its scale, a list as the expression language writes it,
+// and a time as the `%s` of a time is.  An empty name is no name.
+//
+// Rows 1 to 6 each take one of the six conversions, row 7 takes
+// the empty name, and row 8 takes none of them, so it has no entry.
+//
+// doc/template.md#outline is what this became.
+
+report name="outline/selection" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=100 height=200 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    detail height=10 {
+      outline title="None" when="ITEM_NUMBER == 1"
+      outline title="decimal('1.50')" when="ITEM_NUMBER == 2"
+      outline title="[1, 'a']" when="ITEM_NUMBER == 3"
+      outline title="True" when="ITEM_NUMBER == 4"
+      outline title="ITEM_NUMBER * 10" when="ITEM_NUMBER == 5"
+      outline title="BUILD_TIME" when="ITEM_NUMBER == 6"
+      outline title="'empty name'" name="''" when="ITEM_NUMBER == 7"
+      outline title="'never'" when="ITEM_NUMBER > 7 and False"
+      field expr="'r%d' % ITEM_NUMBER" left=0 top=2 width=30 height=6
+    }
+  }
+}

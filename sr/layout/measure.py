@@ -51,6 +51,13 @@ and what it reads where it sits is kept with it, per
 doc/layout.md#deferred-evaluation; :meth:`Measurer.resolve` sets
 the value in the placeholder's room when the scope ends.
 
+A band's `outline` entry is selected and evaluated here too, after its
+elements, since its mark follows theirs: doc/printout.md#outline puts
+it at the band's top-left corner, and it moves with the band from then
+on.  It is kept apart from the band's marks because it takes no part in
+what they decide: a point has no span for a cut to fall through, and it
+is not content a cut could divide, so a split carries it in the head.
+
 A `barcode` is encoded here, where its content is resolved,
 and its symbol's size at the declared module is its content height.
 What the symbol is finally drawn at waits for its box, since ``grow``
@@ -80,7 +87,6 @@ from sr.errors import (
     BuildWarning,
     Location,
     NodePath,
-    Unsupported,
 )
 from sr.expr import Namespace, apply_format
 from sr.expr.values import quote
@@ -94,12 +100,14 @@ from sr.layout.images import Picture, Pictures
 from sr.printout.model import Barcode as BarcodeMark
 from sr.printout.model import Box, Crop, Line, Mark, Rectangle, Text
 from sr.printout.model import Image as ImageMark
+from sr.printout.model import Outline as OutlineMark
 from sr.printout.model import Xref as XrefMark
 from sr.printout.write import number
 from sr.template.model import (
     Barcode,
     Element,
     Field,
+    Outline,
     Section,
     Span,
     Style,
@@ -112,6 +120,7 @@ from sr.units import fill_points, fits, round_points
 
 __all__ = [
     "Extent",
+    "Link",
     "Measurement",
     "Measurer",
     "Shared",
@@ -191,6 +200,8 @@ class Extent:
         bottom: Its lower edge.
         lines: A stretch field's line count; 0 for anything else.
         leading: The distance between those lines.
+        node: The element, which a mark outside the printable area
+            is reported against.
 
     """
 
@@ -198,6 +209,7 @@ class Extent:
     bottom: float
     lines: int = 0
     leading: float = 0.0
+    node: NodePath | None = None
 
     def moved(self, down: float) -> Extent:
         """Return the span translated down.
@@ -211,7 +223,39 @@ class Extent:
             round_points(self.bottom + down),
             self.lines,
             self.leading,
+            self.node,
         )
+
+
+@dataclass(frozen=True)
+class Link:
+    """An `xref` of type `outline`, which some outline entry must claim.
+
+    Its target may be an entry a later page holds, so whether one claims it
+    is known only once the document is: doc/printout.md#xref.
+    It is carried with its band until the band reaches the page,
+    since an xref nothing places has nothing to find.
+
+    Attributes:
+        target: The name it targets.
+        path: The node, for the error that names it.
+        mark: The path of its mark among the band's, as a deferral's,
+            which is what decides the half of a split that carries it.
+
+    """
+
+    target: str
+    path: NodePath
+    mark: tuple[int, ...]
+
+    def at(self, mark: tuple[int, ...]) -> Link:
+        """Return this link with its mark at another path.
+
+        Args:
+            mark: The new path.
+
+        """
+        return replace(self, mark=mark)
 
 
 @dataclass(frozen=True)
@@ -224,6 +268,10 @@ class Measurement:
         extents: Each mark's span, in the same order, for splitting.
         deferred: Its deferred elements, in document order,
             each with the path of its placeholder's mark among ``marks``.
+        outline: Its outline entry, at the band's top-left corner,
+            where one of its `outline` nodes was selected.
+        links: Its xrefs to outline entries, in document order.
+        band: The band's node.
 
     """
 
@@ -231,6 +279,9 @@ class Measurement:
     marks: tuple[Mark, ...] = ()
     extents: tuple[Extent, ...] = ()
     deferred: tuple[Deferral, ...] = ()
+    outline: OutlineMark | None = None
+    links: tuple[Link, ...] = ()
+    band: NodePath | None = None
 
 
 @dataclass
@@ -490,7 +541,6 @@ class Measurer:
 
         Raises:
             BuildError: An expression would not evaluate.
-            Unsupported: The band asks for work a later milestone brings.
 
         """
         names = self.names(frame, context)
@@ -500,7 +550,6 @@ class Measurer:
             else condition(section.printwhen, names, section.path, context, "printwhen")
         ):
             return None
-        self.refuse_unsupported(section)
         outer = self.outer(
             tuple(style for scope in styles for style in scope), names, context
         )
@@ -514,8 +563,86 @@ class Measurer:
             extent(placed, mark) for placed, mark in zip(placements, marks, strict=True)
         )
         return Measurement(
-            round_points(height), marks, extents, tuple(deferrals(placements))
+            round_points(height),
+            marks,
+            extents,
+            tuple(deferrals(placements)),
+            self.outline(section.outlines, names, context),
+            tuple(links(placements)),
+            section.path,
         )
+
+    def outline(
+        self,
+        entries: tuple[Outline, ...],
+        names: dict[str, Any],
+        context: Context,
+    ) -> OutlineMark | None:
+        """Return a band's outline entry, or ``None`` where none is selected.
+
+        doc/template.md#ordering-rules: a section's `outline` nodes are
+        alternatives, and the first whose ``when`` holds is the entry.
+        Its ``title`` and ``name`` reach the printout as text, converted as
+        a `field`'s ``expr`` is under the default ``format`` of ``%s``, and
+        an empty name is no name.  The entry sits at the band's own origin,
+        and is translated with the band.
+
+        Args:
+            entries: The section's `outline` nodes, in document order.
+            names: The environment their expressions are evaluated in.
+            context: The report as it stands.
+
+        Raises:
+            BuildError: An expression would not evaluate or convert.
+
+        """
+        for entry in entries:
+            if not condition(entry.when, names, entry.path, context, "when"):
+                continue
+            assert entry.title is not None
+            title = self.as_text(entry, "title", entry.title, names, context)
+            name = None
+            if entry.name is not None:
+                name = self.as_text(entry, "name", entry.name, names, context) or None
+            return OutlineMark(
+                Box(0.0, 0.0, 0.0, 0.0), title, entry.level, name, entry.closed
+            )
+        return None
+
+    def as_text(
+        self,
+        entry: Outline,
+        prop: str,
+        expression: Any,
+        names: dict[str, Any],
+        context: Context,
+    ) -> str:
+        """Return what an outline entry's expression says, as text.
+
+        Args:
+            entry: The node.
+            prop: ``title`` or ``name``.
+            expression: The compiled expression.
+            names: The environment to evaluate it in.
+            context: The report as it stands.
+
+        Raises:
+            BuildError: It would not evaluate, or ``%s`` does not take it.
+
+        """
+        value = evaluate(expression, names, entry.path, context, prop)
+        try:
+            return apply_format("%s", value)
+        except Exception as refused:
+            raise BuildError(
+                str(refused),
+                Location(
+                    file=self.file,
+                    path=entry.path,
+                    prop=prop,
+                    record=context.record_index,
+                ),
+            ) from None
 
     def outer(
         self,
@@ -634,7 +761,6 @@ class Measurer:
             outer: The band's part of the `style` walk, which its own extends.
 
         """
-        self.refuse_unsupported_element(element)
         placed = (
             self.xref(element, width, context, names, outer)
             if isinstance(element, Xref)
@@ -1499,39 +1625,6 @@ class Measurer:
         self.shared.reported.add(key)
         self.shared.warnings.append(missing_glyph(font, character, str(path)))
 
-    def refuse_unsupported(self, section: Section) -> None:
-        """Refuse a band that asks for work a later milestone brings.
-
-        Args:
-            section: The band.
-
-        Raises:
-            Unsupported: It carries one of them.
-
-        """
-        where = Location(file=self.file, path=section.path)
-        if section.outlines:
-            raise Unsupported("an outline entry arrives in M13", where)
-
-    def refuse_unsupported_element(self, element: Element | Xref) -> None:
-        """Refuse an element that asks for work a later milestone brings.
-
-        Every body element is drawn; what is left is an xref
-        to an outline entry, which needs the outline.
-
-        Args:
-            element: The node.
-
-        Raises:
-            Unsupported: It is one of them.
-
-        """
-        if isinstance(element, Xref) and element.kind == "outline":
-            raise Unsupported(
-                "an xref to an outline entry needs the outline, which arrives in M13",
-                Location(file=self.file, path=element.path, prop="type"),
-            )
-
 
 def deferrals(
     placements: list[Placement], within: tuple[int, ...] = ()
@@ -1553,6 +1646,28 @@ def deferrals(
             yield placed.deferral.at(path)
         if isinstance(placed.element, Xref):
             yield from deferrals(placed.children, path)
+
+
+def links(
+    placements: list[Placement],
+    within: tuple[int, ...] = (),
+) -> Iterator[Link]:
+    """Yield the xrefs to outline entries among these, in document order.
+
+    Each carries the path of its mark, as a deferral does.
+
+    Args:
+        placements: A container's elements, settled.
+        within: The path of the container's own mark, for an xref's.
+
+    """
+    for index, placed in enumerate(placements):
+        path = (*within, index)
+        element = placed.element
+        if isinstance(element, Xref):
+            if element.kind == "outline":
+                yield Link(placed.target, element.path, path)
+            yield from links(placed.children, path)
 
 
 def described(field: Field | Barcode) -> str:
@@ -1580,11 +1695,13 @@ def extent(placed: Placement, mark: Mark) -> Extent:
 
     """
     box = mark.box
+    node = placed.element.path
     if isinstance(mark, XrefMark):
         tops = [box.y, *(one.box.y for one in mark.marks)]
         return Extent(
             round_points(min(tops)),
             round_points(max(box.bottom, placed.top + placed.reach)),
+            node=node,
         )
     # A deferred field's lines are its placeholder's, replaced when its
     # scope ends, so a cut between them would divide lines that are not the
@@ -1595,8 +1712,10 @@ def extent(placed: Placement, mark: Mark) -> Extent:
         and placed.deferral is None
         and isinstance(mark, Text)
     ):
-        return Extent(box.y, round_points(box.bottom), len(mark.lines), mark.leading)
-    return Extent(box.y, round_points(box.bottom))
+        return Extent(
+            box.y, round_points(box.bottom), len(mark.lines), mark.leading, node
+        )
+    return Extent(box.y, round_points(box.bottom), node=node)
 
 
 def drawn_whole(element: Element | Xref) -> bool:

@@ -21,13 +21,19 @@ from typing import Any
 import pytest
 
 from sr import kdl
+from sr.units import round_points
 
 ROOT = Path(__file__).resolve().parents[2]
 PROBES = ROOT / "tests" / "differential" / "probes" / "values"
 
 
 def rectangles(name: str) -> tuple[kdl.Document, tuple[kdl.Node, ...]]:
-    """Return a probe's document and the rectangles in its detail band."""
+    """Return a probe's document and the rectangles in its detail band.
+
+    A rectangle inside an xref follows the band's own, as the
+    one in `dimensions` does: it is the last thing in the band.
+
+    """
     doc = kdl.read(PROBES / f"{name}.kdl")
     report = doc.only_root("report")
     assert report is not None
@@ -35,14 +41,29 @@ def rectangles(name: str) -> tuple[kdl.Document, tuple[kdl.Node, ...]]:
     assert layout is not None
     detail = layout.child("detail")
     assert detail is not None
-    return doc, detail.each("rectangle")
+    inside = tuple(
+        one for xref in detail.each("xref") for one in xref.each("rectangle")
+    )
+    return doc, (*detail.each("rectangle"), *inside)
 
 
-def marks(name: str) -> list[dict[str, Any]]:
-    """Return the marks on the one page of a probe's recorded answer."""
+def marks(name: str) -> list[tuple[dict[str, Any], float]]:
+    """Return the marks on the one page of a probe's recorded answer.
+
+    Each comes with where its container's left edge is, which is
+    the xref's for a mark inside one and the page's otherwise:
+    a `left` is resolved against its container.
+
+    """
     lines = (PROBES / f"{name}.answer.jsonl").read_text(encoding="utf-8").splitlines()
     page: dict[str, Any] = json.loads(lines[1])
-    return list(page["marks"])
+    found: list[tuple[dict[str, Any], float]] = []
+    for mark in page["marks"]:
+        if mark["kind"] == "xref":
+            found.extend((inner, mark["box"]["x"]) for inner in mark["marks"])
+        else:
+            found.append((mark, 0.0))
+    return found
 
 
 def test_the_dimension_probe_is_read_without_complaint() -> None:
@@ -54,8 +75,9 @@ def test_the_dimension_probe_is_read_without_complaint() -> None:
 def test_every_dimension_parses_to_the_coordinate_the_reference_placed() -> None:
     doc, drawn = rectangles("dimensions")
     placed = marks("dimensions")
-    for node, mark in zip(drawn, placed, strict=True):
-        assert node.dimension("left") == mark["box"]["x"], node.raw("left")
+    for node, (mark, edge) in zip(drawn, placed, strict=True):
+        left = round_points(mark["box"]["x"] - edge)
+        assert node.dimension("left") == left, node.raw("left")
     assert not doc.diagnostics
 
 
@@ -68,7 +90,7 @@ def test_every_dimension_parses_to_the_stroke_width_it_was_given() -> None:
     """
     doc, drawn = rectangles("dimensions")
     placed = marks("dimensions")
-    for node, mark in zip(drawn, placed, strict=True):
+    for node, (mark, _) in zip(drawn, placed, strict=True):
         assert node.dimension("width") == mark["width"], node.raw("width")
     assert not doc.diagnostics
 
@@ -77,7 +99,7 @@ def test_every_colour_parses_to_the_stroke_the_reference_drew() -> None:
     doc, drawn = rectangles("colors")
     placed = marks("colors")
     assert len(drawn) == len(placed)
-    for node, mark in zip(drawn, placed, strict=True):
+    for node, (mark, _) in zip(drawn, placed, strict=True):
         style = node.child("style")
         assert style is not None
         assert style.color("color") == mark["stroke"], style.raw("color")

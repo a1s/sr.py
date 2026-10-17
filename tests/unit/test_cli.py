@@ -12,6 +12,7 @@ import pytest
 
 from sr import meta
 from sr.cli import COMMANDS, PARTIAL, PLANNED, as_written, main
+from sr.printout.inspect import read_printout
 
 ROOT = Path(__file__).resolve().parents[2]
 SAKILA = ROOT / "example" / "sakila" / "sakila.kdl"
@@ -691,18 +692,71 @@ def test_an_extension_that_names_no_format_is_a_usage_error(tmp_path: Path) -> N
 
 
 def test_a_format_this_engine_cannot_write_yet_says_so(tmp_path: Path) -> None:
-    for name in ("out.pdf", "out.cbor"):
-        code, _ = run(
+    code = run(
+        "build",
+        "-t",
+        str(MINIMAL),
+        "-d",
+        str(FILMS),
+        "-o",
+        str(tmp_path / "out.pdf"),
+        *REPRODUCIBLE,
+    )[0]
+    assert code == 1
+
+
+def test_build_writes_cbor_holding_the_records_ndjson_does(tmp_path: Path) -> None:
+    """doc/printout.md#cbor: the same objects, in the same order."""
+    _, ndjson = build_minimal(tmp_path)
+    cbor = tmp_path / "out.srp.cbor"
+    code = run(
+        "build",
+        "-t",
+        str(MINIMAL),
+        "-d",
+        str(FILMS),
+        "-o",
+        str(cbor),
+        *REPRODUCIBLE,
+    )[0]
+    assert code == 0
+    assert read_printout(cbor) == read_printout(ndjson)
+    assert cbor.read_bytes()[:3] == bytes.fromhex("aa6273"), "a map of 10, then `sr`"
+
+
+def test_build_writes_cbor_to_standard_output_as_bytes(tmp_path: Path) -> None:
+    written = tmp_path / "out.srp.cbor"
+    run(
+        "build", "-t", str(MINIMAL), "-d", str(FILMS), "-o", str(written), *REPRODUCIBLE
+    )
+    raw = io.BytesIO()
+    out = io.TextIOWrapper(raw, encoding="utf-8")
+    code = main(
+        [
             "build",
             "-t",
             str(MINIMAL),
             "-d",
             str(FILMS),
             "-o",
-            str(tmp_path / name),
+            "-",
+            "--format",
+            "cbor",
             *REPRODUCIBLE,
-        )
-        assert code == 1
+        ],
+        out,
+    )
+    out.flush()
+    assert code == 0
+    standard = read_cbor_bytes(raw.getvalue(), tmp_path)
+    assert standard[1:] == read_printout(written)[1:]
+
+
+def read_cbor_bytes(data: bytes, tmp_path: Path) -> list[object]:
+    """Return the records some CBOR bytes hold, by way of a file."""
+    path = tmp_path / "piped.srp.cbor"
+    path.write_bytes(data)
+    return read_printout(path)
 
 
 def test_build_needs_a_template_and_an_output(tmp_path: Path) -> None:
@@ -789,6 +843,91 @@ def test_a_range_that_is_not_one_fails(tmp_path: Path) -> None:
 
 def test_inspect_needs_one_printout() -> None:
     assert run("inspect")[0] == 2
+
+
+def test_inspect_reads_cbor_as_it_reads_ndjson(tmp_path: Path) -> None:
+    _, ndjson = build_minimal(tmp_path)
+    cbor = tmp_path / "out.srp.cbor"
+    run("build", "-t", str(MINIMAL), "-d", str(FILMS), "-o", str(cbor), *REPRODUCIBLE)
+    code, from_cbor = run("inspect", str(cbor))
+    assert code == 0
+    _, from_ndjson = run("inspect", str(ndjson))
+    assert from_cbor.splitlines()[1:] == from_ndjson.splitlines()[1:]
+
+
+def test_inspect_says_which_invariants_a_printout_breaks(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """doc/cli.md#sr-inspect: after the dump, on standard error, and exit 1."""
+    _, out = build_minimal(tmp_path)
+    header, page = out.read_text(encoding="utf-8").splitlines()
+    broken = tmp_path / "broken.srp.jsonl"
+    broken.write_text(
+        header.replace('"pages":1', '"pages":2')
+        + "\n"
+        + page.replace('"font":"body"', '"font":"nowhere"', 1)
+        + "\n",
+        encoding="utf-8",
+    )
+    capsys.readouterr()
+    code, said = run("inspect", str(broken))
+    assert code == 1
+    assert '"ACADEMY DINOSAUR"' in said, "the dump is still written"
+    errors = capsys.readouterr().err.splitlines()
+    assert errors == [
+        "invariant: the header counts 2 pages, and 1 page lines follow",
+        'invariant: page 1, mark 1: its font "nowhere" is not in'
+        " the header's font table",
+        "sr: " + broken.as_posix() + ": 2 invariants broken",
+    ]
+
+
+def test_inspect_dumps_an_outline_entry_at_its_point(tmp_path: Path) -> None:
+    """doc/cli.md#sr-inspect quotes what a template wrote as text."""
+    template = tmp_path / "outline.kdl"
+    face = (FONTS / "Go-Regular.ttf").as_posix()
+    template.write_text(
+        'report name="Outline" {\n'
+        f'  font "body" file="{face}" size=5\n'
+        "  layout width=100 height=60 leftmargin=5 rightmargin=5 topmargin=5"
+        " bottommargin=5 {\n"
+        '    style font="body" color="black"\n'
+        "    title height=6 {\n"
+        "      outline title=\"'Top'\" name=\"'top'\" closed=#true\n"
+        "    }\n"
+        "    detail height=10 {\n"
+        '      xref type="outline" target="\'top\'" caption="\'Back up\'"'
+        " left=0 top=0 width=20 height=6\n"
+        "    }\n"
+        "  }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    rows = tmp_path / "rows.jsonl"
+    rows.write_text('{"n":1}\n', encoding="utf-8")
+    out = tmp_path / "outline.srp.jsonl"
+    code, _ = run(
+        "build", "-t", str(template), "-d", str(rows), "-o", str(out), *REPRODUCIBLE
+    )
+    assert code == 0
+    code, said = run("inspect", str(out))
+    assert code == 0
+    lines = [one.strip() for one in said.splitlines()]
+    assert 'outline  at 5,5  "Top"  level 1  name "top"  closed' in lines
+    assert 'xref  box 5,11 20x6  outline  "top"  caption "Back up"' in lines, "\n".join(
+        lines
+    )
+
+
+def test_inspect_judges_the_whole_printout_whatever_it_dumps(tmp_path: Path) -> None:
+    _, out = build_minimal(tmp_path)
+    header, page = out.read_text(encoding="utf-8").splitlines()
+    broken = tmp_path / "broken.srp.jsonl"
+    broken.write_text(
+        header + "\n" + page.replace('"lines":["Film title"]', '"lines":[]') + "\n",
+        encoding="utf-8",
+    )
+    assert run("inspect", str(broken), "--summary")[0] == 1
 
 
 def test_a_file_that_is_not_a_printout_fails(tmp_path: Path) -> None:

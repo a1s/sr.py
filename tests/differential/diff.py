@@ -10,14 +10,21 @@ mark inside it, then the fields of that mark and both spellings of each.
 A one-point disagreement in a band height is meant to read as the mark
 it moved, not as a page that differs.
 
+A CBOR printout holds the same records, so it is decoded and reported
+the same way.  Where the records are equal and the bytes are not,
+the difference is in the encoding, and the bytes around it are shown.
+
 """
 
 from __future__ import annotations
 
 import difflib
+import io
 import json
 from dataclasses import dataclass
 from typing import Any
+
+import cbor2
 
 __all__ = ["Comparison", "compare_printouts", "first_difference"]
 
@@ -89,6 +96,34 @@ def parse_ndjson(data: bytes) -> list[Any] | None:
         except json.JSONDecodeError:
             return None
     return records
+
+
+def parse_cbor(data: bytes) -> list[Any] | None:
+    """Return one value per data item of a CBOR sequence, None when it is not one.
+
+    Returning ``None`` is how a truncated printout falls back
+    to the byte-level report.
+
+    """
+    stream = io.BytesIO(data)
+    records: list[Any] = []
+    try:
+        while stream.tell() < len(data):
+            records.append(cbor2.load(stream))
+    except (cbor2.CBORDecodeError, ValueError, EOFError):
+        return None
+    return records
+
+
+def parse_records(data: bytes) -> list[Any] | None:
+    """Return a printout's records in whichever encoding it is, or None.
+
+    A CBOR printout opens with a map's initial byte, which no UTF-8
+    text does, so NDJSON is tried first and fails at once on one.
+
+    """
+    records = parse_ndjson(data)
+    return records if records is not None else parse_cbor(data)
 
 
 def at(values: list[Any], index: int) -> Any:
@@ -376,13 +411,13 @@ def compare_printouts(
         f"  {left_name}: {len(left)} bytes, {right_name}: {len(right)} bytes, "
         f"first difference at byte {offset}"
     )
-    left_records = parse_ndjson(left)
-    right_records = parse_ndjson(right)
-    if left_records is None or right_records is None:
+    left_records = parse_records(left)
+    right_records = parse_records(right)
+    if left_records is not None and right_records is not None:
+        lines += structural_report(left_records, right_records, left_name, right_name)
+    if left_records is None or right_records is None or left_records == right_records:
         lines.append(f"  {left_name}:")
         lines.append("  " + hexdump_window(left, offset))
         lines.append(f"  {right_name}:")
         lines.append("  " + hexdump_window(right, offset))
-    else:
-        lines += structural_report(left_records, right_records, left_name, right_name)
     return Comparison(False, "\n".join(lines))

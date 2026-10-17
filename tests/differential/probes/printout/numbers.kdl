@@ -12,10 +12,13 @@
 // - **No exponent notation**, at either end of the range a coordinate can reach.
 //   0.001 is the smallest non-zero magnitude a rounded length has, and languages
 //   that switch to exponents do it near there.
+//
+// The page is 130000pt wide so that the field at 123456.789 lies on it:
+// a mark outside the printable area is an overflow by doc/layout.md#errors.
 
 report name="printout/numbers" {
   font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
-  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+  layout width=130000 height="297mm" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
     style font="body" color="black"
     detail height=120 {
       field text="q" left=72 top=0 width=100 height=12         // -> 72 and 100, with no .0 on either

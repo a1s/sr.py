@@ -27,9 +27,7 @@ are all consequences of that separation.
 What is here is the whole of pagination: frames and columns, the four
 branches of placing a band, splitting, `eject` nodes and the eject
 sequence, groups, keep-together, and balancing, and deferred evaluation
-on top of it, every body element, and subreports.  Outline entries
-inside a band are not, and raise :class:`~sr.errors.Unsupported`
-naming the milestone that brings them.
+on top of it, every body element, outline entries, and subreports.
 
 """
 

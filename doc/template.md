@@ -1516,7 +1516,9 @@ Plus geometry and body-element children (`field`, `line`, `rectangle`, `image`,
 `barcode`, and nested `xref`).
 
 `type="url"` links to the expression's string result.
-`type="outline"` links to an `outline` whose `name` matches.
+`type="outline"` links to an `outline` whose `name` matches,
+on any page of the document, and one that no entry carries
+when the document ends is an [error](layout.md#errors).
 `target` and `caption` must each evaluate to a string;
 anything else is an error rather than a value converted to text.
 
@@ -1551,6 +1553,16 @@ the entry collapsed.
 A section emits at most one outline entry per print. Where a section has several
 `outline` nodes they are alternatives, resolved first-win by `when` — see
 [ordering](#ordering-rules).
+
+`title` and `name` are evaluated when the band is measured,
+as its elements' expressions are, and converted to text as a `field`'s
+`expr` is with no `format`: `title="ITEM_NUMBER"` is the record's number.
+A `name` that comes out empty gives the entry no name.
+`level` counts from 1, the outermost; a `level` below 1 is a
+[validation](#validation) error. Levels need not follow one another
+without a gap: the printout writes each entry at its depth in the tree,
+as [printout.md](printout.md#outline) describes. Where the entry sits,
+and what it points at, is there too.
 
 ### `subreport`
 
@@ -1978,6 +1990,10 @@ Validation runs once, at load, before any data is read. It checks:
   nor are `VERTICAL_POSITION`, `VERTICAL_SPACE`, and `FINAL` itself;
   see [`FINAL`](expressions.md#final).
 - Every `xref type="outline"` has a reachable target `outline name=`.
+  Both are expressions, so this checks a target that is a string literal
+  against the names that are; a target computed from the data is held to
+  the document when it ends, [as printout.md says](printout.md#xref).
+- Every `outline` `level` is at least 1.
 - No `width`, `height`, `maxwidth`, or `maxheight` is negative, on an element,
   an `xref`, or a section, and no stroke `width` on a `line` or a `rectangle`.
   A negative `right` or `bottom` is legal; see [geometry](#geometry).

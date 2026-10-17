@@ -39,7 +39,7 @@ Two encodings carry the same data model:
   The first line is the [header](#header-line); every following line is a
   [page](#page-lines).
 - **CBOR** (`.srp.cbor`): the same objects as a CBOR sequence, in the same order.
-  Smaller, for large printouts.
+  Smaller, for large printouts. Its spelling is [below](#cbor).
 
 The in-memory structure is the primary artifact — the engine hands it to a renderer
 directly, and serializes only when asked. Serializing is not purely a re-encoding:
@@ -101,7 +101,38 @@ number format buys nothing if the keys around it float.
 
 The two tables whose keys are data rather than fields — [`fonts`](#fonts) and
 [`data`](#data) — are sorted by name instead, and say so where they are
-defined.
+defined. So are `groupRuns` and `groupKeys`, whose keys are group names.
+
+### CBOR
+
+The same records as NDJSON, in the same order, one data item each.
+The stream is a CBOR sequence, as
+[RFC 8742](https://www.rfc-editor.org/rfc/rfc8742) defines one:
+nothing frames it, nothing stands between two items,
+and no item carries a tag, the self-describing one included.
+What a CBOR encoder would choose for itself is fixed here,
+for the reason the JSON spelling is.
+
+- **Maps and arrays have a definite length**, and a map writes its keys
+  in the order the record's NDJSON does.
+- **A string is a text string**, UTF-8 with a definite length.
+  CBOR has no escape for a lone surrogate,
+  so where NDJSON writes `\udcff` CBOR writes U+FFFD.
+  Only a path brings one, and in CBOR that path no longer finds its file;
+  NDJSON is the encoding that keeps it.
+- **A count is an integer**, in the shortest of CBOR's integer forms.
+  The counts are `sr`, `pages`, the values of `groupRuns` and `groupKeys`,
+  a font's `size` and `resolvedIndex`, a page's `number`,
+  a warning's `record`, an outline entry's `level`,
+  and every run in `stripes` and `rows`.
+- **Every other number is a length, and a length is a double**,
+  the eight-byte float after the initial byte `0xfb`, whole or not:
+  `200` is `fb 40 69 00 00 00 00 00 00`. A negative zero is written
+  as a positive one, as NDJSON writes it `0`.
+- **Booleans are CBOR's `true` and `false`, and nothing is `null`**:
+  an absent field is left out, as in NDJSON.
+- **A `data` entry's `content` is the same base64 text** it is in NDJSON,
+  not a byte string. The objects are the same objects.
 
 ### Paths
 
@@ -664,6 +695,36 @@ An outline entry has a point rather than a box — it names a scroll position.
 `name` is present only when some `xref` targets it. Entries appear in the order
 they must appear in the outline tree; `level` gives the nesting.
 
+An entry is a mark of the band whose `outline` node selected it,
+and it is written after every other mark of that band.
+**Its point is the band's top-left corner**: the left edge of the frame
+the band went in, which is a column's in a column, and the band's top edge.
+It moves with its band from then on, as the band's other marks do:
+when a [balanced](layout.md#balanced-columns) column takes the band,
+and when the band [splits](layout.md#band-splitting), where it goes
+with the head. It takes no part in where a band may be cut.
+
+`title` and `name` are text, converted from what their expressions
+yield as a `field`'s `expr` is under the default
+[`format`](expressions.md#formatting) of `%s`, so a number is its digits
+and `None` is `None`. A name that comes out empty is no name.
+Several entries may carry one name, and an `xref` that targets it
+goes to the first of them in the document.
+
+**`level` is written as the entry's depth in the outline tree**,
+which may not be the level its template declared.
+An entry's parent is the nearest entry before it, in the document,
+whose declared level is lower; its depth is one more than its parent's,
+or 1 where it has none. Levels a template declares without a gap
+are written as they are, and the [tenth invariant](#invariants) holds
+even where a template skips a level, or where the entry that would have
+been an entry's parent is on a band that did not print: an entry
+declared at 2 with nothing above it is written at 1, and so is
+the next one at 2. Declared 1, 4, 3, the second and the third are
+both the first one's children, written 1, 2, 2. A reader of this
+engine's printouts therefore meets no gap, and builds the tree
+from the levels as they are written.
+
 ### `xref`
 
 ```json
@@ -680,6 +741,14 @@ they must appear in the outline tree; `level` gives the nesting.
 `type` is `url` or `outline`; for `outline`, `target` matches an outline mark's
 `name`. `caption` is optional hover text.
 
+The entry an `outline` xref targets may be on any page, before the xref
+or after it, so whether one exists is known when the document ends.
+**One that no entry in the document carries is a build error**,
+naming the xref and the record its band was built for: the printout
+would break the [fifth invariant](#invariants), and a renderer
+[refuses](render.md#errors) such an xref. A target that is a constant
+is caught sooner, when the template [validates](template.md#validation).
+
 Nested `marks` use **page coordinates**, not coordinates relative to the xref box,
 so a renderer can flatten them recursively and draw in one pass. The xref box is
 purely a hit region.
@@ -688,6 +757,12 @@ purely a hit region.
 
 A valid printout satisfies all of these. They are asserted on every printout
 produced in the test suite.
+
+The engine checks them before it hands a printout out, and a printout
+that breaks one is a failed build rather than a document: a fault
+in the engine is not the template's to discover later. `sr inspect`
+[checks them](cli.md#sr-inspect) on whatever printout it reads,
+whichever engine wrote it.
 
 1. `sr` is a version the reader understands.
 2. The number of page lines equals the header's `pages`.
@@ -699,14 +774,18 @@ produced in the test suite.
 7. Every mark lies within its page's printable area — inside the margins — to
    within the 3-decimal rounding tolerance, unless the header carries a warning of
    kind `overflow`. A negative `right` or `bottom` in the template is what usually
-   produces one; see [errors](layout.md#errors).
-8. Every `text` mark has at least one line, and `lines` count times `leading` does
-   not exceed the box height by more than the rounding tolerance.
+   produces one; see [errors](layout.md#errors). A mark's box is what lies
+   there, and an outline entry's point; an xref's nested marks lie there too.
+   The page's own margins are the ones that count, where it overrides
+   the header's.
+8. Every `text` mark has at least one line, and `lines` count times `leading`
+   does not exceed the box height by more than the rounding tolerance.
 9. `stripes` sums, times `module`, equal the box extent along the coding
    direction, within tolerance. For a 2-D symbol every row of `rows` sums
    alike, that sum times `module` equals the extent along the coding
    direction, and the row count times `module` the extent across it.
-10. Outline `level` never jumps by more than one from the previous entry.
+10. Outline `level` never jumps by more than one from the previous entry,
+    and the first entry's is 1.
 11. Every `image` mark carries exactly one of `data` and `file`.
 12. Every `barcode` mark carries an `ink` colour.
 
