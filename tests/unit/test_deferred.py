@@ -285,14 +285,13 @@ def test_a_group_resolves_after_its_summary_against_its_last_record(
 def test_a_column_ends_after_its_footer_and_before_the_advance(
     tmp_path: Path,
 ) -> None:
-    columns = (
-        "    columns count=2 gap=10 {\n"
-        + band(
-            "footer", deferred("'%d rows' % FINAL.COLUMN_COUNT", "column"), "height=6"
-        )
-        + "    }\n"
-    )
-    printout = built(tmp_path, columns + ROW, rows_of(6))
+    # Each field as wide as a column, 90pt, so the second column's
+    # stays inside the page's margins.
+    narrow = "left=0 top=0 width=90 height=6"
+    footer = deferred("'%d rows' % FINAL.COLUMN_COUNT", "column", narrow)
+    columns = "    columns count=2 gap=10 {\n" + band("footer", footer, "height=6")
+    row = band("detail", said("'r%d' % ITEM_NUMBER", narrow), "height=20")
+    printout = built(tmp_path, columns + "    }\n" + row, rows_of(6))
     assert pages(printout) == [["r1", "r2", "r3", "r4", "4 rows", "r5", "r6", "2 rows"]]
 
 

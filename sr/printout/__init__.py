@@ -1,10 +1,11 @@
 """The printout: the document a renderer consumes.
 
-Three modules, layered downward and importing in that order:
+Four modules, layered downward and importing in that order:
 
 =============  ============================================================
 ``model``      the header, the pages, and the marks on them
-``write``      the NDJSON encoding, byte for byte
+``write``      the NDJSON and CBOR encodings, byte for byte
+``verify``     the twelve invariants every printout satisfies
 ``inspect``    a printout read back and dumped as text
 =============  ============================================================
 
@@ -24,6 +25,7 @@ from sr.printout.model import (
     FontEntry,
     Line,
     Mark,
+    Outline,
     Page,
     Paper,
     Printout,
@@ -31,7 +33,7 @@ from sr.printout.model import (
     Report,
     Text,
 )
-from sr.printout.write import dumps, number, quoted, write_jsonl
+from sr.printout.write import dumps, number, quoted, write_cbor, write_jsonl
 
 __all__ = [
     "VERSION",
@@ -39,6 +41,7 @@ __all__ = [
     "FontEntry",
     "Line",
     "Mark",
+    "Outline",
     "Page",
     "Paper",
     "Printout",
@@ -48,5 +51,6 @@ __all__ = [
     "dumps",
     "number",
     "quoted",
+    "write_cbor",
     "write_jsonl",
 ]

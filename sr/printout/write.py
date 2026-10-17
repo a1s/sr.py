@@ -4,6 +4,14 @@ doc/printout.md#encoding is the contract, and it is a byte-level one:
 two engines are compared on the bytes, so everything a JSON writer
 is usually free to choose is fixed here instead.
 
+Both encodings are written from one tree of objects, built by the
+``*_object`` helpers below, so the two cannot disagree about what
+a printout holds.  The tree is typed as the format is: a length is
+a ``float`` and a count an ``int``, whatever the model holds them as.
+NDJSON spells the two alike, and CBOR does not, which is the reason:
+doc/printout.md#cbor writes a length as a double and a count as an
+integer.
+
 * **Key order is the order doc/printout.md lists the fields.**
   Each ``ordered`` helper below writes one object, and the order
   it writes its keys in is the order of that section's table.
@@ -30,9 +38,12 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 from collections.abc import Iterator, Mapping
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, BinaryIO, TextIO
+
+import cbor2
 
 from sr.errors import BuildWarning
 from sr.printout.model import (
@@ -44,6 +55,7 @@ from sr.printout.model import (
     Image,
     Line,
     Mark,
+    Outline,
     Page,
     Paper,
     Printout,
@@ -55,10 +67,13 @@ from sr.printout.model import (
 __all__ = [
     "dumps",
     "header_object",
+    "length",
     "number",
     "page_object",
     "quoted",
+    "records",
     "relative_to",
+    "write_cbor",
     "write_jsonl",
 ]
 
@@ -77,6 +92,10 @@ ESCAPED = {
     "\u2028": "\\u2028",
     "\u2029": "\\u2029",
 }
+
+# A code point UTF-8 has no encoding for.  Only a path brings one,
+# from a file name that was not valid Unicode.
+LONE_SURROGATE = re.compile("[\ud800-\udfff]")
 
 
 def number(value: float | int) -> str:
@@ -97,6 +116,23 @@ def number(value: float | int) -> str:
     if "." in text:
         text = text.rstrip("0").rstrip(".")
     return text
+
+
+def length(value: float) -> float:
+    """Return a length as the tree holds it: a float, and never ``-0.0``.
+
+    The model holds a length however it was computed, which is now
+    and then an ``int``.  doc/printout.md#cbor writes every length
+    as a double, so the tree turns it into one here; NDJSON spells
+    the two the same either way.  Adding a zero turns a negative zero
+    positive and leaves everything else as it is, since doc/printout.md
+    writes ``-0`` as ``0`` in both encodings.
+
+    Args:
+        value: The length, already rounded to three decimals.
+
+    """
+    return float(value) + 0.0
 
 
 def quoted(text: str) -> str:
@@ -171,12 +207,12 @@ def paper_object(paper: Paper) -> dict[str, Any]:
 
     """
     return {
-        "width": paper.width,
-        "height": paper.height,
-        "leftMargin": paper.left,
-        "rightMargin": paper.right,
-        "topMargin": paper.top,
-        "bottomMargin": paper.bottom,
+        "width": length(paper.width),
+        "height": length(paper.height),
+        "leftMargin": length(paper.left),
+        "rightMargin": length(paper.right),
+        "topMargin": length(paper.top),
+        "bottomMargin": length(paper.bottom),
     }
 
 
@@ -219,7 +255,7 @@ def font_object(entry: FontEntry, base: Path | None) -> dict[str, Any]:
     """
     found: dict[str, Any] = {
         "name": entry.name,
-        "size": entry.size,
+        "size": int(entry.size),
         "bold": entry.bold,
         "italic": entry.italic,
         "underline": entry.underline,
@@ -239,7 +275,7 @@ def font_object(entry: FontEntry, base: Path | None) -> dict[str, Any]:
             else entry.file.as_posix()
         )
     if entry.index:
-        found["resolvedIndex"] = entry.index
+        found["resolvedIndex"] = int(entry.index)
     found["resolvedFace"] = entry.face
     found["resolvedBy"] = entry.step
     return found
@@ -258,12 +294,15 @@ def warning_object(warning: BuildWarning) -> dict[str, Any]:
     if warning.prop is not None:
         found["prop"] = warning.prop
     if warning.record is not None:
-        found["record"] = warning.record
+        found["record"] = int(warning.record)
     found["message"] = warning.message
     return found
 
 
-def data_object(blobs: Mapping[str, bytes | str]) -> dict[str, Any]:
+def data_object(
+    blobs: Mapping[str, bytes | str],
+    contents: bool = True,
+) -> dict[str, Any]:
     """Return the header's `data` table.
 
     Keys are sorted by name, as `fonts` is and for the same reason:
@@ -272,12 +311,17 @@ def data_object(blobs: Mapping[str, bytes | str]) -> dict[str, Any]:
 
     Args:
         blobs: The blobs something in the document refers to.
+        contents: Whether each entry carries its content.
+            Only a record that is written needs it, and
+            encoding it is the one costly part of the header.
 
     """
     found: dict[str, Any] = {}
     for name in sorted(blobs):
         content = blobs[name]
-        if isinstance(content, bytes):
+        if not contents:
+            found[name] = {}
+        elif isinstance(content, bytes):
             found[name] = {
                 "encoding": "base64",
                 "content": base64.b64encode(content).decode("ascii"),
@@ -287,12 +331,17 @@ def data_object(blobs: Mapping[str, bytes | str]) -> dict[str, Any]:
     return found
 
 
-def header_object(printout: Printout, base: Path | None) -> dict[str, Any]:
+def header_object(
+    printout: Printout,
+    base: Path | None,
+    contents: bool = True,
+) -> dict[str, Any]:
     """Return the header line's object.
 
     Args:
         printout: The document.
         base: The directory it is being written to.
+        contents: Whether the `data` table carries its contents.
 
     """
     found: dict[str, Any] = {
@@ -312,7 +361,7 @@ def header_object(printout: Printout, base: Path | None) -> dict[str, Any]:
         font_object(entry, base)
         for entry in sorted(printout.fonts, key=lambda one: one.name)
     ]
-    found["data"] = data_object(printout.data)
+    found["data"] = data_object(printout.data, contents)
     if printout.warnings:
         found["warnings"] = [warning_object(one) for one in printout.warnings]
     return found
@@ -325,7 +374,12 @@ def box_object(box: Box) -> dict[str, Any]:
         box: The rectangle.
 
     """
-    return {"x": box.x, "y": box.y, "width": box.width, "height": box.height}
+    return {
+        "x": length(box.x),
+        "y": length(box.y),
+        "width": length(box.width),
+        "height": length(box.height),
+    }
 
 
 def crop_object(crop: Crop) -> dict[str, Any]:
@@ -335,7 +389,12 @@ def crop_object(crop: Crop) -> dict[str, Any]:
         crop: The retained region, in source pixels.
 
     """
-    return {"x": crop.x, "y": crop.y, "width": crop.width, "height": crop.height}
+    return {
+        "x": length(crop.x),
+        "y": length(crop.y),
+        "width": length(crop.width),
+        "height": length(crop.height),
+    }
 
 
 def mark_object(mark: Mark, base: Path | None = None) -> dict[str, Any]:
@@ -350,31 +409,33 @@ def mark_object(mark: Mark, base: Path | None = None) -> dict[str, Any]:
         TypeError: The mark is of a kind this writer does not know.
 
     """
+    if isinstance(mark, Outline):
+        return outline_object(mark)
     found: dict[str, Any] = {"kind": mark.kind, "box": box_object(mark.box)}
     if isinstance(mark, Text):
         found["font"] = mark.font
         found["color"] = mark.color
         found["align"] = mark.align
-        found["leading"] = mark.leading
+        found["leading"] = length(mark.leading)
         found["lines"] = list(mark.lines)
         if mark.last_line_justified:
             found["lastLineJustified"] = True
         return found
     if isinstance(mark, Line):
-        found["width"] = mark.width
+        found["width"] = length(mark.width)
         found["dash"] = mark.dash
         found["color"] = mark.color
         found["backslant"] = mark.backslant
         return found
     if isinstance(mark, Rectangle):
-        found["width"] = mark.width
+        found["width"] = length(mark.width)
         found["dash"] = mark.dash
         if mark.stroke is not None:
             found["stroke"] = mark.stroke
         if mark.fill is not None:
             found["fill"] = mark.fill
         if mark.radius:
-            found["radius"] = mark.radius
+            found["radius"] = length(mark.radius)
         return found
     if isinstance(mark, Image):
         if mark.data is not None:
@@ -389,15 +450,15 @@ def mark_object(mark: Mark, base: Path | None = None) -> dict[str, Any]:
     if isinstance(mark, Barcode):
         found["type"] = mark.symbology
         found["value"] = mark.value
-        found["module"] = mark.module
+        found["module"] = length(mark.module)
         found["vertical"] = mark.vertical
         found["ink"] = mark.ink
         if mark.paper is not None:
             found["paper"] = mark.paper
         if mark.rows:
-            found["rows"] = [list(row) for row in mark.rows]
+            found["rows"] = [[int(run) for run in row] for row in mark.rows]
         else:
-            found["stripes"] = list(mark.stripes)
+            found["stripes"] = [int(run) for run in mark.stripes]
         return found
     if isinstance(mark, Xref):
         found["type"] = mark.link
@@ -407,6 +468,29 @@ def mark_object(mark: Mark, base: Path | None = None) -> dict[str, Any]:
         found["marks"] = [mark_object(one, base) for one in mark.marks]
         return found
     raise TypeError(f"cannot write a {type(mark).__name__} mark")
+
+
+def outline_object(mark: Outline) -> dict[str, Any]:
+    """Return an outline entry, which has a point rather than a box.
+
+    ``name`` is present only where the build kept it,
+    which is where some `xref` targets it: doc/printout.md#outline.
+
+    Args:
+        mark: The entry.
+
+    """
+    found: dict[str, Any] = {
+        "kind": mark.kind,
+        "title": mark.title,
+        "level": int(mark.level),
+    }
+    if mark.name is not None:
+        found["name"] = mark.name
+    found["closed"] = mark.closed
+    found["x"] = length(mark.box.x)
+    found["y"] = length(mark.box.y)
+    return found
 
 
 def page_object(page: Page, default: Paper, base: Path | None = None) -> dict[str, Any]:
@@ -435,22 +519,45 @@ def page_object(page: Page, default: Paper, base: Path | None = None) -> dict[st
             ("bottomMargin", paper.bottom, default.bottom),
         ):
             if value != standard:
-                found[key] = value
+                found[key] = length(value)
     found["marks"] = [mark_object(mark, base) for mark in page.marks]
     return found
 
 
+def records(
+    printout: Printout,
+    base: Path | None,
+    contents: bool = True,
+) -> Iterator[dict[str, Any]]:
+    """Yield the printout's records as objects, header first.
+
+    This is the tree both encodings write, and the one
+    the [invariants](doc/printout.md#invariants) are checked on.
+    Each page's is made as it is asked for, so a caller
+    that takes them one at a time holds one page's at a time.
+
+    Args:
+        printout: The document.
+        base: The directory it is being written to.
+        contents: Whether the `data` table carries its contents,
+            which a check of the invariants has no use for.
+
+    """
+    yield header_object(printout, base, contents)
+    for page in printout.pages:
+        yield page_object(page, printout.paper, base)
+
+
 def lines_of(printout: Printout, base: Path | None) -> Iterator[str]:
-    """Yield the printout's records, header first.
+    """Yield the printout's records as NDJSON lines, header first.
 
     Args:
         printout: The document.
         base: The directory it is being written to.
 
     """
-    yield dumps(header_object(printout, base))
-    for page in printout.pages:
-        yield dumps(page_object(page, printout.paper, base))
+    for record in records(printout, base):
+        yield dumps(record)
 
 
 def write_jsonl(printout: Printout, out: TextIO, base: Path | None = None) -> None:
@@ -471,3 +578,58 @@ def write_jsonl(printout: Printout, out: TextIO, base: Path | None = None) -> No
     for line in lines_of(printout, base):
         out.write(line)
         out.write("\n")
+
+
+def as_cbor_text(value: Any) -> Any:
+    """Return a record with every string encodable as a CBOR text string.
+
+    A CBOR text string is UTF-8 and has no escapes, so the one thing
+    JSON writes as an escape, a lone surrogate, has no spelling here.
+    doc/printout.md#cbor writes each as U+FFFD instead, which is what
+    the reference writes in either encoding.  The path it came from
+    no longer finds its file; NDJSON is the encoding that keeps it.
+
+    This copies the whole record, so :func:`write_cbor` asks for it
+    only for a record the encoder has refused.
+
+    Args:
+        value: A record, or anything inside one.
+
+    """
+    if isinstance(value, str):
+        return LONE_SURROGATE.sub("\ufffd", value)
+    if isinstance(value, dict):
+        return {as_cbor_text(key): as_cbor_text(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [as_cbor_text(item) for item in value]
+    return value
+
+
+def write_cbor(printout: Printout, out: BinaryIO, base: Path | None = None) -> None:
+    """Write a printout as a CBOR sequence.
+
+    doc/printout.md#cbor: the same records as NDJSON, in the same order,
+    each a definite-length map with its keys in the order NDJSON writes
+    them.  A count is an integer in its shortest form, a length is always
+    a double, and a string is a text string.  Nothing frames the records
+    and nothing tags them, so the stream is RFC 8742's sequence and
+    nothing more.  ``cbor2`` does all of that by default for the types
+    the tree holds, which is why the tree is typed.
+
+    A record holding a lone surrogate is refused by the encoder, and is
+    encoded again with :func:`as_cbor_text`'s replacements.  Only a path
+    brings one, so nearly every record is encoded once and never copied.
+
+    Args:
+        printout: The document.
+        out: Where to write it, opened for bytes.
+        base: The directory the printout is landing in,
+            which its paths are written relative to, as for NDJSON.
+
+    """
+    for record in records(printout, base):
+        try:
+            encoded = cbor2.dumps(record)
+        except UnicodeEncodeError:
+            encoded = cbor2.dumps(as_cbor_text(record))
+        out.write(encoded)

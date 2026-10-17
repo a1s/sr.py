@@ -193,20 +193,20 @@ specification, and `tests/differential/` compares this engine against the
 Go one, byte for byte, over the examples and over a corpus of probes.
 
 The engine is being built a milestone at a time, and what it does not do
-yet it refuses by name: a band it cannot lay out, an element it cannot
-draw and an output format it cannot write each say which milestone brings
-them rather than producing something approximate. `sr.py help <command>`
-lists what a command that works does not reach yet -- today a mark that
-lands outside the printable area is not judged an
-[overflow](doc/layout.md#errors), which is the one row of that table
-neither engine checks. Today it paginates reports of `field`, `line`,
-`rectangle`, `image`, `barcode`, and `xref` elements, with groups, columns,
-band splitting, `eject` nodes, keep-together rules, balanced columns,
-deferred values, and subreports of both kinds, inline and with pages
-of their own, and writes them as NDJSON. Every barcode type
+yet it refuses by name: a command or an output format it does not have
+says which milestone brings it rather than producing something approximate.
+`sr.py help <command>` lists what a command that works does not reach yet,
+which today is PDF. Every node the format has is built: it paginates
+reports of `field`, `line`, `rectangle`, `image`, `barcode`, and `xref`
+elements and outline entries, with groups, columns, band splitting,
+`eject` nodes, keep-together rules, balanced columns, deferred values,
+and subreports of both kinds, inline and with pages of their own,
+and writes them as NDJSON or CBOR. Each printout is held to its own
+[invariants](doc/printout.md#invariants) before it is written, and
+`sr.py inspect` holds any printout it reads to them. Every barcode type
 is encoded here, from the standards, rather than by a library, and
 an image is interpreted only as far as the header that states its size.
-Outline entries and PDF are the milestones after this one.
+PDF is the milestone after this one.
 The cases the differential corpus cannot yet compare are listed,
 with what each waits for, in
 [tests/differential/pending.toml](tests/differential/pending.toml).

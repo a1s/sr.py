@@ -20,7 +20,7 @@ from typing import Any
 import pytest
 
 from sr.api import Options, build
-from sr.errors import BuildError, BuildWarning, Unsupported
+from sr.errors import BuildError, BuildWarning
 from sr.printout.model import Line, Mark, Printout, Rectangle, Text
 from sr.printout.model import Xref as XrefMark
 
@@ -163,7 +163,9 @@ def test_maxheight_clamps_a_height_taken_from_the_band(tmp_path: Path) -> None:
 
 def test_a_negative_offset_reaches_past_the_container(tmp_path: Path) -> None:
     printout = built(
-        tmp_path, '    detail height=20 { field text="A" left=0 right=-20 }'
+        tmp_path,
+        '    detail height=20 { field text="A" left=0 right=-20 }',
+        allow_overflow=True,
     )
     assert marks(printout)[0].box.width == 320
 
@@ -239,6 +241,7 @@ def test_an_anchored_stretch_field_keeps_the_bands_box(tmp_path: Path) -> None:
         tmp_path,
         '    detail { field text="1\\n2\\n3" left=0 width=60 top=14 bottom=0 \\\n'
         '                   stretch=#true valign="bottom" }',
+        allow_overflow=True,
     )
     (text,) = marks(printout)
     assert isinstance(text, Text)
@@ -626,7 +629,8 @@ def test_with_nothing_above_the_gap_runs_to_the_highest_top(
         '      field text="F" left=200 width=40 top=0 height=12 float=#true\n'
         "    }"
     )
-    assert [box[1] for box in boxes(built(tmp_path, body))] == [-5, -1, 10]
+    printout = built(tmp_path, body, allow_overflow=True)
+    assert [box[1] for box in boxes(printout)] == [-5, -1, 10]
 
 
 def test_a_declared_bottom_keeps_a_floating_stretch_field_in_place(
@@ -739,20 +743,6 @@ def test_an_xref_child_reaches_as_far_as_its_own_box(
     _, rule, after = marks(printout)
     assert rule.box.height == 10, "the first maximum sees only the xref"
     assert after.box.y == reached
-
-
-def test_an_xref_to_an_outline_entry_waits_for_the_outline(
-    tmp_path: Path,
-) -> None:
-    """The target is there, on a band that never prints, so the load passes."""
-    with pytest.raises(Unsupported, match="M13"):
-        built(
-            tmp_path,
-            '    title printwhen="False" { outline title="\'Top\'" name="\'top\'" }\n'
-            "    detail height=10 {\n"
-            '      xref type="outline" target="\'top\'" height=5\n'
-            "    }",
-        )
 
 
 def test_an_xrefs_children_are_evaluated_in_document_order(
@@ -995,18 +985,6 @@ def test_a_variable_folds_per_record_and_the_summary_reads_the_total(
     assert said == ["2", "5", "total 5"]
 
 
-# -- what this milestone does not do ----------------------------------
-
-
-def test_what_a_later_milestone_brings_says_so(tmp_path: Path) -> None:
-    with pytest.raises(Unsupported) as refused:
-        built(
-            tmp_path,
-            "    detail height=10 { outline title=\"'Top'\" name=\"'top'\" }",
-        )
-    assert "M13" in str(refused.value)
-
-
 def test_a_band_that_fits_no_frame_is_refused_by_name(tmp_path: Path) -> None:
     with pytest.raises(BuildError) as refused:
         built(tmp_path, "    detail height=900 { rectangle left=0 top=0 width=5 }")
@@ -1201,5 +1179,127 @@ def test_allow_overflow_makes_that_a_warning_and_places_the_band(
     first, second = printout.pages
     assert (len(first.marks), len(second.marks)) == (0, 1)
     kinds = [one.kind for one in printout.warnings]
-    assert kinds == ["overflow"]
+    assert kinds == ["overflow"], "and not again for running past the margin"
     assert printout.warnings[0].record == 0
+
+
+# -- the printable area -----------------------------------------------
+
+
+def test_a_mark_outside_the_printable_area_is_an_overflow(tmp_path: Path) -> None:
+    """doc/layout.md#errors, against the element whose mark it is."""
+    with pytest.raises(BuildError) as refused:
+        built(
+            tmp_path,
+            "    detail height=10 {\n"
+            '      field text="A" left=0 top=0 width=10 height=6\n'
+            "      rectangle left=-3 top=0 width=1 height=5\n"
+            "    }",
+        )
+    said = str(refused.value)
+    assert "report > layout > detail > rectangle, record 0" in said
+    assert "the rectangle's left edge is at -3 pt, past the left margin at 0 pt" in said
+
+
+@pytest.mark.parametrize(
+    ("bands", "said"),
+    [
+        (
+            "    detail height=5 { rectangle left=290 right=-10 top=0 height=5 }",
+            "right edge is at 310 pt",
+        ),
+        (
+            "    detail height=5 { rectangle left=0 top=-2 height=5 }",
+            "top edge is at -2 pt",
+        ),
+    ],
+)
+def test_every_margin_is_judged(tmp_path: Path, bands: str, said: str) -> None:
+    """The bottom one too, but no band reaches past it without overflowing.
+
+    A band is as tall as the lowest mark in it, so a mark below the page's
+    bottom margin is a band that fits no frame, which is reported as that.
+
+    """
+    with pytest.raises(BuildError, match=said):
+        built(tmp_path, bands)
+
+
+def test_a_mark_on_the_margin_within_the_tolerance_lies_inside(
+    tmp_path: Path,
+) -> None:
+    printout = built(
+        tmp_path,
+        "    detail height=10 { rectangle left=-0.001 top=0 height=5 }",
+    )
+    assert marks(printout)[0].box.x == -0.001
+
+
+def test_allowed_it_is_a_warning_once_per_band(tmp_path: Path) -> None:
+    """Two marks outside, in each of two bands: one warning each."""
+    printout = built(
+        tmp_path,
+        "    detail height=10 {\n"
+        "      rectangle left=-3 top=0 width=1 height=5\n"
+        "      rectangle left=0 right=-3 top=0 height=5\n"
+        "    }",
+        data='{"n":1}\n{"n":2}\n',
+        allow_overflow=True,
+    )
+    assert printout.warnings == (
+        BuildWarning(
+            "overflow",
+            "the rectangle's left edge is at -3 pt, past the left margin at 0 pt",
+            node="report > layout > detail > rectangle",
+            record=0,
+        ),
+        BuildWarning(
+            "overflow",
+            "the rectangle's left edge is at -3 pt, past the left margin at 0 pt",
+            node="report > layout > detail > rectangle",
+            record=1,
+        ),
+    )
+
+
+def test_a_mark_inside_an_xref_is_judged_against_its_own_element(
+    tmp_path: Path,
+) -> None:
+    """The xref and its first child lie inside; the field after them does not.
+
+    doc/layout.md#errors names the element the mark came from,
+    which is the child, not the xref that holds it.
+
+    """
+    with pytest.raises(BuildError) as refused:
+        built(
+            tmp_path,
+            "    detail height=10 {\n"
+            '      xref type="url" target="\'u\'" left=0 top=0 width=50 height=10 {\n'
+            "        line left=0 top=0 width=1\n"
+            '        field text="A" left=0 right=-260 top=0 height=6\n'
+            "      }\n"
+            "    }",
+        )
+    said = str(refused.value)
+    assert "report > layout > detail > xref > field, record 0" in said
+    assert "the text's right edge is at 310 pt" in said
+
+
+def test_a_mark_is_judged_where_balancing_leaves_it(tmp_path: Path) -> None:
+    """Placed in the first column it lies inside; moved to the second, it does not.
+
+    Each field reaches 10pt past its band, which is inside the page
+    from the left column and outside it from the right one.  The fill
+    puts all three bands in the left column and balancing moves the third.
+
+    """
+    printout = built(
+        tmp_path,
+        "    columns count=2 gap=0 balance=#true\n"
+        '    detail height=100 { field text="A" left=0 right=-10 top=0 height=6 }',
+        data='{"n":1}\n{"n":2}\n{"n":3}\n',
+        allow_overflow=True,
+    )
+    assert [(one.kind, one.record) for one in printout.warnings] == [("overflow", 2)]
+    assert "right edge is at 310 pt" in printout.warnings[0].message

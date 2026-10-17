@@ -83,8 +83,11 @@ def built(
     return build(template, data, asked).printout
 
 
-def said(expr: str, width: int = 100) -> str:
+def said(expr: str, width: int = 90) -> str:
     """Return a one-line field that shows an expression.
+
+    90pt is a column's width where a layout has two with a gap of 10,
+    so a field in the second column stays inside the page's margins.
 
     Args:
         expr: The expression, with no double quotes in it.

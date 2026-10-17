@@ -1,0 +1,35 @@
+// probes/outline/names.kdl -- which outline entries keep their names.
+//
+// doc/printout.md#outline writes an entry's `name` only where some xref
+// targets it.  The title's entry and the first row's are named `top`
+// and `first`, and only `top` is targeted, by an xref on the summary.
+// Two rows carry one name, `same`, and an xref targets it too, so
+// both keep it: a name need not be unique, and an xref goes to the
+// first entry that carries it.
+//
+// The reference writes every name it is given, so `first` is
+// written there and not here.  Registered under the divergence
+// `outline-names-untargeted`.
+
+report name="outline/names" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=100 height=200 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    title height=6 {
+      outline title="'Top'" name="'top'"
+    }
+    detail height=10 {
+      outline title="'r1'" level=2 name="'first'" when="ITEM_NUMBER == 1"
+      outline title="'r%d' % ITEM_NUMBER" level=2 name="'same'"
+      field expr="'r%d' % ITEM_NUMBER" left=0 top=2 width=30 height=6
+    }
+    summary height=12 {
+      xref type="outline" target="'top'" left=0 top=0 width=20 height=6 {
+        field text="top" left=0 top=0 width=20 height=6
+      }
+      xref type="outline" target="'same'" left=0 top=6 width=20 height=6 {
+        field text="same" left=0 top=0 width=20 height=6
+      }
+    }
+  }
+}

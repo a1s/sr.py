@@ -633,6 +633,13 @@ Given a band template and a context, measurement proceeds:
 
 The emitted mark's box is the content box from step 7, not the declared box.
 
+A band's [outline entry](printout.md#outline) is selected once its
+elements are built: the first of the section's `outline` nodes whose
+`when` holds, if any does. Its `title` and `name` are evaluated then,
+against the names the band's elements saw. The entry is a mark of the band
+at the band's own top-left corner, after the band's other marks, and it
+takes no part in the band's height.
+
 ### The band's height is settled twice
 
 Step 6 reads as one maximum and is two, and the difference shows in every band
@@ -1073,6 +1080,10 @@ The rule is symmetric: a cut whose **head** would be empty is excluded for the s
 reason, since that only relocates a blank strip. A split divides content or it does
 not happen.
 
+A band's outline entry is not content for this rule, nor for the first:
+it is a point at the band's top edge, so no cut falls through it,
+and a head that would hold nothing but the entry is empty.
+
 #### 3. `orphans` and `widows` must hold
 
 At least `orphans` lines remain above the cut and at least `widows` below it, per
@@ -1084,7 +1095,8 @@ blocks like an unsplittable element.
 The greatest legal *y* not exceeding the available space is chosen. The head
 commits: elements wholly above *y* as-is, split fields with their leading lines and
 `lastLineJustified: true` so the renderer does not treat a continued line as a
-paragraph end. Then a column eject, and the tail continues with the remaining
+paragraph end, and the band's outline entry, which points where the band begins.
+Then a column eject, and the tail continues with the remaining
 lines, its elements re-placed from the tail's top.
 
 Non-splittable elements below the cut move to the tail whole.
@@ -1963,6 +1975,7 @@ Each of these names the template node, the record index, and the measured values
 | Band taller than an empty frame, splitting allowed, some cut point exists | split there, giving up every split preference |
 | Band taller than an empty frame, splitting allowed, no cut point exists | **overflow** |
 | A mark lands outside the page's printable area | **overflow** |
+| An `xref type="outline"` whose target no outline entry in the document carries | error, when the document ends |
 | Deferred stretch field whose value is taller than its placeholder | error |
 | Deferred barcode whose symbol is longer than its placeholder's | error |
 | Header and footer reservations together exceed the frame | error |
@@ -2000,3 +2013,29 @@ produces. Such an offset is legal in the template — it means the box reaches p
 its container, which for a container in the middle of the page is perfectly
 ordinary. Overflow is judged on the resulting page coordinates, not on the
 declaration, so only a mark that actually crosses a margin is one.
+
+**It is judged as the page ends**, on the coordinates the marks end up at,
+once [balancing](#balanced-columns) has moved what it moves. A deferred
+value set later stays inside the room its placeholder took, so nothing
+after that moves a mark outward. A mark's box is what is judged,
+an outline entry's point, and every mark an xref holds as well as
+the xref's own box. Each edge is compared as a frame boundary is,
+with the tolerance [added in binary64](#coordinates-and-rounding):
+a left edge `x` lies inside a left margin `m` where `m <= x + 0.001`,
+and a right edge `r` inside the margin's edge `e` where `r <= e + 0.001`,
+`r` being `x + width` rounded to three decimals.
+The top and bottom edges are compared the same way.
+
+**A band is reported once**, for the first of its marks in paint order
+that lies outside, against the element that mark came from and the record
+the band was built for. A mark inside an xref came from one of its
+children, and is reported against that child rather than the xref.
+The message names the edge, where it is, and the margin:
+"the rectangle's left edge is at -3 pt, past the left margin at 0 pt".
+A band placed more than once, a header on every page,
+is judged at every page it is on. A band already reported for fitting
+no frame is not reported a second time: it was placed knowing that it
+runs past its frame, and its warning says so. That is also the only way
+past the bottom margin, since a band is as tall as the lowest of its marks.
+The warnings are raised in the order the bands were placed,
+after any raised while the page was being filled.

@@ -1,0 +1,42 @@
+// probes/outline/levels.kdl -- outline levels with a gap.
+//
+// The printout's tenth invariant has no level more than one deeper than
+// the one before it.  doc/printout.md#outline writes each entry's level
+// as its depth in the tree its declared levels describe: an entry's parent
+// is the nearest entry before it with a lower declared level.
+//
+// - The title does not print, so the first row's entry, declared at 2,
+//   has nothing above it and is written at 1, as is the second row's.
+// - The summary of the first group run declares 1, and the third row,
+//   which follows it at a declared 4, is its child and is written at 2.
+// - The fourth row declares 3, which is not below the third's 4, so it
+//   is the summary's child as well, at 2, and not the third row's.
+//
+// The reference writes every level as declared, 2, 2, 1, 4, 3, which
+// breaks the invariant.  Registered under the divergence
+// `outline-level-gaps`.
+
+report name="outline/levels" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "g" type="int"
+    member "level" type="int"
+  }
+  layout width=100 height=200 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    title height=6 printwhen="False" {
+      outline title="'Top'"
+    }
+    group "G" expr="g" {
+      summary height=6 printwhen="g == 1" {
+        outline title="'summary'" level=1
+      }
+      detail height=10 {
+        outline title="'r%d' % ITEM_NUMBER" level=2 when="level == 2"
+        outline title="'r%d' % ITEM_NUMBER" level=3 when="level == 3"
+        outline title="'r%d' % ITEM_NUMBER" level=4 when="level == 4"
+        field expr="'r%d at %d' % (ITEM_NUMBER, level)" left=0 top=2 width=40 height=6
+      }
+    }
+  }
+}

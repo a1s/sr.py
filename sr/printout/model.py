@@ -18,9 +18,8 @@ Three rules of the format are visible in the shapes here.
   since that is when the destination is known.  :attr:`FontEntry.step`
   is what the writer reads to decide, per doc/printout.md#paths.
 
-The kinds produced so far are :class:`Text`, :class:`Line`,
-:class:`Rectangle`, :class:`Image`, :class:`Barcode`, and :class:`Xref`.
-Outline entries arrive with the element that makes them.
+The seven kinds are :class:`Text`, :class:`Line`, :class:`Rectangle`,
+:class:`Image`, :class:`Barcode`, :class:`Outline`, and :class:`Xref`.
 
 """
 
@@ -41,6 +40,7 @@ __all__ = [
     "Image",
     "Line",
     "Mark",
+    "Outline",
     "Page",
     "Paper",
     "Printout",
@@ -273,6 +273,31 @@ class Barcode(Mark):
     paper: str | None
     stripes: tuple[int, ...] = ()
     rows: tuple[tuple[int, ...], ...] = ()
+
+
+@dataclass(frozen=True)
+class Outline(Mark):
+    """An entry in the document's outline, at the point it names.
+
+    doc/printout.md#outline gives an entry a point rather than a box,
+    since it names a scroll position.  Here the point is a box with
+    no extent, which is what lets an entry move with its band as
+    every other mark does: translated on commit, carried by a split,
+    and moved by balancing.  The writer writes the corner as `x`
+    and `y`, and no `box`.
+
+    Attributes:
+        title: What the entry says.
+        level: Its depth in the outline tree, from 1.
+        name: What an `xref` of type `outline` targets, where one does.
+        closed: Whether it renders collapsed.
+
+    """
+
+    title: str
+    level: int
+    name: str | None
+    closed: bool
 
 
 @dataclass(frozen=True)

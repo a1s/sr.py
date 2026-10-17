@@ -6,9 +6,10 @@ exits 1, because a command that printed nothing and exited 0 would be
 worse than one that says it is not there.  :data:`COMMANDS` holds what
 works, which is also what the differential harness asks before deciding
 whether this engine can be compared against the reference yet.
-:data:`PARTIAL` holds the two that work but not to the end of their
-specification, so ``help`` says which part is missing rather than
-leaving a reader to find out from the output.
+:data:`PARTIAL` holds the one that works but not to the end of its
+specification, ``build``, which writes a printout and not yet a PDF,
+so ``help`` says which part is missing rather than leaving a reader
+to find out from the output.
 
 ``validate`` resolves the fonts a template declares, which is the one
 part of the check that depends on the machine rather than on the
@@ -36,7 +37,7 @@ import sys
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, BinaryIO, TextIO
 
 from sr import api, meta
 from sr.errors import (
@@ -51,8 +52,9 @@ from sr.errors import (
 from sr.expr import evaluate
 from sr.expr.values import go_shortest, quote
 from sr.fonts.resolve import Resolution, Resolver
-from sr.printout.inspect import dump, pages_wanted, read_jsonl
-from sr.printout.write import write_jsonl
+from sr.printout.inspect import dump, pages_wanted, read_printout
+from sr.printout.verify import violations
+from sr.printout.write import write_cbor, write_jsonl
 from sr.template import load as load_template
 from sr.template.load import (
     Loaded,
@@ -102,15 +104,7 @@ PLANNED = {
 # produces the right answer over a narrower input, and a planned command
 # produces nothing at all.
 PARTIAL = {
-    "build": (
-        (
-            "M13",
-            "the overflow check on a mark that lands outside the "
-            "printable area, which --allow-overflow would downgrade",
-        ),
-        ("M14", "PDF output; a printout is written as NDJSON"),
-    ),
-    "inspect": (("M13", "the invariant check; the dump itself is complete"),),
+    "build": (("M14", "PDF output; a printout is written as NDJSON or CBOR"),),
 }
 
 # What each output extension names, per doc/cli.md#sr-build.
@@ -122,7 +116,7 @@ FORMATS = {
 }
 
 # The milestone that brings each output format this one cannot write.
-FORMAT_MILESTONE = {"pdf": "M14", "cbor": "M13"}
+FORMAT_MILESTONE = {"pdf": "M14"}
 
 # What a printout does with the one thing UTF-8 cannot encode, a lone
 # surrogate from a file name that was not valid text, on either route.
@@ -411,7 +405,7 @@ def build(arguments: Sequence[str], out: TextIO) -> int:
         # not there and a template that will not load are both the
         # run failing, and both are reported as `sr:` and exit 1
         # rather than as a traceback.
-        write_printout(result, target, out)
+        write_printout(result, target, out, encoding)
     except TemplateError as refused:
         for diagnostic in refused.diagnostics:
             print(diagnostic, file=sys.stderr)
@@ -504,8 +498,10 @@ def suffix_of(target: str) -> str:
     return Path(target).suffix.lower()
 
 
-def write_printout(result: api.Result, target: str, out: TextIO) -> None:
-    """Write the printout where ``--out`` said.
+def write_printout(
+    result: api.Result, target: str, out: TextIO, encoding: str = "jsonl"
+) -> None:
+    """Write the printout where ``--out`` said, in the encoding asked for.
 
     The directory it lands in is what its paths are written relative
     to, which is why the destination reaches the writer rather than
@@ -516,8 +512,20 @@ def write_printout(result: api.Result, target: str, out: TextIO) -> None:
         result: What the build produced.
         target: What ``--out`` named.
         out: Where a document written to standard output goes.
+        encoding: ``jsonl`` or ``cbor``.
+
+    Raises:
+        OSError: Standard output takes no bytes, for a CBOR printout.
 
     """
+    if encoding == "cbor":
+        if target == "-":
+            write_cbor(result.printout, byte_stream(out), None)
+            return
+        path = Path(target)
+        with path.open("wb") as handle:
+            write_cbor(result.printout, handle, path.parent)
+        return
     if target == "-":
         write_jsonl(result.printout, as_written(out), None)
         return
@@ -558,6 +566,26 @@ def as_written(out: TextIO) -> TextIO:
     )
 
 
+def byte_stream(out: TextIO) -> BinaryIO:
+    """Return the byte stream beneath a text stream, for a CBOR printout.
+
+    Whatever the text stream still holds is written first, so
+    nothing printed to it earlier lands among the printout's bytes.
+
+    Args:
+        out: Where a document written to standard output goes.
+
+    Raises:
+        OSError: The stream has no bytes beneath it, as a test's buffer has not.
+
+    """
+    out.flush()
+    buffer = getattr(out, "buffer", None)
+    if buffer is None:
+        raise OSError("standard output takes no bytes, and a CBOR printout is bytes")
+    return buffer  # type: ignore[no-any-return]
+
+
 def counted(result: api.Result) -> str:
     """Return the summary line doc/cli.md#sr-build ends a build with.
 
@@ -587,7 +615,14 @@ def counted(result: api.Result) -> str:
 
 
 def inspect_printout(arguments: Sequence[str], out: TextIO) -> int:
-    """Dump a printout as readable text.
+    """Dump a printout as readable text, and hold it to its invariants.
+
+    doc/cli.md#sr-inspect: the encoding comes from the extension,
+    ``.cbor`` for CBOR and anything else NDJSON.  Every invariant the
+    printout breaks is written to standard error after the dump, and
+    then the exit code is 1, whatever ``--pages`` or ``--summary``
+    left out of the dump: an inspector that read a broken printout
+    without saying so would be the wrong tool.
 
     Args:
         arguments: What followed the command.
@@ -598,11 +633,8 @@ def inspect_printout(arguments: Sequence[str], out: TextIO) -> int:
     if len(given.positional) != 1:
         raise Usage("inspect takes one printout")
     path = Path(given.positional[0])
-    if path.suffix.lower() == ".cbor":
-        print("sr: reading CBOR arrives in M13", file=sys.stderr)
-        return FAILED
     try:
-        records = read_jsonl(path)
+        records = read_printout(path)
         wanted = pages_wanted(text_of(given.flags.get("pages")), len(records) - 1)
     except SrError as refused:
         print(f"sr: {refused}", file=sys.stderr)
@@ -612,7 +644,18 @@ def inspect_printout(arguments: Sequence[str], out: TextIO) -> int:
         return FAILED
     for line in dump(path, records, wanted, bool(given.flags.get("summary"))):
         print(line, file=out)
-    return OK
+    broken = violations(records)
+    if not broken:
+        return OK
+    out.flush()
+    for one in broken:
+        print(f"invariant: {one}", file=sys.stderr)
+    count = len(broken)
+    print(
+        f"sr: {path.as_posix()}: {count} invariant{'' if count == 1 else 's'} broken",
+        file=sys.stderr,
+    )
+    return FAILED
 
 
 def text_of(value: str | bool | None) -> str | None:

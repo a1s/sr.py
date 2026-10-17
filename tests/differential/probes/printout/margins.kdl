@@ -1,0 +1,33 @@
+// probes/printout/margins.kdl -- a mark outside the page's printable area.
+//
+// doc/layout.md#errors makes it an overflow, which --allow-overflow turns
+// into a warning, and the printout's seventh invariant rules it out of
+// any printout that carries no such warning.  It is judged on the marks
+// where the page ends, and a band is reported once, for its first mark
+// outside, against the node that mark came from.
+//
+// - The title's field starts 2pt above the top margin.
+// - Each row's band holds a rectangle 2pt left of the left margin and
+//   a field 5pt past the right one: one warning per row, for the rectangle.
+//
+// A band that fits no frame runs past the bottom margin, and is reported
+// for that and not a second time for its marks, which is why
+// pagination/overflow agrees with the reference byte for byte.
+//
+// The reference checks no mark against the margins, so it
+// builds this without --allow-overflow and writes no warning.
+// Registered under the divergence `margins-unchecked`.
+
+report name="printout/margins" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  layout width=100 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    title height=10 {
+      field text="T" left=0 top=-2 width=10 height=6
+    }
+    detail height=10 {
+      rectangle left=-2 top=0 height=5
+      field expr="'r%d' % ITEM_NUMBER" left=50 right=-5 top=2 height=6
+    }
+  }
+}

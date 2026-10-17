@@ -18,12 +18,17 @@
 // - `header`: the same with a rule of no height of its own at -7 and a
 //   suppressed field at -9, neither of which takes part, so the gap is
 //   the 1 to P's top.
+//
+// The title is swapped above the header, so that the header is not
+// the first band on the page and its marks above its top edge stay
+// below the top margin: a mark above the margin is an overflow
+// by doc/layout.md#errors.
 
 report name="layout/float-gaps" {
   font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
   layout width=300 height=800 leftmargin=0 rightmargin=0 topmargin=20 bottommargin=0 {
     style font="body" color="black"
-    title {
+    title swapheader=#true {
       field text="x\ny" left=0 right=30 top=30 height=6 stretch=#true float=#true
       field text="1\n2\n3" right=10 width=60 top=30 stretch=#true float=#true
       field text="z" left=120 width=40 height=12

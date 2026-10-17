@@ -14,9 +14,11 @@
 // leaving it to whichever float parser the host supplies.  And `"12 mm"`
 // and `" 12mm "` agree with `"12mm"`, so the whitespace is not part of it.
 //
-// doc/template.md#dimension is what this became.  The negative case sits
-// in `left` alone: a negative extent is a different question, and
-// `rounding/negative` already asks the rounding half of it.
+// doc/template.md#dimension is what this became.  The negative case
+// sits in `left` alone: a negative extent is a different question,
+// and `rounding/negative` already asks the rounding half of it.
+// It sits inside an xref 20pt in, so that the rectangle reaches from 5.827
+// and lies inside the printable area, as doc/layout.md#errors requires.
 
 report name="values/dimensions" {
   font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
@@ -41,7 +43,9 @@ report name="values/dimensions" {
       rectangle left="1e2mm" top=90 width="1e2mm" height=5       // -> 283.465, both parts at once
       rectangle left="0.0005" top=96 width="0.0005" height=5     // -> 0.001, rounded at the parse
       rectangle left="-0.0004" top=102 width=1 height=5          // -> 0, and never -0
-      rectangle left="-5mm" top=108 width=1 height=5             // -> -14.173, away from zero
+      xref type="url" target="'https://example.com/'" left=20 top=108 width=10 height=5 {
+        rectangle left="-5mm" top=0 width=1 height=5             // -> -14.173 in the xref, away from zero
+      }
     }
   }
 }

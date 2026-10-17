@@ -75,7 +75,8 @@ A printout's text is Unicode, and a dump whose bytes changed with the machine
 it ran on could not be diffed against one made on another. Text that cannot
 be encoded at all, such as a file name that is not valid Unicode, is written
 as a backslash escape rather than ending the run; in a printout, written to
-a file or to standard output, that escape is JSON's own. No environment
+a file or to standard output, that escape is JSON's own. CBOR has no escapes,
+and a [CBOR printout](printout.md#cbor) writes U+FFFD instead. No environment
 variable changes the bytes, `PYTHONIOENCODING` included.
 
 On Windows this settles what `sr.py` writes, not what the next program
@@ -317,11 +318,30 @@ read and diffed.
 | `--pages` | Page numbers to dump: `1`, `4-6`, `10-` and `-3` are all ranges, and they combine with commas. An open end means the first or the last page, so a bare `-` is every page. Default: all. |
 | `--summary` | The header only, no pages. |
 
+A CBOR printout is read as [the format writes one](printout.md#cbor),
+and a tag, a byte string, or an indefinite length is refused at the byte
+it starts at: the file is not a printout. A general CBOR decoder reads
+a tag as the type it stands for, and the dump would show that type
+as if a printout could hold it.
+
 Inspecting also checks the printout against its own
 [invariants](printout.md#invariants): that every mark lies inside its page,
 that a text mark's box holds its lines, that an xref names a target that exists.
 A violation is written to stderr after the dump, and the exit code is 1. An
 inspector that read a broken printout without saying so would be the wrong tool.
+
+The whole printout is checked, whatever `--pages` or `--summary` leave out
+of the dump. Each violation is one line, `invariant:` and then where it is
+and what is wrong, and a last line counts them:
+
+```
+invariant: the header counts 2 pages, and 1 page lines follow
+invariant: page 1, mark 1: its font "nowhere" is not in the header's font table
+sr: report.srp.jsonl: 2 invariants broken
+```
+
+A mark is numbered from 1 in paint order, and one inside an xref after
+the xref's own number, so `mark 5.1` is the first mark inside the fifth.
 
 The dump:
 

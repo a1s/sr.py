@@ -1,0 +1,31 @@
+// probes/outline/missing-target.kdl -- an xref whose outline entry never comes.
+//
+// The xref targets `top`, and the only entry of that name is on a title
+// that does not print.  Both sides are expressions, and the target reads
+// the data, so the load cannot see it: doc/template.md#validation reports
+// only a target that is constant.  So it is the build that finds out,
+// when the document ends and no entry anywhere carries the name.
+// doc/printout.md#xref makes that an error naming the xref, since
+// a renderer would refuse the printout, and the printout's fifth invariant
+// rules it out.
+//
+// The reference builds it, writing an xref with nothing to go to.
+// Registered under the divergence `outline-target-missing`.
+
+report name="outline/missing-target" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5
+  records {
+    member "to" type="string"
+  }
+  layout width=100 height=60 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    title height=6 printwhen="False" {
+      outline title="'Top'" name="'top'"
+    }
+    detail height=10 {
+      xref type="outline" target="to" left=0 top=0 width=20 height=6 {
+        field text="up" left=0 top=0 width=20 height=6
+      }
+    }
+  }
+}

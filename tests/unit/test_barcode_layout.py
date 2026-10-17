@@ -45,6 +45,7 @@ def built(
     bands: str,
     rows: list[dict[str, Any]] | None = None,
     height: int = 800,
+    **asked: Any,
 ) -> Printout:
     """Build a report and return its printout.
 
@@ -53,6 +54,7 @@ def built(
         bands: What goes under `layout`, after its style.
         rows: The records, or ``None`` for one record nothing reads.
         height: The page's height.
+        **asked: What to pass to the build.
 
     """
     template = tmp_path / "report.kdl"
@@ -61,7 +63,7 @@ def built(
     data = tmp_path / "rows.jsonl"
     lines = [json.dumps(one) for one in (rows if rows is not None else [{"n": 1}])]
     data.write_text("".join(line + "\n" for line in lines), encoding="utf-8")
-    options = Options(build_time="2026-08-04T09:12:44Z", strict_fonts=True)
+    options = Options(build_time="2026-08-04T09:12:44Z", strict_fonts=True, **asked)
     return build(template, data, options).printout
 
 
@@ -167,6 +169,7 @@ def test_a_symbol_in_a_band_dependent_box_overhangs_it_by_valign(
             'barcode type="QR-L" text="A" module=1 top=0 bottom=0 valign="bottom"',
             'field text="x" top=0 height=10 left=100 width=50',
         ),
+        allow_overflow=True,
     )
     (mark,) = symbols(printout)
     assert box(mark) == (0, -19, 29, 29)
