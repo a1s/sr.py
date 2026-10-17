@@ -318,6 +318,12 @@ read and diffed.
 | `--pages` | Page numbers to dump: `1`, `4-6`, `10-` and `-3` are all ranges, and they combine with commas. An open end means the first or the last page, so a bare `-` is every page. Default: all. |
 | `--summary` | The header only, no pages. |
 
+A CBOR printout is read as [the format writes one](printout.md#cbor),
+and a tag, a byte string, or an indefinite length is refused at the byte
+it starts at: the file is not a printout. A general CBOR decoder reads
+a tag as the type it stands for, and the dump would show that type
+as if a printout could hold it.
+
 Inspecting also checks the printout against its own
 [invariants](printout.md#invariants): that every mark lies inside its page,
 that a text mark's box holds its lines, that an xref names a target that exists.

@@ -19,12 +19,11 @@ the difference is in the encoding, and the bytes around it are shown.
 from __future__ import annotations
 
 import difflib
-import io
 import json
 from dataclasses import dataclass
 from typing import Any
 
-import cbor2
+from sr.printout.inspect import cbor_records
 
 __all__ = ["Comparison", "compare_printouts", "first_difference"]
 
@@ -102,17 +101,14 @@ def parse_cbor(data: bytes) -> list[Any] | None:
     """Return one value per data item of a CBOR sequence, None when it is not one.
 
     Returning ``None`` is how a truncated printout falls back
-    to the byte-level report.
+    to the byte-level report, and so is one holding what
+    doc/printout.md#cbor rules out, which `sr inspect` refuses too.
 
     """
-    stream = io.BytesIO(data)
-    records: list[Any] = []
     try:
-        while stream.tell() < len(data):
-            records.append(cbor2.load(stream))
-    except (cbor2.CBORDecodeError, ValueError, EOFError):
+        return cbor_records(data)
+    except ValueError:
         return None
-    return records
 
 
 def parse_records(data: bytes) -> list[Any] | None:

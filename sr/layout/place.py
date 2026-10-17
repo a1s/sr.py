@@ -252,7 +252,7 @@ def divide(
         lines=mark.lines[taken:],
     )
     return (
-        (head, Extent(extent.top, cut, taken, leading, extent.node)),
+        (head, Extent(extent.top, cut, taken, leading, extent.origin)),
         (
             tail,
             Extent(
@@ -260,7 +260,7 @@ def divide(
                 round_points(extent.bottom - cut),
                 rest,
                 leading,
-                extent.node,
+                extent.origin,
             ),
         ),
     )

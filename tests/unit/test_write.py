@@ -15,10 +15,10 @@ import json
 import sys
 from pathlib import Path
 
-import cbor2
 import pytest
 
 from sr.errors import BuildWarning
+from sr.printout.inspect import cbor_records
 from sr.printout.model import (
     Barcode,
     Box,
@@ -241,6 +241,14 @@ def test_the_data_table_is_sorted_by_name() -> None:
     assert written["alpha"] == {"content": "text"}
 
 
+def test_a_check_has_the_data_table_without_its_contents() -> None:
+    """The names are what an invariant reads, and encoding is the cost."""
+    made = printout()
+    made.data = {"zebra": b"\x00\x01", "alpha": "text"}
+    written = header_object(made, None, contents=False)["data"]
+    assert written == {"alpha": {}, "zebra": {}}
+
+
 # -- marks ------------------------------------------------------------
 
 
@@ -401,11 +409,7 @@ def cbor_of(made: Printout, base: Path | None = None) -> bytes:
 
 def decoded(data: bytes) -> list[object]:
     """Return every data item in a CBOR sequence, in order."""
-    stream = io.BytesIO(data)
-    found = []
-    while stream.tell() < len(data):
-        found.append(cbor2.load(stream))
-    return found
+    return cbor_records(data)
 
 
 def with_a_page() -> Printout:

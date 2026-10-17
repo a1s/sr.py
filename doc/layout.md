@@ -2028,9 +2028,11 @@ The top and bottom edges are compared the same way.
 
 **A band is reported once**, for the first of its marks in paint order
 that lies outside, against the element that mark came from and the record
-the band was built for. The message names the edge, where it is,
-and the margin: "the rectangle's left edge is at -3 pt, past the left
-margin at 0 pt". A band placed more than once, a header on every page,
+the band was built for. A mark inside an xref came from one of its
+children, and is reported against that child rather than the xref.
+The message names the edge, where it is, and the margin:
+"the rectangle's left edge is at -3 pt, past the left margin at 0 pt".
+A band placed more than once, a header on every page,
 is judged at every page it is on. A band already reported for fitting
 no frame is not reported a second time: it was placed knowing that it
 runs past its frame, and its warning says so. That is also the only way

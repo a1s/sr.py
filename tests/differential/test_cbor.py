@@ -13,11 +13,12 @@ that differs for a reason doc/ records differs in either encoding.
 
 Two things of the reference's are set right before the comparison.
 One is the image `type` the NDJSON comparison drops as well.
-The other is the order of the three tables whose keys are names, `data`,
-`groupRuns` and `groupKeys`: doc/printout.md sorts them, and the reference
-sorts them in NDJSON and writes them in CBOR in its hash map's order,
-which changes from one run to the next.  A comparison against that would
-pass or fail by chance, so the reference's are sorted here, and
+The other is the order of the three tables whose keys are names,
+`data`, `groupRuns`, and `groupKeys`: doc/printout.md sorts them,
+and the reference sorts them in NDJSON and writes them in CBOR
+in its hash map's order, which changes from one run to the next.
+A comparison against that would pass or fail by chance, so the
+reference's are sorted here, and
 :func:`test_the_reference_still_writes_cbor_tables_unsorted` fails
 the day that is no longer needed.
 
@@ -26,7 +27,6 @@ the day that is no longer needed.
 from __future__ import annotations
 
 import fnmatch
-import io
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -34,6 +34,7 @@ from typing import Any
 import cbor2
 import pytest
 
+from sr.printout.inspect import cbor_item, cbor_records
 from tests.differential.cases import Case, corpus
 from tests.differential.engines import Engine, run
 from tests.differential.register import Register
@@ -83,17 +84,17 @@ def as_compared(printout: bytes) -> bytes:
     nothing had to change.
 
     """
-    stream = io.BytesIO(printout)
     kept = b""
-    while stream.tell() < len(printout):
-        start = stream.tell()
-        record = cbor2.load(stream)
+    start = 0
+    while start < len(printout):
+        record, end = cbor_item(printout, start, 0)
         changed = drop_image_types(record)
         changed = sort_named_tables(record) or changed
         if changed:
             kept += cbor2.dumps(record)
         else:
-            kept += printout[start : stream.tell()]
+            kept += printout[start:end]
+        start = end
     return kept
 
 
@@ -168,7 +169,7 @@ def test_the_reference_still_writes_cbor_tables_unsorted(
     """
     (case,) = [one for one in cbor_cases() if one.ident == "probe/data/key-order"]
     built = run(oracle, case, build_directory)
-    header = cbor2.load(io.BytesIO(built.printout))
+    header = cbor_records(built.printout)[0]
     assert list(header["data"]) != sorted(header["data"]), (
         "the reference now writes its CBOR `data` table sorted: drop "
         "sort_named_tables from test_cbor.py, and the note that explains it"

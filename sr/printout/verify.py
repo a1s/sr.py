@@ -23,7 +23,9 @@ so what is checked is what a reader sees.
 Records are read defensively.  A field that is missing or of
 the wrong type is itself a violation where an invariant needs it,
 and is otherwise passed over, so a malformed printout is reported
-rather than crashing the reader.
+rather than crashing the reader.  A name is looked up only where
+it is a string, since an array in its place cannot be hashed,
+and a number is used only where it is finite as a double.
 
 The seventh invariant is also a rule of layout, doc/layout.md#errors:
 a mark outside the printable area is an overflow.  :func:`crossing`
@@ -34,7 +36,8 @@ disagree about where a margin is.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+import math
+from collections.abc import Collection, Iterable, Iterator
 from dataclasses import dataclass
 from typing import Any, TypeGuard
 
@@ -42,7 +45,26 @@ from sr.printout.model import VERSION, Printout
 from sr.printout.write import number, records
 from sr.units import fits, round_points
 
-__all__ = ["Area", "Crossing", "check", "crossing", "described", "violations"]
+__all__ = [
+    "Area",
+    "Crossing",
+    "check",
+    "crossing",
+    "described",
+    "listed",
+    "mapped",
+    "violations",
+]
+
+# A page's geometry, in the order Area.of takes it.
+GEOMETRY = (
+    "width",
+    "height",
+    "leftMargin",
+    "rightMargin",
+    "topMargin",
+    "bottomMargin",
+)
 
 # What a mark of each kind is called in a sentence about it.
 CALLED = {
@@ -104,7 +126,7 @@ class Crossing:
     """Where a mark leaves the printable area.
 
     Attributes:
-        side: ``left``, ``right``, ``top`` or ``bottom``: the margin crossed.
+        side: ``left``, ``right``, ``top``, or ``bottom``: the margin crossed.
         at: Where the mark's edge on that side is.
         limit: Where the margin is.
 
@@ -169,67 +191,74 @@ def described(kind: str, found: Crossing) -> str:
 def check(printout: Printout) -> list[str]:
     """Return every invariant a printout in memory breaks.
 
+    The records are made one at a time and read as they come,
+    so no more than one page of them is held at once.  The `data`
+    table's contents are left out of them: no invariant reads
+    the bytes of a blob, only its name.
+
     Args:
         printout: The document, as the engine built it.
 
     """
-    return violations(list(records(printout, None)))
+    return violations(records(printout, None, contents=False))
 
 
-def violations(found: list[Any]) -> list[str]:
+def violations(found: Iterable[Any]) -> list[str]:
     """Return every invariant a printout's records break, in a reading order.
 
     The header's own invariants come first, then each page's, mark by
     mark in paint order, then the two that span the document: outline
     targets, which a mark may name before or after the entry it targets.
+    The records are read once, in order, so a caller may hand them over
+    as they are made.
 
     Args:
         found: The records, header first, as a reader returns them.
 
     """
-    if not found or not isinstance(found[0], dict):
+    lines = iter(found)
+    header = next(lines, None)
+    if not isinstance(header, dict):
         return ["the first record is not a header"]
-    header: dict[str, Any] = found[0]
-    lines = found[1:]
+    opening: list[str] = []
     said: list[str] = []
     version = header.get("sr")
     if version != VERSION or isinstance(version, bool):
-        said.append(
+        opening.append(
             f"the header's format version is {plain(version)}, "
             f"and this reader understands {VERSION}"
         )
-    counted = header.get("pages")
-    if counted != len(lines) or isinstance(counted, bool):
-        said.append(
-            f"the header counts {plain(counted)} pages, "
-            f"and {len(lines)} page lines follow"
-        )
-    fonts = listed(header.get("fonts"))
     data = mapped(header.get("data"))
-    font_names = {one.get("name") for one in fonts if isinstance(one, dict)}
-    for one in fonts:
+    font_names: set[str] = set()
+    for one in listed(header.get("fonts")):
         if not isinstance(one, dict):
             continue
+        if isinstance(one.get("name"), str):
+            font_names.add(one["name"])
         blob = one.get("resolvedData")
-        if blob is not None and blob not in data:
+        if blob is not None and not held(blob, data):
             said.append(
                 f"font {plain(one.get('name'))}: its data {plain(blob)} "
                 "is not in the header's data table"
             )
+    paper, wrong = paper_of(header.get("page"))
+    said.extend(wrong)
     warnings = header.get("warnings")
     overflowed = isinstance(warnings, list) and any(
         isinstance(one, dict) and one.get("kind") == "overflow" for one in warnings
     )
-    default = mapped(header.get("page"))
-    names: set[Any] = set()
+    names: set[str] = set()
     targets: list[tuple[str, Any]] = []
     previous = 0
+    followed = 0
     for ordinal, page in enumerate(lines, start=1):
+        followed = ordinal
         if not isinstance(page, dict):
             said.append(f"page line {ordinal} is not an object")
             continue
         label = f"page {plain(page.get('number', ordinal))}"
-        area = area_of(page, default)
+        area, wrong = area_of(page, paper)
+        said.extend(f"{label}: {one}" for one in wrong)
         marks = page.get("marks")
         if not isinstance(marks, list):
             said.append(f"{label}: it has no marks array")
@@ -240,7 +269,8 @@ def violations(found: list[Any]) -> list[str]:
                 continue
             kind = mark.get("kind")
             if kind == "outline":
-                names.add(mark.get("name"))
+                if isinstance(mark.get("name"), str):
+                    names.add(mark["name"])
                 level = mark.get("level")
                 if not isinstance(level, int) or isinstance(level, bool):
                     said.append(f"{where}: the outline entry has no level")
@@ -257,12 +287,20 @@ def violations(found: list[Any]) -> list[str]:
             if not overflowed and area is not None:
                 said.extend(placement_violations(where, mark, area))
     for where, target in targets:
-        if target not in names:
+        if target is None:
+            said.append(f"{where}: the xref to an outline entry has no target")
+        elif not held(target, names):
             said.append(
                 f"{where}: the xref targets the outline entry {plain(target)}, "
                 "and no entry is named so"
             )
-    return said
+    counted = header.get("pages")
+    if counted != followed or isinstance(counted, bool):
+        opening.append(
+            f"the header counts {plain(counted)} pages, "
+            f"and {followed} page lines follow"
+        )
+    return opening + said
 
 
 def walk(marks: list[Any], prefix: str) -> Iterator[tuple[str, Any]]:
@@ -284,39 +322,71 @@ def walk(marks: list[Any], prefix: str) -> Iterator[tuple[str, Any]]:
             yield from walk(mark["marks"], f"{where}.")
 
 
-def area_of(page: dict[str, Any], default: dict[str, Any]) -> Area | None:
-    """Return a page's printable area, ``None`` when its geometry is unreadable.
+def paper_of(page: Any) -> tuple[dict[str, float], list[str]]:
+    """Return the header's page geometry, and what is wrong with it.
+
+    Every page takes its geometry from here where it states none of
+    its own, so each of the six fields is needed, and one that cannot
+    be read is a violation however many pages it leaves unmeasured.
+
+    Args:
+        page: The header's `page` object.
+
+    """
+    if not isinstance(page, dict):
+        return {}, ["the header has no page object"]
+    values: dict[str, float] = {}
+    wrong: list[str] = []
+    for key in GEOMETRY:
+        value = page.get(key)
+        if is_number(value):
+            values[key] = float(value)
+        elif value is None:
+            wrong.append(f"the header's page has no {key}")
+        else:
+            shown = plain(value)
+            wrong.append(f"the header's page {key} is {shown}, not a number")
+    return values, wrong
+
+
+def area_of(
+    page: dict[str, Any],
+    paper: dict[str, float],
+) -> tuple[Area | None, list[str]]:
+    """Return a page's printable area, and what is wrong with its geometry.
 
     A page states only what differs from the header's `page`,
     and each of its six fields does so independently.
+    Where a field cannot be read, here or in the header, there is
+    no area, and what cannot be read is said where it is written.
 
     Args:
         page: The page record.
-        default: The header's `page` object.
+        paper: What the header's `page` says, as far as it can be read.
 
     """
-    values = []
-    for key in (
-        "width",
-        "height",
-        "leftMargin",
-        "rightMargin",
-        "topMargin",
-        "bottomMargin",
-    ):
-        value = page.get(key, default.get(key))
-        if not is_number(value):
-            return None
-        values.append(float(value))
-    return Area.of(*values)
+    values = dict(paper)
+    wrong: list[str] = []
+    for key in GEOMETRY:
+        if key not in page:
+            continue
+        value = page[key]
+        if is_number(value):
+            values[key] = float(value)
+        else:
+            values.pop(key, None)
+            wrong.append(f"its {key} is {plain(value)}, not a number")
+    if len(values) < len(GEOMETRY):
+        return None, wrong
+    return Area.of(*(values[key] for key in GEOMETRY)), wrong
 
 
 def mark_violations(
-    where: str, mark: dict[str, Any], fonts: set[Any], data: dict[str, Any]
+    where: str, mark: dict[str, Any], fonts: set[str], data: dict[str, Any]
 ) -> Iterator[str]:
     """Yield what one mark breaks of the invariants about a mark alone.
 
-    Those are the third, fourth, sixth, eighth, ninth, eleventh
+    Those are the third, fourth, sixth, eighth, ninth, eleventh,
     and twelfth.  Where a mark sits on the page is the seventh,
     which a warning can waive, so it is apart.
 
@@ -341,7 +411,7 @@ def mark_violations(
                         f"negative {key}, {number(box[key])}"
                     )
     if kind == "text":
-        if mark.get("font") not in fonts:
+        if not held(mark.get("font"), fonts):
             yield (
                 f"{where}: its font {plain(mark.get('font'))} "
                 "is not in the header's font table"
@@ -353,7 +423,7 @@ def mark_violations(
         if has_data == has_file:
             which = "both data and file" if has_data else "neither data nor file"
             yield f"{where}: the image carries {which}"
-        if has_data and mark.get("data") not in data:
+        if has_data and not held(mark.get("data"), data):
             yield (
                 f"{where}: its data {plain(mark.get('data'))} "
                 "is not in the header's data table"
@@ -456,12 +526,16 @@ def matched(
         word: ``long`` or ``across``, for the sentence.
 
     """
-    made = count * module
+    try:
+        made = round_points(count * module)
+    except OverflowError:
+        # More modules than a double counts, which no box matches.
+        made = math.inf
     if fits(made, extent) and fits(extent, made):
         return
     yield (
         f"{where}: {what} make {count} modules of {number(module)} pt, "
-        f"{number(round_points(made))} pt, and the box is {number(extent)} pt {word}"
+        f"{number(made)} pt, and the box is {number(extent)} pt {word}"
     )
 
 
@@ -549,14 +623,37 @@ def runs(value: Any) -> bool:
     )
 
 
+def held(value: Any, table: Collection[str]) -> bool:
+    """Report whether a record's value is a name a table holds.
+
+    Only a string is a name, and only a name is looked up:
+    an array where a name belongs would not hash.
+
+    Args:
+        value: What the record held.
+        table: The names, or a table keyed by them.
+
+    """
+    return isinstance(value, str) and value in table
+
+
 def is_number(value: Any) -> TypeGuard[float]:
-    """Report whether a record's value is a number, which a boolean is not.
+    """Report whether a record's value is a finite number.
+
+    A boolean is not one, and nor is an infinity, a NaN, or an integer
+    past the range of a double: no length in a printout is any of those,
+    and arithmetic on them would overflow or compare false either way.
 
     Args:
         value: What the record held.
 
     """
-    return isinstance(value, int | float) and not isinstance(value, bool)
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
 
 
 def plain(value: Any) -> str:

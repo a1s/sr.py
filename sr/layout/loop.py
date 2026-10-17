@@ -121,7 +121,7 @@ from sr.layout.defer import (
 )
 from sr.layout.frame import Frame, Window
 from sr.layout.images import Pictures
-from sr.layout.measure import Measurement, Measurer, Shared
+from sr.layout.measure import Measurement, Measurer, Origin, Shared
 from sr.layout.place import choose, split
 from sr.layout.subreport import DEPTH, Walk, arguments, records_of, target_of
 from sr.layout.variables import Variables
@@ -383,12 +383,17 @@ class Ahead:
 
 
 @dataclass(frozen=True)
-class Placed:
+class Emitted:
     """A band on the page being built, as the margins will judge it.
+
+    Every band that reaches the page has one, a header and a footer
+    as much as a band the fill commits.  A balanced frame's fragment
+    notes the bands in that frame apart from this, with where the fill
+    put each, which is what balancing moves and the margins do not need.
 
     Attributes:
         start: The index of its first mark among the page's.
-        nodes: The node each of its marks came from, in order,
+        origins: The element each of its marks came from, in order,
             its outline entry's being the band's.
         record: The record it was built for.
         file: The template it is written in.
@@ -398,7 +403,7 @@ class Placed:
     """
 
     start: int
-    nodes: tuple[NodePath | None, ...]
+    origins: tuple[Origin | None, ...]
     record: int | None
     file: str | None
     overflowed: bool
@@ -406,17 +411,15 @@ class Placed:
 
 @dataclass(frozen=True)
 class Target:
-    """An xref to an outline entry, on a page, waiting for the document to end.
+    """The first xref to name an outline entry, held until the document ends.
 
     Attributes:
-        name: The name it targets.
         path: The xref's node.
         record: The record its band was built for.
         file: The template it is written in.
 
     """
 
-    name: str
     path: NodePath
     record: int | None
     file: str | None
@@ -457,8 +460,10 @@ class Document:
             a page of a subreport's carries an override.
         templates: Each document measured so far, by its `report`.
         resolver: The font resolution chain, for a subreport's document.
-        targets: Every xref to an outline entry on a page, in the
-            order placed, which the end of the document holds to account.
+        targets: The first xref on a page to name each outline entry,
+            by that name, in the order the names were first placed.
+            The end of the document holds each name to account,
+            and one xref is all its error needs to name.
 
     """
 
@@ -488,7 +493,7 @@ class Document:
                 },
             )
         self.warnings: list[BuildWarning] = []
-        self.targets: list[Target] = []
+        self.targets: dict[str, Target] = {}
         self.tallies: dict[str, Tally] = {}
         self.paper = paper
         self.resolver = build.resolver
@@ -572,7 +577,7 @@ class Sheet:
         owners: The builder each frame belongs to, which builds its header
             and its footer in its own context.
         marks: The marks so far, in paint order.
-        placed: The bands those marks came from, in the order placed.
+        emitted: The bands those marks came from, in the order placed.
         fragments: What each balanced frame was given since the page opened.
         placed_on: The page the last band was committed to, the first
             before any has been: a band that fits nowhere is carried from it once.
@@ -585,7 +590,7 @@ class Sheet:
     paper: Geometry
     owners: dict[Frame, Builder] = field(default_factory=dict)
     marks: list[Mark] = field(default_factory=list)
-    placed: list[Placed] = field(default_factory=list)
+    emitted: list[Emitted] = field(default_factory=list)
     fragments: dict[Frame, Fragment] = field(default_factory=dict)
     placed_on: int = 1
     column_number: int = 1
@@ -1779,17 +1784,17 @@ class Builder:
         """
         start = len(self.marks)
         self.marks.extend(mark.moved(across, down) for mark in measured.marks)
-        nodes = [extent.node for extent in measured.extents]
+        origins = [extent.origin for extent in measured.extents]
         if measured.outline is not None:
             self.marks.append(measured.outline.moved(across, down))
-            nodes.append(measured.band)
+            origins.append(Origin(measured.band))
         record = self.context.record_index
-        self.sheet.placed.append(
-            Placed(start, tuple(nodes), record, self.file, overflowed)
+        self.sheet.emitted.append(
+            Emitted(start, tuple(origins), record, self.file, overflowed)
         )
         for link in measured.links:
-            self.document.targets.append(
-                Target(link.target, link.path, record, self.file)
+            self.document.targets.setdefault(
+                link.target, Target(link.path, record, self.file)
             )
         for deferral in measured.deferred:
             self.deferred.add(deferral, len(self.pages), start)
@@ -2223,9 +2228,11 @@ class Builder:
 
         A band is reported once, for the first of its marks in paint
         order that lies outside, against the node that mark came from
-        and the record the band was built for.  One already reported
-        for fitting no frame is not reported again: it was placed
-        knowing that it runs past its frame, and its warning says so.
+        and the record the band was built for.  A mark inside an xref
+        came from one of the xref's children, and names that child.
+        One already reported for fitting no frame is not reported again:
+        it was placed knowing that it runs past its frame, and its
+        warning says so.
 
         Raises:
             BuildError: A mark lies outside, and nothing allowed it.
@@ -2236,14 +2243,15 @@ class Builder:
         area = Area.of(
             paper.width, paper.height, paper.left, paper.right, paper.top, paper.bottom
         )
-        for band in sheet.placed:
+        for band in sheet.emitted:
             if band.overflowed:
                 continue
-            for offset, node in enumerate(band.nodes):
-                found = outside(sheet.marks[band.start + offset], area)
+            for offset, origin in enumerate(band.origins):
+                found = outside(sheet.marks[band.start + offset], origin, area)
                 if found is None:
                     continue
-                said = described(*found)
+                kind, crossed, node = found
+                said = described(kind, crossed)
                 if not self.build.allow_overflow:
                     raise BuildError(
                         said, Location(file=band.file, path=node, record=band.record)
@@ -2284,10 +2292,11 @@ class Builder:
             for mark in page.marks
             if isinstance(mark, Outline) and mark.name is not None
         }
-        for target in self.document.targets:
-            if target.name not in named:
+        targets = self.document.targets
+        for name, target in targets.items():
+            if name not in named:
                 raise BuildError(
-                    f"no outline is named {target.name!r}",
+                    f"no outline is named {name!r}",
                     Location(
                         file=target.file,
                         path=target.path,
@@ -2295,7 +2304,6 @@ class Builder:
                         record=target.record,
                     ),
                 )
-        wanted = {target.name for target in self.document.targets}
         # The entries a later one may still be the child of, as each one's
         # declared level and the depth it was written at, outermost first.
         ancestors: list[tuple[int, int]] = []
@@ -2309,9 +2317,9 @@ class Builder:
                     ancestors.pop()
                 level = ancestors[-1][1] + 1 if ancestors else 1
                 ancestors.append((mark.level, level))
-                name = mark.name if mark.name in wanted else None
-                if level != mark.level or name != mark.name:
-                    marks[at] = replace(mark, level=level, name=name)
+                kept = mark.name if mark.name in targets else None
+                if level != mark.level or kept != mark.name:
+                    marks[at] = replace(mark, level=level, name=kept)
                     changed = True
             if changed:
                 pages[index] = replace(page, marks=tuple(marks))
@@ -2320,7 +2328,7 @@ class Builder:
         """Start an empty page, every frame back at its first column."""
         sheet = self.sheet
         sheet.marks = []
-        sheet.placed = []
+        sheet.emitted = []
         sheet.fragments = {}
         paper = sheet.paper
         page = sheet.page
@@ -2831,24 +2839,32 @@ def frame_path(top: Frame, bottom: Frame) -> list[Frame]:
     return found
 
 
-def outside(mark: Mark, area: Area) -> tuple[str, Crossing] | None:
+def outside(
+    mark: Mark,
+    origin: Origin | None,
+    area: Area,
+) -> tuple[str, Crossing, NodePath | None] | None:
     """Return the first mark, this one or one inside it, outside the area.
 
     An xref's box is judged as any mark's, and so is every mark it holds,
     in paint order after it.  An outline entry is judged at its point.
+    The answer is the mark's kind, where it crosses, and the node
+    it came from, which for a mark inside an xref is the xref's child.
 
     Args:
         mark: The mark, in page coordinates.
+        origin: The element it came from, where that is known.
         area: The page's printable area.
 
     """
     box = mark.box
     found = crossing(area, box.x, box.y, box.width, box.height)
     if found is not None:
-        return mark.kind, found
+        return mark.kind, found, None if origin is None else origin.path
     if isinstance(mark, Xref):
-        for one in mark.marks:
-            inner = outside(one, area)
+        inside = (None,) * len(mark.marks) if origin is None else origin.inside
+        for one, within in zip(mark.marks, inside, strict=True):
+            inner = outside(one, within, area)
             if inner is not None:
                 return inner
     return None

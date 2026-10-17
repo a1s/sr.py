@@ -123,8 +123,10 @@ __all__ = [
     "Link",
     "Measurement",
     "Measurer",
+    "Origin",
     "Shared",
     "Styling",
+    "format_at",
     "resolve_span",
 ]
 
@@ -186,6 +188,25 @@ class Styling:
 
 
 @dataclass(frozen=True)
+class Origin:
+    """The element a mark came from, which an overflow is reported against.
+
+    doc/layout.md#errors reports a mark outside the printable area
+    against the element that made it.  An xref's own mark is the xref's,
+    and each mark it holds is one of its children's, so an xref carries
+    its children's origins as well, one for each mark it holds.
+
+    Attributes:
+        path: The element's node.
+        inside: An xref's children's origins, in the order of its marks.
+
+    """
+
+    path: NodePath | None
+    inside: tuple[Origin, ...] = ()
+
+
+@dataclass(frozen=True)
 class Extent:
     """How far down one element's marks reach, which is what a cut reads.
 
@@ -200,8 +221,7 @@ class Extent:
         bottom: Its lower edge.
         lines: A stretch field's line count; 0 for anything else.
         leading: The distance between those lines.
-        node: The element, which a mark outside the printable area
-            is reported against.
+        origin: The element its mark came from.
 
     """
 
@@ -209,7 +229,7 @@ class Extent:
     bottom: float
     lines: int = 0
     leading: float = 0.0
-    node: NodePath | None = None
+    origin: Origin | None = None
 
     def moved(self, down: float) -> Extent:
         """Return the span translated down.
@@ -223,7 +243,7 @@ class Extent:
             round_points(self.bottom + down),
             self.lines,
             self.leading,
-            self.node,
+            self.origin,
         )
 
 
@@ -631,18 +651,14 @@ class Measurer:
 
         """
         value = evaluate(expression, names, entry.path, context, prop)
-        try:
-            return apply_format("%s", value)
-        except Exception as refused:
-            raise BuildError(
-                str(refused),
-                Location(
-                    file=self.file,
-                    path=entry.path,
-                    prop=prop,
-                    record=context.record_index,
-                ),
-            ) from None
+        return format_at(
+            "%s",
+            value,
+            self.file,
+            entry.path,
+            prop,
+            context.record_index,
+        )
 
     def outer(
         self,
@@ -1204,13 +1220,14 @@ class Measurer:
             BuildError: The format does not take that value.
 
         """
-        try:
-            return apply_format(field.format, value)
-        except Exception as refused:
-            raise BuildError(
-                str(refused),
-                Location(file=self.file, path=field.path, prop="format", record=record),
-            ) from None
+        return format_at(
+            field.format,
+            value,
+            self.file,
+            field.path,
+            "format",
+            record,
+        )
 
     # -- images -----------------------------------------------------------
 
@@ -1686,6 +1703,56 @@ def described(field: Field | Barcode) -> str:
     return f", the data node {quote(field.data)},"
 
 
+def format_at(
+    form: str,
+    value: Any,
+    file: str | None,
+    path: NodePath,
+    prop: str,
+    record: int | None,
+) -> str:
+    """Return a value under a format, naming where it was written if refused.
+
+    What :func:`~sr.layout.context.evaluate_at` is to an expression,
+    for the format applied to what the expression gave.
+
+    Args:
+        form: The format.
+        value: What an expression resolved to.
+        file: The template, as the caller named it.
+        path: The node the format applies on.
+        prop: The property the diagnostic names.
+        record: The record it was built for.
+
+    Raises:
+        BuildError: The format does not take that value.
+
+    """
+    try:
+        return apply_format(form, value)
+    except Exception as refused:
+        raise BuildError(
+            str(refused),
+            Location(file=file, path=path, prop=prop, record=record),
+        ) from None
+
+
+def origin_of(placed: Placement) -> Origin:
+    """Return the origin of an element's mark, and of an xref's children's.
+
+    An xref's marks are its children's, one for one, as :func:`deferrals`
+    relies on too, so the origins line up with them.
+
+    Args:
+        placed: The element, settled.
+
+    """
+    return Origin(
+        placed.element.path,
+        tuple(origin_of(one) for one in placed.children),
+    )
+
+
 def extent(placed: Placement, mark: Mark) -> Extent:
     """Return how far down an element's marks reach.
 
@@ -1695,13 +1762,13 @@ def extent(placed: Placement, mark: Mark) -> Extent:
 
     """
     box = mark.box
-    node = placed.element.path
+    origin = origin_of(placed)
     if isinstance(mark, XrefMark):
         tops = [box.y, *(one.box.y for one in mark.marks)]
         return Extent(
             round_points(min(tops)),
             round_points(max(box.bottom, placed.top + placed.reach)),
-            node=node,
+            origin=origin,
         )
     # A deferred field's lines are its placeholder's, replaced when its
     # scope ends, so a cut between them would divide lines that are not the
@@ -1713,9 +1780,13 @@ def extent(placed: Placement, mark: Mark) -> Extent:
         and isinstance(mark, Text)
     ):
         return Extent(
-            box.y, round_points(box.bottom), len(mark.lines), mark.leading, node
+            box.y,
+            round_points(box.bottom),
+            len(mark.lines),
+            mark.leading,
+            origin,
         )
-    return Extent(box.y, round_points(box.bottom), node=node)
+    return Extent(box.y, round_points(box.bottom), origin=origin)
 
 
 def drawn_whole(element: Element | Xref) -> bool:

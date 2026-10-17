@@ -464,7 +464,7 @@ so that each asks its question as before, and each says how.
 The CBOR encoding is compared over a part of the corpus, in
 [test_cbor.py](../test_cbor.py), and agrees wherever the NDJSON does,
 with one thing set right first: the reference writes the tables whose
-keys are names, `data`, `groupRuns` and `groupKeys`, in its hash map's
+keys are names, `data`, `groupRuns`, and `groupKeys`, in its hash map's
 order, which changes from one run to the next, where doc/ sorts them.
 A case cannot be registered as differing for a reason that comes and
 goes, so the comparison sorts the reference's, and a test there fails

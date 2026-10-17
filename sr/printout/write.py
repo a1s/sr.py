@@ -299,7 +299,10 @@ def warning_object(warning: BuildWarning) -> dict[str, Any]:
     return found
 
 
-def data_object(blobs: Mapping[str, bytes | str]) -> dict[str, Any]:
+def data_object(
+    blobs: Mapping[str, bytes | str],
+    contents: bool = True,
+) -> dict[str, Any]:
     """Return the header's `data` table.
 
     Keys are sorted by name, as `fonts` is and for the same reason:
@@ -308,12 +311,17 @@ def data_object(blobs: Mapping[str, bytes | str]) -> dict[str, Any]:
 
     Args:
         blobs: The blobs something in the document refers to.
+        contents: Whether each entry carries its content.
+            Only a record that is written needs it, and
+            encoding it is the one costly part of the header.
 
     """
     found: dict[str, Any] = {}
     for name in sorted(blobs):
         content = blobs[name]
-        if isinstance(content, bytes):
+        if not contents:
+            found[name] = {}
+        elif isinstance(content, bytes):
             found[name] = {
                 "encoding": "base64",
                 "content": base64.b64encode(content).decode("ascii"),
@@ -323,12 +331,17 @@ def data_object(blobs: Mapping[str, bytes | str]) -> dict[str, Any]:
     return found
 
 
-def header_object(printout: Printout, base: Path | None) -> dict[str, Any]:
+def header_object(
+    printout: Printout,
+    base: Path | None,
+    contents: bool = True,
+) -> dict[str, Any]:
     """Return the header line's object.
 
     Args:
         printout: The document.
         base: The directory it is being written to.
+        contents: Whether the `data` table carries its contents.
 
     """
     found: dict[str, Any] = {
@@ -348,7 +361,7 @@ def header_object(printout: Printout, base: Path | None) -> dict[str, Any]:
         font_object(entry, base)
         for entry in sorted(printout.fonts, key=lambda one: one.name)
     ]
-    found["data"] = data_object(printout.data)
+    found["data"] = data_object(printout.data, contents)
     if printout.warnings:
         found["warnings"] = [warning_object(one) for one in printout.warnings]
     return found
@@ -511,18 +524,26 @@ def page_object(page: Page, default: Paper, base: Path | None = None) -> dict[st
     return found
 
 
-def records(printout: Printout, base: Path | None) -> Iterator[dict[str, Any]]:
+def records(
+    printout: Printout,
+    base: Path | None,
+    contents: bool = True,
+) -> Iterator[dict[str, Any]]:
     """Yield the printout's records as objects, header first.
 
     This is the tree both encodings write, and the one
     the [invariants](doc/printout.md#invariants) are checked on.
+    Each page's is made as it is asked for, so a caller
+    that takes them one at a time holds one page's at a time.
 
     Args:
         printout: The document.
         base: The directory it is being written to.
+        contents: Whether the `data` table carries its contents,
+            which a check of the invariants has no use for.
 
     """
-    yield header_object(printout, base)
+    yield header_object(printout, base, contents)
     for page in printout.pages:
         yield page_object(page, printout.paper, base)
 
@@ -568,6 +589,9 @@ def as_cbor_text(value: Any) -> Any:
     the reference writes in either encoding.  The path it came from
     no longer finds its file; NDJSON is the encoding that keeps it.
 
+    This copies the whole record, so :func:`write_cbor` asks for it
+    only for a record the encoder has refused.
+
     Args:
         value: A record, or anything inside one.
 
@@ -592,6 +616,10 @@ def write_cbor(printout: Printout, out: BinaryIO, base: Path | None = None) -> N
     nothing more.  ``cbor2`` does all of that by default for the types
     the tree holds, which is why the tree is typed.
 
+    A record holding a lone surrogate is refused by the encoder, and is
+    encoded again with :func:`as_cbor_text`'s replacements.  Only a path
+    brings one, so nearly every record is encoded once and never copied.
+
     Args:
         printout: The document.
         out: Where to write it, opened for bytes.
@@ -600,4 +628,8 @@ def write_cbor(printout: Printout, out: BinaryIO, base: Path | None = None) -> N
 
     """
     for record in records(printout, base):
-        out.write(cbor2.dumps(as_cbor_text(record)))
+        try:
+            encoded = cbor2.dumps(record)
+        except UnicodeEncodeError:
+            encoded = cbor2.dumps(as_cbor_text(record))
+        out.write(encoded)

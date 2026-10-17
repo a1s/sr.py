@@ -180,6 +180,46 @@ def test_5_an_xref_to_an_outline_entry_nobody_is_named() -> None:
     ]
 
 
+def test_5_an_outline_xref_with_no_target() -> None:
+    """An entry with no name is not one an absent target finds."""
+    records = printout()
+    del marks(records)[0]["name"]
+    del marks(records)[5]["target"]
+    assert violations(records) == [
+        "page 1, mark 6: the xref to an outline entry has no target"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("index", "key", "said"),
+    [
+        (1, "font", "page 1, mark 2: its font ['x'] is not in the header's"),
+        (2, "data", "page 1, mark 3: its data ['x'] is not in the header's"),
+        (5, "target", "page 1, mark 6: the xref targets the outline entry"),
+    ],
+)
+def test_a_name_that_is_not_a_string_is_in_no_table(
+    index: int, key: str, said: str
+) -> None:
+    """An array cannot be hashed, and is reported rather than looked up."""
+    records = printout()
+    marks(records)[index][key] = ["x"]
+    (found,) = violations(records)
+    assert found.startswith(said)
+
+
+def test_an_entry_or_a_font_named_by_an_array_names_nothing() -> None:
+    records = printout()
+    marks(records)[0]["name"] = ["top"]
+    records[0]["fonts"][0]["name"] = ["body"]
+    assert violations(records) == [
+        'page 1, mark 2: its font "body" is not in the header\'s font table',
+        'page 1, mark 6.1: its font "body" is not in the header\'s font table',
+        'page 1, mark 6: the xref targets the outline entry "top", '
+        "and no entry is named so",
+    ]
+
+
 def test_6_a_negative_extent() -> None:
     records = printout()
     marks(records)[2]["box"]["height"] = -1
@@ -245,6 +285,44 @@ def test_7_a_page_is_judged_by_its_own_margins() -> None:
     records[1]["leftMargin"] = 0
     marks(records)[1]["box"]["x"] = 0
     assert violations(records) == []
+
+
+@pytest.mark.parametrize(
+    ("page", "said"),
+    [
+        (None, "the header has no page object"),
+        (
+            {**PAGE, "width": "wide"},
+            'the header\'s page width is "wide", not a number',
+        ),
+        (
+            {**PAGE, "leftMargin": None},
+            "the header's page has no leftMargin",
+        ),
+        (
+            {**PAGE, "height": 1e400},
+            "the header's page height is inf, not a number",
+        ),
+    ],
+)
+def test_7_a_header_whose_geometry_cannot_be_read(
+    page: dict[str, Any] | None, said: str
+) -> None:
+    """The margins cannot be measured, and that is said, not passed over."""
+    records = printout()
+    if page is None:
+        del records[0]["page"]
+    else:
+        records[0]["page"] = page
+    marks(records)[1]["box"]["x"] = -500
+    assert violations(records) == [said]
+
+
+def test_7_a_page_whose_override_cannot_be_read() -> None:
+    records = printout()
+    records[1]["width"] = [100]
+    marks(records)[1]["box"]["x"] = -500
+    assert violations(records) == ["page 1: its width is [100], not a number"]
 
 
 def test_8_a_text_mark_with_no_lines() -> None:
@@ -413,7 +491,7 @@ def test_a_box_flush_with_every_margin_lies_inside() -> None:
 
 
 def test_the_first_side_crossed_is_the_answer() -> None:
-    """Left, right, top and bottom, in that order."""
+    """Left, right, top, and bottom, in that order."""
     assert crossing(AREA, 0, 0, 100, 60) == Crossing("left", 0, 5)
     assert crossing(AREA, 5, 0, 100, 60) == Crossing("right", 105, 95)
 

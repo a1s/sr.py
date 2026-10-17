@@ -1262,18 +1262,27 @@ def test_allowed_it_is_a_warning_once_per_band(tmp_path: Path) -> None:
     )
 
 
-def test_a_mark_inside_an_xref_is_judged_against_the_xref(tmp_path: Path) -> None:
+def test_a_mark_inside_an_xref_is_judged_against_its_own_element(
+    tmp_path: Path,
+) -> None:
+    """The xref and its first child lie inside; the field after them does not.
+
+    doc/layout.md#errors names the element the mark came from,
+    which is the child, not the xref that holds it.
+
+    """
     with pytest.raises(BuildError) as refused:
         built(
             tmp_path,
             "    detail height=10 {\n"
             '      xref type="url" target="\'u\'" left=0 top=0 width=50 height=10 {\n'
+            "        line left=0 top=0 width=1\n"
             '        field text="A" left=0 right=-260 top=0 height=6\n'
             "      }\n"
             "    }",
         )
     said = str(refused.value)
-    assert "report > layout > detail > xref, record 0" in said
+    assert "report > layout > detail > xref > field, record 0" in said
     assert "the text's right edge is at 310 pt" in said
 
 
