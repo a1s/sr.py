@@ -19,7 +19,7 @@ NAME = "sr"
 
 # Kept in step with CHANGELOG.md.
 VERSION = "0.1.0"
-DATE = date(2026, 9, 5)
+DATE = date(2026, 10, 18)
 
 
 def engine() -> str:

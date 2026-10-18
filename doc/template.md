@@ -173,7 +173,7 @@ asks.
 
 A warning reaches the [printout header](printout.md#header-line) as a warning
 of kind `unknown`. A build also prints it on standard error, and
-[`sr validate`](cli.md#sr-validate) lists it among its `warnings`.
+[`s-reports validate`](cli.md#sr-validate) lists it among its `warnings`.
 
 ## Value types
 
@@ -1610,10 +1610,10 @@ it runs over, which its own [`records`](#records) coerces; `None` is an
 empty sequence, over which the subreport still runs and prints its title
 and summary -- see [names and values](layout.md#names-and-values).
 
-`template=` is read when this template is read, so one `sr validate` checks the
-whole tree and one load error names whichever file it came from. A template that
-reaches itself, directly or through another, is refused at load.
-Its fonts are resolved, and its `data` nodes produced, when it
+`template=` is read when this template is read, so one `s-reports validate`
+checks the whole tree and one load error names whichever file it came from.
+A template that reaches itself, directly or through another, is refused
+at load. Its fonts are resolved, and its `data` nodes produced, when it
 first runs; see [subreports](layout.md#subreports).
 
 Children: `arg*`.
@@ -1691,10 +1691,10 @@ use `title` and `summary` for content that prints once per invocation.
 A subreport given by `template=` is an ordinary `report` document and carries
 its own `records`, `font` and `data` definitions, `basedir`, and page geometry.
 It validates on its own, so a layout meant only ever to be run as a subreport
-still passes `sr validate` -- its parameters are simply ones a caller has to
-supply. Its `data` nodes are produced, and its fonts resolved, when it first
-runs, against the parameters that invocation was given, and are kept for the
-rest of the build.
+still passes `s-reports validate` -- its parameters are simply ones a caller
+has to supply. Its `data` nodes are produced, and its fonts resolved,
+when it first runs, against the parameters that invocation was given,
+and are kept for the rest of the build.
 
 ## Font resolution
 
@@ -1894,12 +1894,13 @@ it exists to prevent.
 
 **Enumeration diagnostics are not report warnings.** They describe the machine,
 not the document, so they do not enter the [printout's warning
-list](printout.md#header-line) and are surfaced by `sr validate` and by the library's
-diagnostic hook instead. A stock macOS has three files that can never be parsed
-and cannot be removed, so putting them in the printout would attach a permanent,
-unfixable warning to every report and teach the reader to ignore the list that also
-carries missing glyphs and overflow. A file that *would* have answered a lookup and
-could not be read is a different matter, and is a warning.
+list](printout.md#header-line) and are surfaced by `s-reports validate`
+and by the library's diagnostic hook instead. A stock macOS has three
+files that can never be parsed and cannot be removed, so putting them
+in the printout would attach a permanent, unfixable warning to every report
+and teach the reader to ignore the list that also carries missing glyphs
+and overflow. A file that *would* have answered a lookup and could not
+be read is a different matter, and is a warning.
 
 ### The substitute face
 

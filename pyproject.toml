@@ -22,7 +22,7 @@ classifiers = [
 # the expression evaluator, every barcode symbology, layout,
 # and the PDF writer -- is written here rather than taken.
 dependencies = [
-    "ckdl",       # KDL v2 parsing
+    "ckdl>=1.0",  # KDL v2 parsing, which arrived in 1.0
     "fonttools",  # font tables, collections, subsetting primitives
     "cbor2",      # the .srp.cbor encoding
     "pillow",     # image decode, for the renderer only

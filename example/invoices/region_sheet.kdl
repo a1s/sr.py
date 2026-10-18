@@ -15,7 +15,7 @@
 // the difference on those pages alone; every other page takes the document's.
 //
 // It is never built on its own -- it has no data of its own to build over --
-// but `sr validate region_sheet.kdl` checks it like any other template.
+// but `s-reports validate region_sheet.kdl` checks it like any other template.
 
 report name="Region sheet" description="One region's invoices, on their own pages" \
        version="1" author="als" {
