@@ -96,12 +96,14 @@ jobs:
 
       # A commit rather than main, so that a change to the Go engine
       # reaches this suite in a pull request here that moves the pin,
-      # instead of in whichever run happens to start next.  This is v0.1.0.
+      # instead of in whichever run happens to start next.  This is 0.1.1,
+      # whose go-text/typesetting v0.3.5 reads the CFF2 fonts on macOS
+      # that v0.3.4 panicked on while scanning the host.
       - name: Check out the Go reference
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: a1s/sr
-          ref: 84639336c1423b02ca26507e74484bac9ce93e9a
+          ref: 59d458ce6ffa43ea49d7a3943970ac66a2faf708
           path: tmp/sr
           persist-credentials: false
 
