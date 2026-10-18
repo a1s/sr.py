@@ -257,7 +257,7 @@ def test_the_reference_still_answers_the_same_way(
         assert entry is not None, str(outcome)
         assert not recorded.exists(), (
             f"{case.ident}: the reference refuses this probe, so "
-            f"{recorded.name} should not exist"
+            f"{recorded.name} should not exist. It said:\n{outcome}"
         )
         expected(entry, str(outcome))
     assert recorded.is_file(), (

@@ -6,13 +6,14 @@ import base64
 import io
 import json
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
 from sr import meta
-from sr.cli import COMMANDS, as_written, main
+from sr.cli import COMMANDS, PROG, as_written, main
 from sr.printout.inspect import read_printout
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -1740,3 +1741,66 @@ def test_what_a_command_writes_ends_its_lines_with_a_line_feed() -> None:
     assert code == 0
     assert b"\r" not in raw.getvalue()
     assert raw.getvalue().endswith(b"\nok\n")
+
+
+# -- how the program is started ---------------------------------------
+#
+# An installed package puts `s-reports` on the path, which
+# tests/unit/test_meta.py checks.  `python -m sr` is the route
+# for an interpreter whose scripts directory is not on the path,
+# and a checkout has its launcher, `python sr.py`.
+# Help names whichever was used.
+
+
+def started(*argv: str) -> subprocess.CompletedProcess[bytes]:
+    """Run the interpreter with these arguments from the repository root.
+
+    Args:
+        *argv: What follows the interpreter on its command line.
+
+    """
+    return subprocess.run(  # the argv is ours, not a shell string
+        [sys.executable, *argv],
+        cwd=ROOT,
+        capture_output=True,
+        timeout=60.0,
+        check=False,
+    )
+
+
+def test_python_dash_m_sr_runs_the_command_line() -> None:
+    completed = started("-m", "sr", "version")
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout == (meta.engine() + "\n").encode()
+
+
+def test_help_called_in_process_names_the_installed_command() -> None:
+    code, said = run("help")
+    assert code == 0
+    assert said.startswith(f"usage: {PROG} <command> [flags]\n")
+
+
+@pytest.mark.parametrize(
+    ("argv", "program"),
+    [(("-m", "sr"), "python -m sr"), (("sr.py",), "python sr.py")],
+)
+def test_help_names_the_program_as_it_was_started(
+    argv: tuple[str, ...], program: str
+) -> None:
+    completed = started(*argv, "help")
+    assert completed.returncode == 0, completed.stderr
+    lines = completed.stdout.decode().splitlines()
+    assert lines[0] == f"usage: {program} <command> [flags]"
+    assert lines[-1] == f"{program} help <command> describes one of them."
+
+
+@pytest.mark.parametrize(
+    ("argv", "program"),
+    [(("-m", "sr"), "python -m sr"), (("sr.py",), "python sr.py")],
+)
+def test_a_missing_command_points_at_help_as_it_was_started(
+    argv: tuple[str, ...], program: str
+) -> None:
+    completed = started(*argv)
+    assert completed.returncode == 2
+    assert f"try `{program} help`".encode() in completed.stderr

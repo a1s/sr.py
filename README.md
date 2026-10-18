@@ -12,17 +12,17 @@ A Python library with a CLI over it, counterpart to the parallel
 
 | | |
 |---|---|
-| [doc/template.md](doc/template.md) | Template format: nodes, properties, geometry, ordering rules, font resolution |
-| [doc/expressions.md](doc/expressions.md) | Expression language, predefined names, formatting, variable semantics |
-| [doc/layout.md](doc/layout.md) | Layout and pagination |
-| [doc/printout.md](doc/printout.md) | The intermediate document a renderer consumes |
-| [doc/barcode.md](doc/barcode.md) | Barcode encoding: which symbol each type draws for a value |
-| [doc/render.md](doc/render.md) | PDF rendering: what a renderer decides, and what it must not |
-| [doc/cli.md](doc/cli.md) | The command line: subcommands, flags, streams, exit codes |
-| [example/minimal/](example/minimal/) | The smallest complete report, and the printout doc/printout.md shows |
-| [example/sakila/](example/sakila/) | Reference template and dataset |
-| [example/invoices/](example/invoices/) | Second example: both kinds of subreport, region grouping, the remaining variable modes |
-| [example/fonts/](example/fonts/) | Fonts committed so examples resolve identically everywhere |
+| [doc/template.md](https://github.com/a1s/sr.py/blob/main/doc/template.md) | Template format: nodes, properties, geometry, ordering rules, font resolution |
+| [doc/expressions.md](https://github.com/a1s/sr.py/blob/main/doc/expressions.md) | Expression language, predefined names, formatting, variable semantics |
+| [doc/layout.md](https://github.com/a1s/sr.py/blob/main/doc/layout.md) | Layout and pagination |
+| [doc/printout.md](https://github.com/a1s/sr.py/blob/main/doc/printout.md) | The intermediate document a renderer consumes |
+| [doc/barcode.md](https://github.com/a1s/sr.py/blob/main/doc/barcode.md) | Barcode encoding: which symbol each type draws for a value |
+| [doc/render.md](https://github.com/a1s/sr.py/blob/main/doc/render.md) | PDF rendering: what a renderer decides, and what it must not |
+| [doc/cli.md](https://github.com/a1s/sr.py/blob/main/doc/cli.md) | The command line: subcommands, flags, streams, exit codes |
+| [example/minimal/](https://github.com/a1s/sr.py/tree/main/example/minimal/) | The smallest complete report, and the printout doc/printout.md shows |
+| [example/sakila/](https://github.com/a1s/sr.py/tree/main/example/sakila/) | Reference template and dataset |
+| [example/invoices/](https://github.com/a1s/sr.py/tree/main/example/invoices/) | Second example: both kinds of subreport, region grouping, the remaining variable modes |
+| [example/fonts/](https://github.com/a1s/sr.py/tree/main/example/fonts/) | Fonts committed so examples resolve identically everywhere |
 
 ## How it works
 
@@ -48,6 +48,11 @@ widow control, and correct deferred page counts all follow from that.
 ```bash
 python sr.py build --template sakila.kdl --data payments.jsonl --out report.pdf
 ```
+
+That is the launcher at the root of a checkout, which runs the program
+without installing the package. Installed with `pip install s-reports`,
+the same program is the `s-reports` command, and `python -m sr` where
+the interpreter's scripts directory is not on the path.
 
 | Flag | |
 |---|---|
@@ -82,7 +87,7 @@ travel in the printout header where archiving keeps them. A one-letter flag
 takes one dash and a long one two, so `-t` and `--template`, but not `--t`
 or `-template`. A value is attached with `=` or separate, a flag may follow
 the positional arguments, and a switch also takes `=true` or `=false`.
-Full reference: [doc/cli.md](doc/cli.md).
+Full reference: [doc/cli.md](https://github.com/a1s/sr.py/blob/main/doc/cli.md).
 
 ## Library
 
@@ -106,7 +111,7 @@ with out.open("w", encoding="utf-8", newline="") as handle:
 serializing it is a separate step, and the directory it is written to is what
 its font and image paths are made relative to. Every flag on the command line
 is a field of `Options`, because the command line
-[decides nothing](doc/cli.md).
+[decides nothing](https://github.com/a1s/sr.py/blob/main/doc/cli.md).
 
 Rendering is a separate step too, and takes the printout in memory
 or one read back from a file. Both give the same bytes:
@@ -125,10 +130,11 @@ Path("again.pdf").write_bytes(render(read(out)))
 python sr.py build -t example/minimal/minimal.kdl -d example/minimal/films.jsonl -o minimal.srp.jsonl
 ```
 
-[minimal.kdl](example/minimal/minimal.kdl) is the smallest report there is:
-one font, a header with a rule, and one field per record. Its printout is
-the example at the end of [doc/printout.md](doc/printout.md#example), which
-the test suite builds and compares byte for byte, so that example is a
+[minimal.kdl](https://github.com/a1s/sr.py/blob/main/example/minimal/minimal.kdl)
+is the smallest report there is: one font, a header with a rule,
+and one field per record. Its printout is the example at the end of
+[doc/printout.md](https://github.com/a1s/sr.py/blob/main/doc/printout.md#example),
+which the test suite builds and compares byte for byte, so that example is a
 document rather than an illustration of one.
 
 ```bash
@@ -147,15 +153,17 @@ The second example, which uses both kinds of subreport:
 python sr.py build -t example/invoices/invoices.kdl -d example/invoices/invoices.jsonl -o invoices.pdf
 ```
 
-[sakila.kdl](example/sakila/sakila.kdl) — a payment list grouped by customer
-in two columns: every band type, a group with its own title and summary, column
-header and footer, stretch fields, a floating element, six barcode types, an
-embedded image and a referenced one, both kinds of cross-reference, conditional
-outline entries, a deferred page count, justified text, and typed parameters.
+[sakila.kdl](https://github.com/a1s/sr.py/blob/main/example/sakila/sakila.kdl) —
+a payment list grouped by customer in two columns: every band type,
+a group with its own title and summary, column header and footer,
+stretch fields, a floating element, six barcode types, an embedded image
+and a referenced one, both kinds of cross-reference, conditional outline entries,
+a deferred page count, justified text, and typed parameters.
 
-[invoices.kdl](example/invoices/invoices.kdl) — invoices by region with line
-items: an inline `embedded` subreport with an `arg` and its own `records`, a
-`template=` subreport in [region_sheet.kdl](example/invoices/region_sheet.kdl)
+[invoices.kdl](https://github.com/a1s/sr.py/blob/main/example/invoices/invoices.kdl) —
+invoices by region with line items: an inline `embedded` subreport
+with an `arg` and its own `records`, a `template=` subreport in
+[region_sheet.kdl](https://github.com/a1s/sr.py/blob/main/example/invoices/region_sheet.kdl)
 that paginates itself onto landscape pages of its own, a group using `keeptogether`
 with `minrows` and `mintailrows`, a `summary` with `swapfooter`, an image with
 `embed=#false`, a compressed `data` blob, `iter="item"` against `iter="detail"`,
@@ -172,9 +180,9 @@ them as a reference does not mislead:
 | Enumerations | barcode types `Code93`, `DataMatrix`, `QR-M`; `image scale="cut"` and `"grow"`; `dash="dash"` |
 | Scopes | `iter="report"` / `"page"` / `"column"`; `reset="detail"` / `"item"` |
 
-Both reference the [committed fonts](example/fonts/) by path, so they build
-identically on any machine and work under `--strict-fonts`. Swap `file=` for
-`typeface=` to use whatever the machine has instead.
+Both reference the [committed fonts](https://github.com/a1s/sr.py/tree/main/example/fonts/)
+by path, so they build identically on any machine and work under `--strict-fonts`.
+Swap `file=` for `typeface=` to use whatever the machine has instead.
 
 ## Reproducible output
 
@@ -224,10 +232,11 @@ elements and outline entries, with groups, columns, band splitting,
 `eject` nodes, keep-together rules, balanced columns, deferred values,
 and subreports of both kinds, inline and with pages of their own,
 and writes them as NDJSON, CBOR, or PDF. Each printout is held to its
-own [invariants](doc/printout.md#invariants) before it is written, and
-`sr.py inspect` holds any printout it reads to them. Every barcode type
-is encoded here, from the standards, rather than by a library, and
-an image is interpreted only as far as the header that states its size.
+own [invariants](https://github.com/a1s/sr.py/blob/main/doc/printout.md#invariants)
+before it is written, and `s-reports inspect` holds
+any printout it reads to them. Every barcode type is encoded here,
+from the standards, rather than by a library, and an image
+is interpreted only as far as the header that states its size.
 The PDF writer is written here too: the object table and the cross
 reference, the drawing, the outline and the links. `fontTools` subsets
 the faces and Pillow decodes the images the file does not carry
@@ -236,18 +245,18 @@ pixel by pixel, with the same printout rendered by the reference.
 The command line and its two reports are held to the reference's too.
 The cases the differential corpus cannot yet compare are listed,
 with what each waits for, in
-[tests/differential/pending.toml](tests/differential/pending.toml).
+[tests/differential/pending.toml](https://github.com/a1s/sr.py/blob/main/tests/differential/pending.toml).
 
 The Go implementation is the **oracle**: a reference binary whose *outputs*
 settle questions the specification leaves open. Its source is not read --
 this is a second implementation from the specification, not a port.
 The harness builds it from a tree beside this repository, and skips
 with a reason where there is no Go toolchain to build it with.
-See [tests/differential/README.md](tests/differential/README.md).
+See [tests/differential/README.md](https://github.com/a1s/sr.py/blob/main/tests/differential/README.md).
 
 Where the two engines disagree and `doc/` does not say who is right,
 the answer is a sentence in `doc/`, not a workaround in either engine.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](https://github.com/a1s/sr.py/blob/main/LICENSE).

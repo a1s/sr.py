@@ -1,0 +1,126 @@
+name: Test
+
+# The one definition of what "the code is in good shape" means.
+# Pull requests run it, and the release calls it through workflow_call,
+# so a tag cannot enforce a different bar than the PR that was merged.
+#
+# Pushes to main are covered too: a PR is tested against its own merge
+# commit, which is not what ends up on the branch after other PRs land.
+#
+# Everything a run depends on is pinned: the actions to commits,
+# the Go reference to a commit, and ruff and mypy in pyproject.toml.
+# A commit then gets the same answer whenever it is tested, and a tag
+# is held to the bar its pull request met.  Dependabot moves the actions;
+# the rest moves in a pull request of its own.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  # Called by the release workflow, which gates the upload on these jobs.
+  workflow_call:
+
+permissions:
+  contents: read
+
+# A new push to a pull request makes the previous run's answer stale,
+# so drop it.  Every other run gets a group of its own: GitHub keeps one
+# pending run per group and cancels the one before it, which would leave
+# a commit on main without a result when several land close together.
+concurrency:
+  group: >-
+    test-${{ github.event_name == 'pull_request'
+    && github.ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+  PIP_PROGRESS_BAR: 'off'
+
+jobs:
+  # ruff and mypy check the syntax and the types against the 3.11 floor
+  # whatever interpreter runs them, so one run of each is enough.
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      # The same install `make install` does, minus the venv: the runner's
+      # interpreter is already a throwaway.  mypy reads the tests too,
+      # and they import the oracles, so the extras come along.
+      - run: python -m pip install -e ".[dev,oracles]"
+      - run: make lint PYTHON=python
+      - run: make typecheck PYTHON=python
+
+  # Font enumeration is per-platform, and doc/template.md names three
+  # platforms, so the suite runs on each of them.  Every platform runs
+  # the floor `requires-python` promises and the current release;
+  # Linux, the cheapest runner, also covers the versions in between,
+  # which is the range the GNUmakefile's `test-linux-matrix` checks.
+  test:
+    name: Test ${{ matrix.os }}, Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      # Report every platform, rather than letting the first failure
+      # hide what the others would have said.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ['3.11', '3.14']
+        include:
+          - os: ubuntu-latest
+            python: '3.12'
+          - os: ubuntu-latest
+            python: '3.13'
+    env:
+      # The differential suite builds the Go reference from this tree.
+      # It is checked out under tmp/, which git, ruff, and pytest ignore.
+      SR_GO_REPO: ${{ github.workspace }}/tmp/sr
+      # Here the oracle is meant to exist, so a comparison that cannot
+      # run fails instead of skipping: a suite that measured nothing
+      # must not pass.
+      SR_DIFFERENTIAL_REQUIRED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # A commit rather than main, so that a change to the Go engine
+      # reaches this suite in a pull request here that moves the pin,
+      # instead of in whichever run happens to start next.  This is 0.1.1,
+      # whose go-text/typesetting v0.3.5 reads the CFF2 fonts on macOS
+      # that v0.3.4 panicked on while scanning the host.
+      - name: Check out the Go reference
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: a1s/sr
+          ref: 59d458ce6ffa43ea49d7a3943970ac66a2faf708
+          path: tmp/sr
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tmp/sr/go.mod
+          cache-dependency-path: tmp/sr/go.sum
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - run: python -m pip install -e ".[dev,oracles]"
+
+      # Called directly rather than through `make test`: the makefile
+      # wants a POSIX shell, which the Windows runner does not give it
+      # by default.  The target runs the same command.
+      - run: python -m pytest -n auto

@@ -121,6 +121,12 @@ def build_reference() -> ReferenceBinary:
     and ``go build`` runs into ``tmp/reference/``; Go's own caching makes
     a repeat build a no-op, so this is cheap to call once per test session.
 
+    Under pytest-xdist each worker is a session of its own, and each one
+    builds into a directory of its own, named after the worker.  Go writes
+    the binary in place on Windows, so two workers sharing one path would
+    race: one could run the file while another was still writing it.
+    The build cache is shared, so the tree is still compiled once.
+
     Raises:
         ReferenceUnavailable: the toolchain, the tree, or the build is absent.
 
@@ -136,8 +142,10 @@ def build_reference() -> ReferenceBinary:
 
     tree = find_go_tree()
     toolchain = find_go_toolchain()
-    binary = BUILD_DIR / ("sr.exe" if sys.platform == "win32" else "sr")
-    BUILD_DIR.mkdir(parents=True, exist_ok=True)
+    worker = os.environ.get("PYTEST_XDIST_WORKER")
+    directory = BUILD_DIR / worker if worker else BUILD_DIR
+    binary = directory / ("sr.exe" if sys.platform == "win32" else "sr")
+    directory.mkdir(parents=True, exist_ok=True)
 
     # -trimpath for the same reason the GNUmakefile uses it: build paths
     # do not belong in the binary, and two machines should produce one file.

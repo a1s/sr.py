@@ -374,34 +374,40 @@ def registry_files() -> tuple[Path, ...]:
     sees them in and therefore part of which face wins a key.
 
     """
-    try:
-        # Imported here because it is present only on Windows.
-        import winreg
-    except ImportError:
+    # winreg exists only on Windows.  The test is of the platform
+    # rather than of the import, because that is the test mypy reads:
+    # elsewhere its stub of the module defines nothing, and only
+    # a branch on sys.platform keeps it from checking the calls there.
+    # The `else` is part of that: code after an early return would be
+    # reported as unreachable, where a branch is skipped without a word.
+    if sys.platform != "win32":
         return ()
-    windir = os.environ.get("WINDIR") or os.environ.get("SystemRoot") or ""
-    fonts = Path(windir) / "Fonts"
-    found: list[Path] = []
-    seen: set[Path] = set()
-    for root_name, subkey in REGISTRY_KEYS:
-        try:
-            with winreg.OpenKey(getattr(winreg, root_name), subkey) as key:
-                values = [
-                    winreg.EnumValue(key, index)
-                    for index in range(winreg.QueryInfoKey(key)[1])
-                ]
-        except OSError:
-            continue
-        for _, data, _kind in sorted(values, key=lambda one: str(one[0])):
-            if not isinstance(data, str) or not data:
+    else:
+        import winreg
+
+        windir = os.environ.get("WINDIR") or os.environ.get("SystemRoot") or ""
+        fonts = Path(windir) / "Fonts"
+        found: list[Path] = []
+        seen: set[Path] = set()
+        for root_name, subkey in REGISTRY_KEYS:
+            try:
+                with winreg.OpenKey(getattr(winreg, root_name), subkey) as key:
+                    values = [
+                        winreg.EnumValue(key, index)
+                        for index in range(winreg.QueryInfoKey(key)[1])
+                    ]
+            except OSError:
                 continue
-            path = Path(data)
-            if not path.is_absolute():
-                path = fonts / path
-            if path not in seen:
-                seen.add(path)
-                found.append(path)
-    return tuple(found)
+            for _, data, _kind in sorted(values, key=lambda one: str(one[0])):
+                if not isinstance(data, str) or not data:
+                    continue
+                path = Path(data)
+                if not path.is_absolute():
+                    path = fonts / path
+                if path not in seen:
+                    seen.add(path)
+                    found.append(path)
+        return tuple(found)
 
 
 def linux_sources() -> tuple[Source, ...]:
