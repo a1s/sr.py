@@ -55,3 +55,18 @@ waits here for the reference's fix.\
 ticket = "barcode-lengths-unrounded: filed against the Go engine"
 since = "2026-09-20"
 affects = ["example/invoices"]
+
+[[pending]]
+id = "inspect-example-sakila"
+summary = "the dump of the sakila report differs only in its outline entry's name, which the reference does not quote"
+reason = """
+The two dumpers agree on every line of the sakila printout but one: the \
+title band's outline entry, named `top` so that the images in the summary \
+can link back to it.  The reference writes the name bare, \
+and doc/cli.md#sr-inspect quotes it.  That is `outline-name-quoted` in \
+divergences.toml, which an example may not be covered by, so the example's \
+dump waits here for the reference's fix.\
+"""
+ticket = "outline-name-quoted: filed against the Go engine"
+since = "2026-10-17"
+affects = ["inspect/example/sakila", "inspect/example/sakila-june"]

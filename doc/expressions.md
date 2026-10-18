@@ -442,6 +442,52 @@ in a bytes literal stops at `\377`, the largest byte, and a `\u` or `\U`
 escape that names a surrogate, or a code point above `\U0010FFFF`, is
 an error, as it is in a string literal.
 
+### Quoted strings
+
+`repr` and `%q` quote a string, and so does `str` of a container
+for each string inside it. The quotation marks are double, and inside them
+a character is written as itself where Unicode calls it printable:
+a letter, a mark, a number, punctuation, or a symbol, or the ASCII space.
+That is Python's `str.isprintable` and Go's `strconv.IsPrint`, which agree.
+Every other character is escaped:
+
+| Character | Written |
+|---|---|
+| `"` and `\` | `\"` and `\\` |
+| bell, backspace, form feed, newline, carriage return, tab, and vertical tab | `\a`, `\b`, `\f`, `\n`, `\r`, `\t`, and `\v` |
+| any other below U+0080 | `\x` and two hexadecimal digits: `\x00`, `\x7f` |
+| any other below U+10000 | `\u` and four: `\u00a0`, `\u200b` |
+| any other | `\U` and eight: `\U000e0001` |
+
+So `Š` and an emoji are themselves, and a no-break space, a soft hyphen,
+a zero-width joiner, the line and paragraph separators, a private-use
+character, and a code point Unicode has not assigned are all escaped.
+What a quoted string writes is a literal that reads back as the string
+it quoted.
+
+```
+repr("Š\t")            # "Š\t"
+repr("a\u00a0b")       # "a\u00a0b"
+repr("\x07")           # "\a"
+```
+
+The hexadecimal digits are lower case.
+
+The `repr` of a bytes value reads the bytes as UTF-8 first. A character
+they spell is written as a string's is, and a byte that is not part of
+one is `\x` and its value: `repr(b'\xc2\xa0\xff')` is `b"\u00a0\xff"`.
+A character on its own, as a [missing glyph](template.md#missing-glyphs)
+is named in a warning, is quoted the same way in single quotes,
+where `'` is escaped rather than `"`.
+
+This is also how the [command line](cli.md#sr-inspect) quotes text
+a person reads: the dump of a printout, a check's report, and a diagnostic.
+
+Which characters are printable is the Unicode database's to say,
+and the database grows. An engine reads it from the version of Unicode
+it was built with, so a character assigned after that version is escaped
+by it and written as itself by an engine built with a later one.
+
 ## The `decimal` type
 
 A member declared `type="decimal"` produces `decimal` values,
@@ -552,12 +598,13 @@ field expr="(customer.last_name, customer.first_name, customer_amount)"
 A tuple result spreads across the conversions positionally;
 the count must match exactly. The default is `"%s"`.
 
-Supported conversions: `%s` `%q` `%d` `%i` `%o` `%x` `%X` `%b` `%e` `%E` `%f` `%g`
-`%G` `%c` `%%`, each accepting the flags `-` `+` `#` `0` `' '`, a width, and a
-precision. `%q` is a quoted string; `%i` is an alias for `%d`. There is no `%r`.
-A literal percent sign is `%%`, in both formatters: every `%` begins a conversion,
-so an unknown letter after one is an error and a `%` that ends the string is a
-truncated conversion rather than a percent sign.
+Supported conversions: `%s` `%q` `%d` `%i` `%o` `%x` `%X` `%b` `%e` `%E`
+`%f` `%g` `%G` `%c` `%%`, each accepting the flags `-` `+` `#` `0` `' '`,
+a width, and a precision. `%q` is a [quoted string](#quoted-strings);
+`%i` is an alias for `%d`. There is no `%r`. A literal percent sign is `%%`,
+in both formatters: every `%` begins a conversion, so an unknown letter
+after one is an error and a `%` that ends the string is a truncated conversion
+rather than a percent sign.
 
 `%d` and the float conversions accept `decimal` values and format them exactly:
 `%.2f` on a decimal rounds half away from zero without going through a float.

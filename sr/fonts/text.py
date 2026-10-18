@@ -50,7 +50,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from sr.errors import BuildWarning
-from sr.expr.values import quote
+from sr.expr.values import quote, quote_char
 from sr.fonts.face import Face
 from sr.units import fits, round_points
 
@@ -83,27 +83,6 @@ NEWLINE = "\n"
 # algorithm is a choice, and its cost is that a language which does not
 # separate its words with spaces does not wrap at its own boundaries.
 BREAK = " \t"
-
-# How Go's `%q` spells a rune, which is how the missing-glyph warning
-# names the character it is about.  Everything not here and not printable
-# is escaped by codepoint.
-GO_ESCAPES = {
-    0x07: r"\a",
-    0x08: r"\b",
-    0x09: r"\t",
-    0x0A: r"\n",
-    0x0B: r"\v",
-    0x0C: r"\f",
-    0x0D: r"\r",
-    0x27: r"\'",
-    0x5C: "\\\\",
-}
-
-# Below this a character is escaped as `\xNN`, above it as `\uNNNN` or
-# `\UNNNNNNNN`.  Go's own boundary, since the warning is a rune quoted
-# the way Go quotes one.
-ASCII_LIMIT = 0x80
-BMP_LIMIT = 0x10000
 
 
 @dataclass(frozen=True)
@@ -336,30 +315,6 @@ def trim(line: str) -> str:
 
     """
     return line.rstrip(BREAK)
-
-
-def quote_char(character: str) -> str:
-    """Return a character as the missing-glyph warning names it.
-
-    Go's `%q` for a rune, which is the spelling the reference engine's
-    warnings use and therefore the spelling a printout carries.
-    A printable character appears as itself; everything else is escaped.
-
-    Args:
-        character: One codepoint.
-
-    """
-    code = ord(character)
-    escape = GO_ESCAPES.get(code)
-    if escape is not None:
-        return f"'{escape}'"
-    if character.isprintable() and code >= 0x20:
-        return f"'{character}'"
-    if code < ASCII_LIMIT:
-        return f"'\\x{code:02x}'"
-    if code < BMP_LIMIT:
-        return f"'\\u{code:04x}'"
-    return f"'\\U{code:08x}'"
 
 
 def missing_glyph(font: str, character: str, node: str | None = None) -> BuildWarning:

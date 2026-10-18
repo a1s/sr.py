@@ -19,9 +19,13 @@ __all__ = [
     "Case",
     "corpus",
     "example_cases",
+    "identifiers",
+    "inspected",
     "probe_cases",
     "render_cases",
     "rendered",
+    "report_cases",
+    "validated",
     "within_root",
 ]
 
@@ -47,6 +51,11 @@ SUFFIXES = {"jsonl": ".srp.jsonl", "cbor": ".srp.cbor"}
 
 # What a render's identifier starts with, ahead of its case's.
 RENDER_PREFIX = "render/"
+
+# What the identifiers of the two reports start with, ahead of the case's:
+# the check of its template, and the dump of the printout this engine built.
+VALIDATE_PREFIX = "validate/"
+INSPECT_PREFIX = "inspect/"
 
 TEMPLATE_SUFFIX = ".kdl"
 
@@ -138,6 +147,24 @@ class Case:
             if not (self.host_fonts and flag == STRICT_FONTS)
         ]
         return arguments + common + list(self.flags)
+
+    def validate_argv(self) -> list[str]:
+        """Return the ``validate`` arguments that check this case's template.
+
+        The template is named relative to the repository root,
+        which is where the command runs: the report's first line
+        names it as given, and its font paths are relative to there,
+        so a relative name is what keeps the report the same on every
+        machine.  The case's parameters go with it, and ``--strict-fonts``
+        as for the build, so that the check resolves what the build does.
+
+        """
+        arguments = ["validate", self.template.as_posix()]
+        for value in self.params:
+            arguments += ["--param", value]
+        if not self.host_fonts:
+            arguments.append(STRICT_FONTS)
+        return arguments
 
     def missing_inputs(self) -> list[Path]:
         """Return the case's input files that are not on disk."""
@@ -307,3 +334,53 @@ def render_cases() -> list[Case]:
 
     """
     return [case for case in corpus() if case.encoding == "jsonl"]
+
+
+def validated(case: Case) -> str:
+    """Return the identifier the check of a case's template goes by.
+
+    The check is compared apart from the printout, as a render is,
+    so the divergence register can name a report that differs while
+    the printout agrees: ``validate/`` and then the case's identifier.
+
+    """
+    return VALIDATE_PREFIX + case.ident
+
+
+def inspected(case: Case) -> str:
+    """Return the identifier the dump of a case's printout goes by.
+
+    ``inspect/`` and then the case's identifier,
+    for the reason :func:`validated` gives.
+
+    """
+    return INSPECT_PREFIX + case.ident
+
+
+def report_cases() -> list[Case]:
+    """Return the cases whose reports are compared.
+
+    Every case in the corpus, once, as for :func:`render_cases`.
+
+    """
+    return [case for case in corpus() if case.encoding == "jsonl"]
+
+
+def identifiers() -> list[str]:
+    """Return every identifier a comparison goes by.
+
+    The printouts, the renders, the two reports, and the command lines:
+    everything the divergence register and the pending list can name,
+    and so what an entry in either has to match at least one of.
+
+    """
+    # Imported here, since the command lines are written in terms
+    # of what this module defines.
+    from tests.differential.command_lines import command_lines
+
+    found = [case.ident for case in corpus()]
+    found += [rendered(case) for case in render_cases()]
+    found += [validated(case) for case in report_cases()]
+    found += [inspected(case) for case in report_cases()]
+    found += [command.ident for command in command_lines()]
+    return found

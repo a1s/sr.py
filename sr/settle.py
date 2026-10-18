@@ -19,7 +19,7 @@ is checked the same way, since it too produces a value rather than text.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from sr.errors import (
@@ -28,6 +28,7 @@ from sr.errors import (
     ExpressionError,
     FontError,
     Location,
+    UnknownParameter,
 )
 from sr.expr import Decimal, FrozenList, Record, Time, evaluate, type_name
 from sr.fonts.resolve import Resolution, Resolver
@@ -36,6 +37,7 @@ from sr.template.model import Blob, Parameter, Report, parse_text
 __all__ = [
     "as_bytes",
     "blob_bytes",
+    "declared_parameters",
     "is_of_type",
     "parameter_values",
     "resolve_fonts",
@@ -93,23 +95,46 @@ def parameter_values(
         built: The run's ``BUILD_TIME``.
 
     Raises:
-        BuildError: A name is not declared, or a value is missing,
-            will not parse, or is not of the declared type.
+        UnknownParameter: A name is not declared.
+        BuildError: A value is missing, will not parse,
+            or is not of the declared type.
+
+    """
+    declared = declared_parameters(report, params)
+    supplied = {name: parsing(declared[name], text) for name, text in params.items()}
+    return settle_parameters(
+        report.parameters, supplied, built, Location(file=report.file)
+    )
+
+
+def declared_parameters(
+    report: Report,
+    params: Iterable[str],
+) -> dict[str, Parameter]:
+    """Return what a template declares, by name, refusing a name it does not.
+
+    A value for a parameter that is not declared would go nowhere,
+    and the report would build with the default in its place.
+    ``build`` and ``validate`` both refuse it here, so that
+    the two say the same thing about it.
+
+    Args:
+        report: The template.
+        params: The names a ``--param`` was given for.
+
+    Raises:
+        UnknownParameter: A name is not declared.
 
     """
     declared = {one.name: one for one in report.parameters}
     for name in params:
         if name not in declared:
             known = ", ".join(sorted(declared)) or "none"
-            raise BuildError(
+            raise UnknownParameter(
                 f"--param {name}: the template declares no such parameter; "
                 f"it declares: {known}"
             )
-
-    supplied = {name: parsing(declared[name], text) for name, text in params.items()}
-    return settle_parameters(
-        report.parameters, supplied, built, Location(file=report.file)
-    )
+    return declared
 
 
 def parsing(parameter: Parameter, text: str) -> Callable[[], Any]:

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.differential.cases import corpus, probe_cases
+from tests.differential.cases import identifiers, probe_cases
 from tests.differential.pending import load_pending
 from tests.differential.register import load_register
 
@@ -48,9 +48,9 @@ def test_every_entry_names_the_milestone_that_retires_it() -> None:
 def test_every_entry_covers_a_case_that_exists() -> None:
     if not probe_cases():
         pytest.skip("no probes yet")
-    identifiers = [case.ident for case in corpus()]
+    known = identifiers()
     for entry in load_pending().entries:
-        assert any(entry.matches(ident) for ident in identifiers), (
+        assert any(entry.matches(ident) for ident in known), (
             f"pending entry {entry.ident!r} matches no case; its patterns are "
             f"{list(entry.affects)}. Either the case was renamed, or the entry "
             "outlived it and should be removed."
@@ -68,11 +68,11 @@ def test_no_case_is_in_both() -> None:
     """
     register = load_register()
     pending = load_pending()
-    for case in corpus():
-        divergence = register.entry_for(case.ident)
-        waiting = pending.entry_for(case.ident)
+    for ident in identifiers():
+        divergence = register.entry_for(ident)
+        waiting = pending.entry_for(ident)
         assert divergence is None or waiting is None, (
-            f"{case.ident} is covered by divergence {divergence and divergence.ident} "
+            f"{ident} is covered by divergence {divergence and divergence.ident} "
             f"and by pending entry {waiting and waiting.ident}; it may have one"
         )
 

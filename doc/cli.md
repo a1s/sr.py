@@ -36,19 +36,56 @@ sr.py help      print usage, for one command or for all of them
 ```
 
 `sr.py` with no arguments says that a command is required, points at
-`sr.py help`, and exits 2. `sr.py help build`, `sr.py build -h` and
+`sr.py help`, and exits 2. `sr.py help build`, `sr.py build -h`, and
 `sr.py build --help` all print the same thing and exit 0. Every command
-rejects an argument it has no use for, `version` included.
+rejects an argument it has no use for, `version` included,
+and `help` takes one command at most and no flags: a command
+it does not know is a usage error, and so is a flag after it.
 
 ### Flags
 
-A flag may be written with one dash or two, and its value attached or separate:
-`-t x.kdl`, `--template x.kdl` and `--template=x.kdl` are the same flag.
-Flags may follow positional arguments, so `sr.py render out.srp.jsonl -o out.pdf`
-works.
+A flag's one-letter name takes one dash and its long name two,
+and its value is attached after an `=` or separate:
+`-t x.kdl`, `-t=x.kdl`, `--template x.kdl`, and `--template=x.kdl`
+are the same flag. `--t` and `-template` are no flags, and nor is
+anything with three dashes: each is a usage error, and the message says
+how a flag is spelled. A letter does not run into its value, so `-tx.kdl`
+is an unknown flag. This is the convention most command lines keep,
+and it leaves each of a flag's names one spelling.
 
-`--param` is the one repeatable flag. Values accumulate in the order given,
-and two mistakes in it are refused rather than absorbed:
+Help is `-h` or `--help`, in place of a command or anywhere among
+a command's flags. It is looked for before any other flag is read,
+so it wins over a mistake elsewhere in the command line, and a flag
+that takes a value does not take it as one: `sr.py build -t --help`
+prints the usage of `build`. After `--` it is positional, as everything
+there is. Help is a [switch](#flags), so `--help=false` does not ask
+for it, and `--help=yes` is a usage error.
+
+Flags may follow positional arguments, so `sr.py render out.srp.jsonl -o out.pdf`
+works. `--` ends them: what follows it is positional,
+even where it starts with a dash. A `-` alone is positional
+wherever it is, since it names a [stream](#--for-a-stream).
+
+A flag that takes no value is a switch. A switch may also be given
+`=true` or `=false`, as in `--strict-fonts=false`, so that a script
+that always writes the flag can turn it off. No other value is one:
+`--strict-fonts=1` is a usage error, and so is `--strict-fonts true`,
+whose `true` is a positional argument.
+
+A flag given twice takes the last value given. A value that is empty
+is the flag not given, so `-d ""` reads no records and `-o ""` is
+a missing `--out`. That lets a script pass a variable that may be empty
+without a test around the flag.
+
+A switch is the exception: its values are `true` and `false`,
+and an empty one is neither, so `--strict-fonts=` is a usage error,
+as `--strict-fonts=yes` is. A script that sets a switch from a variable
+sets the variable to one of the two.
+
+`--param` and `--accept` are the repeatable flags, and are an exception too:
+an empty one names nothing, and is a usage error. An `--accept` given
+twice is the one name. `--param` values accumulate in the order given,
+and two mistakes in them are refused rather than absorbed:
 
 - **A name the template does not declare.** The value would go nowhere,
   the report would build with the default in its place, and nothing would
@@ -57,6 +94,13 @@ and two mistakes in it are refused rather than absorbed:
   declared parameters. The library refuses it too, at build time.
 - **A name given twice.** Last-wins is the convention, and it is wrong here:
   two places both think they own that parameter.
+
+Both are usage errors, and so is a `--param` that is not `NAME=VALUE`,
+or whose name is empty. The first needs the template to find,
+and is found once it has been read; the rest are found before.
+A value that does not parse as its parameter's type is not
+a usage error but a run that failed: the command line was well formed,
+and what it supplied was wrong for this template.
 
 ### Streams
 
@@ -72,12 +116,14 @@ terminal.
 
 Both streams are **UTF-8**, on every machine and under any console code page.
 A printout's text is Unicode, and a dump whose bytes changed with the machine
-it ran on could not be diffed against one made on another. Text that cannot
-be encoded at all, such as a file name that is not valid Unicode, is written
-as a backslash escape rather than ending the run; in a printout, written to
-a file or to standard output, that escape is JSON's own. CBOR has no escapes,
-and a [CBOR printout](printout.md#cbor) writes U+FFFD instead. No environment
-variable changes the bytes, `PYTHONIOENCODING` included.
+it ran on could not be diffed against one made on another. For the same reason
+every line ends with U+000A alone, on Windows too, where a pipe or a file
+would otherwise get U+000D before each one. Text that cannot be encoded
+at all, such as a file name that is not valid Unicode, is written as
+a backslash escape rather than ending the run; in a printout, written
+to a file or to standard output, that escape is JSON's own. CBOR has
+no escapes, and a [CBOR printout](printout.md#cbor) writes U+FFFD instead.
+No environment variable changes the bytes, `PYTHONIOENCODING` included.
 
 On Windows this settles what `sr.py` writes, not what the next program
 makes of it:
@@ -117,15 +163,16 @@ depending on `[Console]::InputEncoding`. They are
 
 A printout being *read* is always a file. Relative paths in a printout (a font,
 an image with `embed=#false`) resolve against the directory it was read from,
-and standard input has no directory, so `render` and `inspect` take a path.
+and standard input has no directory, so `render` and `inspect` take a path,
+and `-` in its place is a usage error.
 
 ### Exit codes
 
 | | |
 |---|---|
 | 0 | success |
-| 1 | the run failed: a file that would not open, a template that would not load, a required parameter with no value, a band that would not fit, a font that would not resolve, a printout that violates its own invariants |
-| 2 | usage: an unknown flag, a missing required flag, an output extension that names no format |
+| 1 | the run failed: a file that would not open, a template that would not load, a required parameter with no value, a parameter value that does not parse, a band that would not fit, a font that would not resolve, a printout that violates its own invariants |
+| 2 | usage: an unknown flag, a flag with the wrong number of dashes, a missing required flag, a flag value that is not one (a switch's other than `true` or `false`, a `--build-time` that is not RFC 3339, a `--pages` that is not a list of ranges), an output extension that names no format, a `--param` the template does not declare |
 
 **Warnings do not change the exit code.** A build that records a missing glyph,
 a substituted font, or an oversized band under `--allow-overflow`, succeeded:
@@ -167,6 +214,10 @@ The output format comes from `--format`, or from what `--out` ends in:
 Any other extension is a usage error naming the three. Guessing would write
 a printout to a file called `report.txt` and call it done, and these are the
 extensions the [printout format](printout.md#encoding) itself names.
+An extension is compared in any case, so `report.PDF` is a PDF.
+
+`--format` names a format as an extension does, without the dot and in any case:
+`pdf`, `jsonl`, `ndjson`, or `cbor`, the third being the second's other name.
 
 `--format` **over a recognized extension warns**, on stderr, and proceeds:
 `--format cbor -o report.jsonl` writes a file that `render` and `inspect`
@@ -174,9 +225,10 @@ will try to read as NDJSON, because they take the encoding from the extension.
 Over an unrecognized extension -- or no extension, as for `-`, or one that
 agrees -- it is silent, since overriding is what the flag is for.
 
-Every check on the command line runs **before** the template is read, so a
-mistyped flag is reported as itself rather than after a missing file or a
-template's load warnings. The exceptions are the two that need the template:
+Every check on the command line runs **before** the template is read,
+so a mistyped flag is reported as itself rather than after a missing
+file or a template's load warnings. A `--build-time` that is not RFC 3339
+is one of them. The exceptions are the two that need the template:
 `--param` against the declared names, and the build itself.
 
 `--param` and `--build-time` are the only two ways a build depends on anything
@@ -189,7 +241,24 @@ On success the command writes one line to stderr:
 report.pdf: 15 pages, 4 fonts, 2 warnings
 ```
 
-Warnings, when there are any, are listed before it, one per line.
+The output, as `--out` named it, and then what the document holds:
+its pages and its fonts, always, and its warnings, where there are any.
+A count of 1 takes the singular, so a report of no fonts is `1 page, 0 fonts`.
+An output of `-` is named `standard output`, since `-` names nothing a reader
+would recognize.
+
+Warnings, when there are any, are listed before it, one per line,
+each as `warning:` and then the line the dump's
+[`warnings`](#sr-inspect) section writes for it:
+
+```
+warning: overflow  record 0  report > layout > detail  the band measures 80 pt and the largest frame offers 40 pt, and it cannot be cut
+```
+
+A note the load made about the template, which the printout does not carry
+because it is about the template rather than the document, is listed with
+them as `warning:` and the diagnostic.
+
 A build without `--allow-overflow` that meets a band too tall for an empty frame
 fails instead, with the node named -- that is the engine's rule, not this one's.
 
@@ -260,18 +329,28 @@ A font line is the name the template gave it, its size and style, the
 [step](template.md#font-resolution) that resolved it, the file, and the face
 inside that file.
 
+The first line names the template as the command line gave it,
+as `inspect` names a printout. Text is quoted as the expression language
+[quotes a string](expressions.md#quoted-strings): the report's name,
+a typeface a font asked for, the family of the face it got,
+and a parameter's default. A version and an author are written
+as they are, as the dump writes them.
+
 `ok` is the last line, so a `tail -1` reads the verdict; a check that failed
-does not print it. Three sections may appear before it, each only when it
+does not print it. Four sections may appear before it, each only when it
 holds something:
 
 | | |
 |---|---|
 | `subreports` | The [subreport](template.md#subreport) nodes the template carries, by path. A `template=` one is loaded and checked with its host, so a fault in it is reported against its own file. Its fonts are resolved too, each against its own `basedir` and its own `data` blobs, and one document is checked once however many nodes name it. Its failures and warnings appear in the sections below, but its fonts are not listed in `fonts`: that table is what *this* template declares. A subreport has no command line, so `--param` reaches the host document only. |
-| `warnings` | Load diagnostics, an [unknown name](template.md#unknown-names), a substituted typeface. The check still passes. |
+| `warnings` | Load diagnostics, an [unknown name](template.md#unknown-names), a substituted typeface. The check still passes. A warning the printout would carry is written as the dump's [`warnings`](#sr-inspect) section writes one; a load diagnostic is written as the diagnostic. |
 | `failures` | Fonts that did not resolve. These are why the exit code is 1, so they are not filed as warnings. |
 | `diagnostics` | Under `--verbose`: what the [host font enumeration](template.md#host-enumeration) had to say. About the machine, not the template. |
 
-Exit 1 means the template did not load, or a font it declares did not resolve.
+Exit 1 means the template did not load, a font it declares did not resolve,
+or a `--param` value does not parse as its parameter's type.
+A `--param` naming a parameter the template does not declare
+is a usage error, exit 2, as it is for `build`.
 
 ## `sr.py render`
 
@@ -299,7 +378,12 @@ the file is opened.
 The printout's own warnings, recorded when it was built, are repeated on
 stderr, because this is the point at which somebody looks at the document,
 and an archived printout with a substituted font in it should not have to
-be inspected to find that out.
+be inspected to find that out. They are written as `build` writes them,
+and a last line names the output and counts the pages the PDF has:
+
+```
+report.pdf: 15 pages
+```
 
 ## `sr.py inspect`
 
@@ -315,8 +399,18 @@ read and diffed.
 
 | Flag | |
 |---|---|
-| `--pages` | Page numbers to dump: `1`, `4-6`, `10-` and `-3` are all ranges, and they combine with commas. An open end means the first or the last page, so a bare `-` is every page. Default: all. |
+| `--pages` | Page numbers to dump: `1`, `4-6`, `10-`, and `-3` are all ranges, and they combine with commas. An open end has no bound, so `10-` is every page numbered 10 or more, and a bare `-` is every page. Default: all. |
 | `--summary` | The header only, no pages. |
+
+A page number is decimal digits, however many, counting from 1, and
+spaces around a number are ignored. What is not a range is a usage error,
+found before the printout is read: a range that is empty, as between
+two commas, a number below 1 or written in anything but decimal digits,
+and a range that counts backwards, as `3-1`. A page past the last is
+not an error; there is just no page there to dump. Each page is held
+to the ranges by the `number` its page line carries, so in a printout
+whose numbering is broken, which is one `inspect` is there to show,
+`3-` still reaches a page numbered 5 where there are only three.
 
 A CBOR printout is read as [the format writes one](printout.md#cbor),
 and a tag, a byte string, or an indefinite length is refused at the byte
@@ -370,24 +464,51 @@ page 1  595.276 x 841.89  138 marks
       "DVD rental payments"
 ```
 
+The first line names the file as the command line gave it. The header's
+last line counts the pages and the fonts, always, and the data blobs,
+where there are any; a count of 1 takes the singular, here and in every
+section below, as in `1 run`. Warnings are not counted there, since the
+section that lists them is the count.
+
 The header is followed by a section per table the header carries -- `groups`,
 `fonts`, `data`, `warnings` -- each present only when it holds something,
-and each padded like the [check's](#sr-validate).
+and each padded like the [check's](#sr-validate). A blob's size is the bytes
+it holds, decoded, rather than the length of its spelling in the printout,
+and literal text is counted in UTF-8. A warning is its kind, then `record` and
+the record's index where a record produced it, then its node, with a property
+after it as `name=` where the warning is about one, then its message, each two
+spaces from the next:
 
-Every length is a number of points, as the printout holds it. A mark's `box` is
-`left,top widthxheight`. A page line names the size the page runs at; a page that
-[differs from the document](printout.md#page-lines) -- which a subreport paginating
-itself produces -- names its margins too, since those are what a mark outside the
-printable area was judged against. An [xref](printout.md#xref)'s nested marks are indented
-under it, which is the only nesting a printout has. Text lines are quoted, one
-per line, under the mark that carries them, so a wrapped paragraph reads as the
-lines the engine actually broke it into. A field a mark does not carry is left
-out rather than written empty: a rectangle with no `stroke` has no `width`,
-an unrotated barcode does not say so, and a barcode with no `paper` shows only
-its `ink`. A barcode's line ends with how many runs a 1-D symbol has,
-`69 stripes`, or how many rows a 2-D one has, `25 rows`; the runs
-themselves are not shown. An image's line ends with its `crop` where it
-has one, written as a box is, in pixels: `crop 7,3.5 10x5`.
+```
+warnings
+  overflow  record 0  report > layout > detail  the band measures 80 pt and the largest frame offers 40 pt, and it cannot be cut
+  unknown  report > layout > detail wobble=  unknown property `wobble`, accepted and ignored
+```
+
+Every length is a number of points, as the printout holds it, with every digit
+it holds: the dump does not round a number another writer left unrounded.
+A mark's `box` is `left,top widthxheight`. A page line names the size the page
+runs at, `page 1  595.276 x 841.89  138 marks`. A page that sets any of its
+own [geometry](printout.md#page-lines) -- which a subreport paginating itself
+produces -- names all four of its margins too, as the header's page line does,
+since those are what a mark outside the printable area was judged against:
+`page 2  841.89 x 595.276 pt, margins left 42.52 right 42.52 top 42.52 bottom 42.52  12 marks`.
+An outline entry is its point, its level, its title, its name where it has one,
+and `closed` where it is:
+`outline  at 70.866,42.52  level 1  "DVD rental payments"  name "top"  closed`.
+Text is quoted as the expression language
+[quotes a string](expressions.md#quoted-strings), a value, a title,
+a name, a target, and a caption alike. An [xref](printout.md#xref)'s
+nested marks are indented under it, which is the only nesting a printout has.
+Text lines are quoted, one per line, under the mark that carries them,
+so a wrapped paragraph reads as the lines the engine actually broke it into.
+A field a mark does not carry is left out rather than written empty:
+a rectangle with no `stroke` has no `width`, an unrotated barcode does
+not say so, and a barcode with no `paper` shows only its `ink`.
+A barcode's line ends with how many runs a 1-D symbol has, `69 stripes`,
+or how many rows a 2-D one has, `25 rows`; the runs themselves are
+not shown. An image's line ends with its `crop` where it has one,
+written as a box is, in pixels: `crop 7,3.5 10x5`.
 
 ## `sr.py version`
 
@@ -395,9 +516,11 @@ has one, written as a box is, in pixels: `crop 7,3.5 10x5`.
 sr 0.1.0
 ```
 
-`sr.py --version` prints the same. The version is stamped in at link time
-and is what a printout header's `engine` field carries, so an artifact
-and the binary that made it can be matched up.
+`sr.py --version` prints the same. `sr.py -version` is a usage error,
+since a long name takes [two dashes](#flags). The version is
+what a printout header's [`engine`](printout.md#the-engine-field)
+field carries, so an artifact and the version of the engine that made it
+can be matched up.
 
 ## Reproducibility
 

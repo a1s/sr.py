@@ -1,0 +1,47 @@
+// probes/expressions/repr-escapes.kdl -- which characters a quoted string escapes, and how.
+//
+// `repr` and `%q` quote a string, and so does a container's `str`
+// for the strings inside it.  The reference escapes a character
+// that Unicode does not call printable, and writes the rest as
+// themselves: a letter, a mark, a number, punctuation, a symbol,
+// or the ASCII space.  A no-break space and a zero-width joiner are
+// escaped, and so are the line and paragraph separators, a private
+// use character, and one no version of Unicode has assigned yet.
+// `Š` and an emoji are not.
+//
+// The seven control characters with a letter of their own are written
+// with it, as a literal spells them.  Any other is `\x` below U+0080,
+// `\u` below U+10000, and `\U` above it, in lower-case hexadecimal.
+// A bytes value is read as UTF-8 first, so the bytes of a no-break space
+// are written as that character's escape, and a byte that is not part
+// of a character as `\x`.
+//
+// An emoji is a character the face has no glyph for, so it has
+// a field of its own: the reference orders the glyph warnings
+// of one element by codepoint, which `glyph-warning-order` registers,
+// and one character to an element keeps that question out of this one.
+//
+// See doc/expressions.md#quoted-strings.
+
+report name="expressions/repr-escapes" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=8
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=300 {
+      field expr=#"repr('\a\b\f\v')"# left=0 top=0 width=400 height=10                              // "\a\b\f\v"
+      field expr=#"repr('\t\n\r')"# left=0 top=20 width=400 height=10                               // "\t\n\r"
+      field expr=#"repr('\x00\x1f\x7f')"# left=0 top=40 width=400 height=10                         // "\x00\x1f\x7f"
+      field expr=#"repr('"' + "'" + '\\')"# left=0 top=60 width=400 height=10                       // "\"'\\"
+      field expr=#"repr('a\u00a0b\u3000c')"# left=0 top=80 width=400 height=10                      // "a\u00a0b\u3000c"
+      field expr=#"repr('\u00ad\u200b\u200d\ufeff\u061c')"# left=0 top=100 width=400 height=10      // "\u00ad\u200b\u200d\ufeff\u061c"
+      field expr=#"repr('\u0085\u2028\u2029')"# left=0 top=120 width=400 height=10                  // "\u0085\u2028\u2029"
+      field expr=#"repr('\u0378\ue000')"# left=0 top=140 width=400 height=10                        // "\u0378\ue000"
+      field expr=#"repr('\U000e0001\U000f0000\U0010ffff')"# left=0 top=160 width=400 height=10      // "\U000e0001\U000f0000\U0010ffff"
+      field expr=#"repr('Šķūnis ÿ')"# left=0 top=180 width=400 height=10                            // "Šķūnis ÿ"
+      field expr=#"repr('\U0001F600')"# left=0 top=200 width=400 height=10                          // the emoji, as itself
+      field expr=#"repr(b'\xc2\xa0\x07\xff')"# left=0 top=220 width=400 height=10                   // b"\u00a0\a\xff"
+      field expr=#"format('%q', '\a\u00a0')"# left=0 top=240 width=400 height=10                    // "\a\u00a0"
+      field expr=#"str(['\a', ('\u00a0', {'k\u200b': 1})])"# left=0 top=260 width=400 height=10     // ["\a", ("\u00a0", {"k\u200b": 1})]
+    }
+  }
+}

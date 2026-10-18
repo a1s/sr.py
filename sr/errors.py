@@ -63,7 +63,9 @@ __all__ = [
     "SrError",
     "Step",
     "TemplateError",
+    "UnknownParameter",
     "Unsupported",
+    "warning_spelled",
 ]
 
 # The `kind` of a warning the printout header carries, per
@@ -344,6 +346,17 @@ class RenderError(SrError):
     """
 
 
+class UnknownParameter(BuildError):
+    """A ``--param`` naming a parameter the template does not declare.
+
+    A :class:`BuildError` to the library, which refuses one at build
+    time as doc/cli.md#flags asks.  The command line tells it apart,
+    because the mistake is in the command line rather than in the
+    template or the data, and exits 2 for it rather than 1.
+
+    """
+
+
 class Unsupported(BuildError):
     """Something the specification has and this engine has not yet.
 
@@ -464,9 +477,47 @@ class BuildWarning:
 
     def __str__(self) -> str:
         """Spell the warning the way the command line reports one."""
-        node = f"{self.node} {self.prop}=" if self.node and self.prop else self.node
-        parts = [node] if node else []
-        if self.record is not None:
-            parts.append(f"record {self.record}")
-        where = f" ({', '.join(parts)})" if parts else ""
-        return f"{self.kind}: {self.message}{where}"
+        return warning_spelled(
+            self.kind,
+            self.message,
+            node=self.node,
+            prop=self.prop,
+            record=self.record,
+        )
+
+
+def warning_spelled(
+    kind: str,
+    message: str,
+    *,
+    node: str | None = None,
+    prop: str | None = None,
+    record: object = None,
+) -> str:
+    """Return a warning as the command line writes one.
+
+    doc/cli.md#sr-inspect: the kind, the record that produced it,
+    the node, and the message, each where the warning has one,
+    two spaces apart.  A property follows its node with an `=`,
+    as a diagnostic names one.  The dump's `warnings` section,
+    the check's, and standard error under ``build`` and ``render``
+    all write a warning this way, so that one reads the same
+    wherever it turns up.
+
+    Args:
+        kind: What kind of warning it is.
+        message: What happened.
+        node: The node path it happened at, where there is one.
+        prop: The property on that node, where it is about one.
+        record: The record that produced it, where one did,
+            already spelled or as the number it is.
+
+    """
+    parts = [kind]
+    if record is not None:
+        parts.append(f"record {record}")
+    where = f"{node or ''} {prop}=".strip() if prop else node
+    if where:
+        parts.append(where)
+    parts.append(message)
+    return "  ".join(parts)

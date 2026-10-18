@@ -29,22 +29,27 @@ from __future__ import annotations
 import json
 import struct
 from collections.abc import Iterable, Iterator
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from sr.errors import BuildError, Location
+from sr.errors import BadValue, BuildError, Location, warning_spelled
+from sr.expr.values import quote
 from sr.printout.verify import listed, mapped
-from sr.printout.write import number
 
 __all__ = [
     "cbor_item",
     "cbor_records",
+    "counted",
     "dump",
-    "pages_wanted",
+    "page_ranges",
+    "page_wanted",
     "read_cbor",
     "read_jsonl",
     "read_printout",
     "records_of",
+    "spelled",
+    "warning_line",
 ]
 
 # How deep the items of a CBOR printout may nest.  A page record,
@@ -69,7 +74,7 @@ MARK_FIELDS: dict[str, tuple[str, ...]] = {
     "rectangle": ("stroke", "width", "dash", "fill", "radius"),
     "image": ("data", "file"),
     "barcode": ("type", "value", "module", "vertical", "ink", "paper"),
-    "outline": ("title", "level", "name", "closed"),
+    "outline": ("level", "title", "name", "closed"),
     "xref": ("type", "target", "caption"),
 }
 
@@ -292,89 +297,135 @@ def records_of(records: list[Any]) -> tuple[dict[str, Any], list[dict[str, Any]]
     return header, pages
 
 
-def pages_wanted(text: str | None, count: int) -> set[int] | None:
-    """Return the page numbers ``--pages`` names, or ``None`` for all.
+# One page number of ``--pages``: decimal digits, and nothing else.
+# Python's ``int`` would take a plus sign, an underscore, and the digits
+# of every script Unicode has, and none of them is a page number.
+DIGITS = frozenset("0123456789")
 
-    ``1``, ``4-6``, ``10-`` and ``-3`` are all ranges and they
-    combine with commas.  An open end means the first or the last
-    page, so a bare ``-`` is every page.
+# One range of ``--pages``: its first page and its last, either of them
+# ``None`` where that end is open.  A number is a ``Decimal`` because
+# that holds any number of digits exactly, where ``int`` refuses to read
+# more than 4300 of them, and a page past the last is not an error.
+PageRange = tuple[Decimal | None, Decimal | None]
+
+
+def page_ranges(text: str) -> tuple[PageRange, ...]:
+    """Return the ranges a ``--pages`` value names, as written.
+
+    doc/cli.md#sr-inspect: ``1``, ``4-6``, ``10-``, and ``-3`` are all
+    ranges, and they combine with commas.  An open end is ``None``,
+    and has no bound, so a bare ``-`` is every page.  Spaces around
+    a number are ignored.  What is not a range is refused here,
+    before the printout is read, since it is a mistake in the
+    command line rather than in the file: a range that is empty,
+    a page number below 1, a number that is not decimal digits,
+    and a range that counts backwards.
 
     Args:
-        text: The flag's value, where one was given.
-        count: How many pages the printout has.
+        text: The flag's value.
 
     Raises:
-        BuildError: A range is not a range.
+        BadValue: A part of it is not a range.
 
     """
-    if text is None:
-        return None
-    wanted: set[int] = set()
+    ranges: list[PageRange] = []
     for part in text.split(","):
         piece = part.strip()
         if not piece:
-            continue
+            raise BadValue(f"--pages {text!r}: a range between commas is empty")
         if "-" not in piece:
-            wanted.add(as_page(piece))
+            one = as_page(piece, text)
+            ranges.append((one, one))
             continue
         low, _, high = piece.partition("-")
-        first = as_page(low) if low.strip() else 1
-        last = as_page(high) if high.strip() else count
-        wanted.update(range(first, last + 1))
-    return wanted
+        first = as_page(low, text) if low.strip() else None
+        last = as_page(high, text) if high.strip() else None
+        if first is not None and last is not None and last < first:
+            raise BadValue(f"--pages {text!r}: {piece} counts backwards")
+        ranges.append((first, last))
+    return tuple(ranges)
 
 
-def as_page(text: str) -> int:
+def as_page(written: str, text: str) -> Decimal:
     """Return one page number a ``--pages`` range names.
 
     Args:
-        text: The number, as it was written.
+        written: The number, as it was written.
+        text: The whole value, for the diagnostic.
 
     Raises:
-        BuildError: It is not a page number.
+        BadValue: It is not a page number.
 
     """
-    try:
-        return int(text.strip())
-    except ValueError:
-        raise BuildError(f"--pages: not a page number: {text.strip()!r}") from None
+    number = written.strip()
+    if not number or not set(number) <= DIGITS:
+        raise BadValue(f"--pages {text!r}: {number!r} is not a page number")
+    if not number.strip("0"):
+        raise BadValue(f"--pages {text!r}: pages count from 1, and {number} does not")
+    return Decimal(number)
+
+
+def page_wanted(number: Any, ranges: tuple[PageRange, ...] | None) -> bool:
+    """Return whether a page is one of those some ranges name.
+
+    Each page's own number is held to the ranges, rather than the
+    ranges counted out into page numbers.  So a range costs nothing
+    however far it reaches, and an open end has no bound: ``3-`` names
+    a page numbered 5 in a printout of three pages, which a printout
+    whose numbering is broken has, and which is what ``inspect`` is
+    there to show.
+
+    Args:
+        number: The page line's ``number``, whatever the file holds there.
+        ranges: What :func:`page_ranges` read, or ``None`` for every page.
+
+    """
+    if ranges is None:
+        return True
+    if not isinstance(number, int) or isinstance(number, bool):
+        return False
+    return any(
+        (first is None or first <= number) and (last is None or number <= last)
+        for first, last in ranges
+    )
 
 
 def dump(
-    path: Path, records: list[Any], pages: set[int] | None, summary: bool = False
+    name: str,
+    records: list[Any],
+    pages: tuple[PageRange, ...] | None,
+    summary: bool = False,
 ) -> Iterator[str]:
     """Yield the dump of a printout, line by line.
 
     Args:
-        path: The file it was read from, for the first line.
+        name: The file it was read from, as the caller named it,
+            for the first line.
         records: What the file held.
-        pages: The page numbers to show, or ``None`` for all.
+        pages: The ranges of pages to show, or ``None`` for all.
         summary: Whether to show the header alone.
 
     """
     header, page_lines = records_of(records)
-    yield from header_lines(path, header, len(page_lines))
+    yield from header_lines(name, header, len(page_lines))
     if summary:
         return
     for page in page_lines:
-        number_of = page.get("number")
-        if pages is not None and not (
-            isinstance(number_of, int) and number_of in pages
-        ):
-            continue
-        yield from page_dump(page, header)
+        if page_wanted(page.get("number"), pages):
+            yield from page_dump(page, header)
 
 
-def header_lines(path: Path, header: dict[str, Any], count: int) -> Iterator[str]:
+def header_lines(name: str, header: dict[str, Any], count: int) -> Iterator[str]:
     """Yield the header's own lines and the tables under it.
 
     Args:
-        path: The file, as the caller named it.
+        name: The file, as the caller named it, which is also
+            how ``validate`` names its template on its first line.
         header: The header record.
         count: How many page lines followed it.
 
     """
-    yield f"printout {path.as_posix()}"
+    yield f"printout {name}"
     made = [
         f"format {header.get('sr', '?')}",
         f"engine {quote(str(header.get('engine', '')))}",
@@ -389,13 +440,10 @@ def header_lines(path: Path, header: dict[str, Any], count: int) -> Iterator[str
         yield f"  {report['description']}"
     page = mapped(header.get("page"))
     if page:
+        geometry = {key: page.get(key, 0) for key in GEOMETRY}
         yield (
-            f"  page {spelled(page.get('width', 0))} x "
-            f"{spelled(page.get('height', 0))} pt, margins "
-            f"left {spelled(page.get('leftMargin', 0))} "
-            f"right {spelled(page.get('rightMargin', 0))} "
-            f"top {spelled(page.get('topMargin', 0))} "
-            f"bottom {spelled(page.get('bottomMargin', 0))}"
+            f"  page {spelled(geometry['width'])} x "
+            f"{spelled(geometry['height'])} pt, {margins_of(geometry)}"
         )
     yield "  " + tally(count, header)
     yield from section("groups", group_lines(header))
@@ -412,7 +460,8 @@ def headline(report: dict[str, Any]) -> str:
         report: The header's `report` object.
 
     """
-    parts = ["report", quote(report["name"]) if report.get("name") else "(unnamed)"]
+    name = report.get("name")
+    parts = ["report", quote(str(name)) if name else "(unnamed)"]
     if report.get("version"):
         parts.append(f"version {report['version']}")
     if report.get("author"):
@@ -423,22 +472,31 @@ def headline(report: dict[str, Any]) -> str:
 def tally(count: int, header: dict[str, Any]) -> str:
     """Return the line that counts what a printout holds.
 
+    doc/cli.md#sr-inspect: pages and fonts always, data blobs
+    where there are any.  Warnings are not counted here,
+    since the section that lists them is the count.
+
     Args:
         count: How many pages it has.
         header: The header record.
 
     """
-    counted = (
-        (count, "page", "pages"),
-        (len(listed(header.get("fonts"))), "font", "fonts"),
-        (len(mapped(header.get("data"))), "data blob", "data blobs"),
-        (len(listed(header.get("warnings"))), "warning", "warnings"),
-    )
-    return ", ".join(
-        f"{value} {one if value == 1 else many}"
-        for value, one, many in counted
-        if value or one == "page"
-    )
+    blobs = len(mapped(header.get("data")))
+    terms = [counted(count, "page"), counted(len(listed(header.get("fonts"))), "font")]
+    if blobs:
+        terms.append(counted(blobs, "data blob"))
+    return ", ".join(terms)
+
+
+def counted(value: Any, noun: str) -> str:
+    """Return a count and its noun, which is plural unless the count is 1.
+
+    Args:
+        value: The count.
+        noun: What is counted, in the singular.
+
+    """
+    return f"{value} {noun if value == 1 else noun + 's'}"
 
 
 def group_lines(header: dict[str, Any]) -> list[str]:
@@ -454,7 +512,9 @@ def group_lines(header: dict[str, Any]) -> list[str]:
         return []
     width = max(len(name) for name in runs)
     return [
-        f"{name:<{width}}  {runs[name]} runs  {keys.get(name, 0)} keys" for name in runs
+        f"{name:<{width}}  {counted(runs[name], 'run')}  "
+        f"{counted(keys.get(name, 0), 'key')}"
+        for name in runs
     ]
 
 
@@ -480,7 +540,7 @@ def font_lines(fonts: list[Any]) -> list[str]:
             if one.get(word):
                 parts.append(word)
         if one.get("requested"):
-            parts.append(f"{quote(one['requested'])} wanted")
+            parts.append(f"{quote(str(one['requested']))} wanted")
         parts.append(str(one.get("resolvedBy", "")))
         where = one.get("resolvedFile") or f"data {one.get('resolvedData', '')}"
         if one.get("resolvedIndex"):
@@ -506,13 +566,31 @@ def data_lines(blobs: dict[str, Any]) -> list[str]:
         entry = mapped(blob)
         content = str(entry.get("content", ""))
         encoding = entry.get("encoding")
-        size = len(content) if encoding is None else (len(content) * 3) // 4
         parts = [f"{name:<{width}}"]
         if encoding:
             parts.append(str(encoding))
-        parts.append(f"{size} bytes")
+        parts.append(counted(size_of(content, encoding), "byte"))
         lines.append("  ".join(parts))
     return lines
+
+
+def size_of(content: str, encoding: Any) -> int:
+    """Return how many bytes a blob holds, decoded.
+
+    What the blob is, rather than how long its spelling in the printout
+    is: base64 spends four characters on three bytes, and its padding
+    on none.  Literal text is counted in UTF-8, as a file of it would be.
+
+    Args:
+        content: The entry's `content`, as the printout spells it.
+        encoding: The entry's `encoding`, where it has one.
+
+    """
+    if encoding != "base64":
+        return len(content.encode("utf-8", "surrogatepass"))
+    compact = "".join(content.split())
+    padding = len(compact) - len(compact.rstrip("="))
+    return len(compact) * 3 // 4 - min(padding, 2)
 
 
 def warning_lines(warnings: list[Any]) -> list[str]:
@@ -522,16 +600,29 @@ def warning_lines(warnings: list[Any]) -> list[str]:
         warnings: The header's `warnings` array.
 
     """
-    lines = []
-    for one in warnings:
-        if not isinstance(one, dict):
-            continue
-        where = [str(one[key]) for key in ("node", "prop") if one.get(key)]
-        if one.get("record") is not None:
-            where.append(f"record {one['record']}")
-        tail = f"  ({', '.join(where)})" if where else ""
-        lines.append(f"{one.get('kind', '?')}  {one.get('message', '')}{tail}")
-    return lines
+    return [warning_line(one) for one in warnings if isinstance(one, dict)]
+
+
+def warning_line(warning: dict[str, Any]) -> str:
+    """Return one warning as the dump writes it.
+
+    :func:`sr.errors.warning_spelled` spells it, which is also
+    how ``build`` and ``render`` write one on standard error,
+    after ``warning:``, so that the two read alike.  The fields are read
+    as the rest of the dump reads them, as whatever they turn out to be.
+
+    Args:
+        warning: One object of the header's `warnings` array.
+
+    """
+    record = warning.get("record")
+    return warning_spelled(
+        str(warning.get("kind", "?")),
+        str(warning.get("message", "")),
+        node=str(warning["node"]) if warning.get("node") else None,
+        prop=str(warning["prop"]) if warning.get("prop") else None,
+        record=None if record is None else spelled(record),
+    )
 
 
 def section(name: str, lines: list[str]) -> Iterator[str]:
@@ -558,28 +649,39 @@ def page_dump(page: dict[str, Any], header: dict[str, Any]) -> Iterator[str]:
 
     """
     default = mapped(header.get("page"))
-    width = page.get("width", default.get("width", 0))
-    height = page.get("height", default.get("height", 0))
+    geometry = {key: page.get(key, default.get(key, 0)) for key in GEOMETRY}
     marks = listed(page.get("marks"))
-    heading = (
-        f"page {page.get('number', '?')}  "
-        f"{spelled(width)} x {spelled(height)}  "
-        f"{len(marks)} mark{'' if len(marks) == 1 else 's'}"
-    )
-    overrides = [
-        f"{word} {spelled(page[key])}"
-        for key, word in (
-            ("leftMargin", "left"),
-            ("rightMargin", "right"),
-            ("topMargin", "top"),
-            ("bottomMargin", "bottom"),
-        )
-        if key in page
-    ]
-    if overrides:
-        heading += "  margins " + " ".join(overrides)
-    yield heading
+    size = f"{spelled(geometry['width'])} x {spelled(geometry['height'])}"
+    if any(key in page for key in GEOMETRY):
+        size += " pt, " + margins_of(geometry)
+    yield f"page {page.get('number', '?')}  {size}  {counted(len(marks), 'mark')}"
     yield from marks_dump(marks, 1)
+
+
+# The fields of a page's geometry, which a page line may override.
+GEOMETRY = (
+    "width",
+    "height",
+    "leftMargin",
+    "rightMargin",
+    "topMargin",
+    "bottomMargin",
+)
+
+
+def margins_of(geometry: dict[str, Any]) -> str:
+    """Return four margins as the header's page line names them.
+
+    Args:
+        geometry: The page's geometry, by the printout's field names.
+
+    """
+    return (
+        f"margins left {spelled(geometry['leftMargin'])} "
+        f"right {spelled(geometry['rightMargin'])} "
+        f"top {spelled(geometry['topMargin'])} "
+        f"bottom {spelled(geometry['bottomMargin'])}"
+    )
 
 
 def marks_dump(marks: Iterable[Any], depth: int) -> Iterator[str]:
@@ -596,7 +698,7 @@ def marks_dump(marks: Iterable[Any], depth: int) -> Iterator[str]:
             continue
         yield pad + mark_line(mark)
         for line in listed(mark.get("lines")):
-            yield pad + "  " + quote(line)
+            yield pad + "  " + quote(str(line))
         yield from marks_dump(listed(mark.get("marks")), depth + 1)
 
 
@@ -619,7 +721,7 @@ def mark_line(mark: dict[str, Any]) -> str:
             if value:
                 parts.append(LABELS.get(key, key))
             continue
-        shown = quote(value) if key in QUOTED else spelled(value)
+        shown = quote(str(value)) if key in QUOTED else spelled(value)
         parts.append(shown if key in BARE else f"{key} {shown}")
     if kind == "barcode" and listed(mark.get("stripes")):
         parts.append(f"{len(mark['stripes'])} stripes")
@@ -650,22 +752,26 @@ def box_of(mark: dict[str, Any]) -> str:
 def spelled(value: Any) -> str:
     """Return one value as the dump writes it.
 
+    doc/cli.md#sr-inspect: a number as the printout holds it.  That is
+    the printout's own spelling, doc/printout.md#units-and-number-format,
+    without the rounding: a printout this engine wrote holds three decimals
+    at most and reads the same either way, and one that holds more,
+    as another engine's might, is shown with every digit it holds,
+    so that the dump does not hide what the invariants are about.
+
     Args:
         value: What the record held.
 
     """
     if isinstance(value, bool):
         return "true" if value else "false"
-    if isinstance(value, int | float):
-        return number(value)
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if value != value or value in (float("inf"), float("-inf")):
+            return repr(value)
+        if value == 0:
+            return "0"
+        text = format(Decimal(repr(value)), "f")
+        return text.rstrip("0").rstrip(".") if "." in text else text
     return str(value)
-
-
-def quote(text: Any) -> str:
-    """Return a string in the quotes the dump puts round one.
-
-    Args:
-        text: The string.
-
-    """
-    return json.dumps(str(text), ensure_ascii=False)

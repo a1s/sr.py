@@ -42,6 +42,7 @@ Reference = "https://github.com/a1s/sr"
 # Test and lint only.  None of these is imported by the `sr` package.
 dev = [
     "pytest>=8",
+    "pytest-xdist>=3",
     "ruff>=0.6",
     "mypy>=1.11",
 ]
