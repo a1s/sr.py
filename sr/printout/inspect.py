@@ -312,7 +312,7 @@ PageRange = tuple[Decimal | None, Decimal | None]
 def page_ranges(text: str) -> tuple[PageRange, ...]:
     """Return the ranges a ``--pages`` value names, as written.
 
-    doc/cli.md#sr-inspect: ``1``, ``4-6``, ``10-`` and ``-3`` are all
+    doc/cli.md#sr-inspect: ``1``, ``4-6``, ``10-``, and ``-3`` are all
     ranges, and they combine with commas.  An open end is ``None``,
     and has no bound, so a bare ``-`` is every page.  Spaces around
     a number are ignored.  What is not a range is refused here,
