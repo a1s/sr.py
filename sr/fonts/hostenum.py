@@ -65,8 +65,8 @@ The rest belong to one face and are in :mod:`sr.fonts.face`.
 
 A directory that does not exist is not an error and leaves no diagnostic.
 A stock macOS has three files that can never be parsed and cannot be
-removed, which is the reason these are reported by `sr validate` and
-by the library's diagnostic hook rather than attached to every printout.
+removed, which is the reason these are reported by `s-reports validate`
+and by the library's diagnostic hook rather than attached to every printout.
 
 """
 

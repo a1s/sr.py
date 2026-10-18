@@ -102,7 +102,7 @@ def parse_cbor(data: bytes) -> list[Any] | None:
 
     Returning ``None`` is how a truncated printout falls back
     to the byte-level report, and so is one holding what
-    doc/printout.md#cbor rules out, which `sr inspect` refuses too.
+    doc/printout.md#cbor rules out, which `s-reports inspect` refuses too.
 
     """
     try:

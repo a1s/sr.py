@@ -13,16 +13,38 @@ from sr import cli, meta
 ROOT = Path(__file__).resolve().parents[2]
 DISTRIBUTION = "s-reports"
 
+# `## [0.1.0] - 2026-10-18`, or `## [Unreleased]` with no date,
+# as .github/scripts/changelog.py reads a release heading.
+RELEASE = re.compile(
+    r"^## \[([^\]]+)\](?: - (\d{4}-\d{2}-\d{2}))?[ \t]*$", flags=re.MULTILINE
+)
+
+
+def released() -> dict[str, str]:
+    """Return the date of each release CHANGELOG.md records, by version."""
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    return dict(RELEASE.findall(changelog))
+
 
 def test_the_version_is_a_release_number() -> None:
     assert re.fullmatch(r"\d+\.\d+\.\d+", meta.VERSION)
 
 
 def test_the_version_matches_the_changelog() -> None:
-    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    released = re.findall(r"^## \[([^\]]+)\]", changelog, flags=re.MULTILINE)
-    assert released, "CHANGELOG.md records no release"
-    assert meta.VERSION in released
+    releases = released()
+    assert releases, "CHANGELOG.md records no release"
+    assert meta.VERSION in releases
+
+
+def test_the_date_matches_the_changelog() -> None:
+    """The changelog dates this version as sr.meta.DATE does.
+
+    The release workflow refuses a tag whose two dates differ.
+    Checked here too, so that a mismatch fails the pull request
+    rather than the tag, which would then have to be cut again.
+
+    """
+    assert released().get(meta.VERSION) == meta.DATE.isoformat()
 
 
 def test_the_distribution_takes_its_version_from_here() -> None:

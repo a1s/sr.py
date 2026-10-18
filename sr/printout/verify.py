@@ -7,7 +7,7 @@ and three parties hold a printout to them:
   produced a document breaking its own invariants is a fault in
   the engine, and doc/cli.md#exit-codes makes it a failed run
   rather than a document with a defect nobody was told about.
-* **`sr inspect`**, after its dump, per doc/cli.md#sr-inspect:
+* **`s-reports inspect`**, after its dump, per doc/cli.md#sr-inspect:
   an inspector that read a broken printout without saying so
   would be the wrong tool.
 * **The test suite**, on every printout it produces, which it gets

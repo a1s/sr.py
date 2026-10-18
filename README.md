@@ -169,12 +169,13 @@ with `minrows` and `mintailrows`, a `summary` with `swapfooter`, an image with
 `embed=#false`, a compressed `data` blob, `iter="item"` against `iter="detail"`,
 and the `calc` modes sakila leaves out.
 
-Between them the two templates use every node in the format and all twelve `calc`
-modes. They do not exhaust every property. What they leave out, so that reading
-them as a reference does not mislead:
+Between them the two templates use every node in the format but `accept`,
+and all twelve `calc` modes. They do not exhaust every property.
+What they leave out, so that reading them as a reference does not mislead:
 
 | | |
 |---|---|
+| Nodes | `accept` |
 | Properties | `layout width` / `height` / `landscape`, `font typeface` / `data` / `bold` / `italic`, `line backslant`, `image type`, `barcode data`, `data expr`, `maxheight`, `format` as a date-parse layout on either `parameter` or `member`, `subreport ownpageno`, `columns balance` |
 | Spellings | the `x` / `y` aliases for `left` / `top` — both examples use `left` and `top` throughout |
 | Enumerations | barcode types `Code93`, `DataMatrix`, `QR-M`; `image scale="cut"` and `"grow"`; `dash="dash"` |
