@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import re
-from importlib.metadata import PackageNotFoundError, version
+from importlib.metadata import PackageNotFoundError, distribution, version
 from pathlib import Path
 
 import pytest
 
-from sr import meta
+from sr import cli, meta
 
 ROOT = Path(__file__).resolve().parents[2]
-DISTRIBUTION = "sr-py"
+DISTRIBUTION = "s-reports"
 
 
 def test_the_version_is_a_release_number() -> None:
@@ -38,6 +38,24 @@ def test_the_distribution_takes_its_version_from_here() -> None:
     except PackageNotFoundError:
         pytest.skip(f"{DISTRIBUTION} is not installed; run `make install`")
     assert installed == meta.VERSION
+
+
+def test_the_installed_command_is_the_one_doc_cli_md_names() -> None:
+    """An installed package puts ``s-reports`` on the path, running main.
+
+    Read from the installed metadata rather than from pyproject.toml,
+    so that it is the command pip actually makes that is checked.
+
+    """
+    try:
+        installed = distribution(DISTRIBUTION)
+    except PackageNotFoundError:
+        pytest.skip(f"{DISTRIBUTION} is not installed; run `make install`")
+    scripts = [
+        point for point in installed.entry_points if point.group == "console_scripts"
+    ]
+    assert [point.name for point in scripts] == ["s-reports"]
+    assert scripts[0].load() is cli.main
 
 
 def test_the_engine_identifier_is_what_a_printout_carries() -> None:

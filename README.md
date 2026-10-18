@@ -49,6 +49,11 @@ widow control, and correct deferred page counts all follow from that.
 python sr.py build --template sakila.kdl --data payments.jsonl --out report.pdf
 ```
 
+That is the launcher at the root of a checkout, which runs the program
+without installing the package. Installed with `pip install s-reports`,
+the same program is the `s-reports` command, and `python -m sr` where
+the interpreter's scripts directory is not on the path.
+
 | Flag | |
 |---|---|
 | `-t`, `--template` | Template file. Required. |
@@ -225,7 +230,7 @@ elements and outline entries, with groups, columns, band splitting,
 and subreports of both kinds, inline and with pages of their own,
 and writes them as NDJSON, CBOR, or PDF. Each printout is held to its
 own [invariants](doc/printout.md#invariants) before it is written, and
-`sr.py inspect` holds any printout it reads to them. Every barcode type
+`s-reports inspect` holds any printout it reads to them. Every barcode type
 is encoded here, from the standards, rather than by a library, and
 an image is interpreted only as far as the header that states its size.
 The PDF writer is written here too: the object table and the cross

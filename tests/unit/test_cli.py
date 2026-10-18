@@ -6,6 +6,7 @@ import base64
 import io
 import json
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -1740,3 +1741,22 @@ def test_what_a_command_writes_ends_its_lines_with_a_line_feed() -> None:
     assert code == 0
     assert b"\r" not in raw.getvalue()
     assert raw.getvalue().endswith(b"\nok\n")
+
+
+# -- how the program is started ---------------------------------------
+#
+# An installed package puts `s-reports` on the path, which
+# tests/unit/test_meta.py checks.  This is the route for an interpreter
+# whose scripts directory is not on the path.
+
+
+def test_python_dash_m_sr_runs_the_command_line() -> None:
+    completed = subprocess.run(  # the argv is ours, not a shell string
+        [sys.executable, "-m", "sr", "version"],
+        cwd=ROOT,
+        capture_output=True,
+        timeout=60.0,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout == (meta.engine() + "\n").encode()

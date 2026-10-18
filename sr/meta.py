@@ -25,8 +25,8 @@ DATE = date(2026, 9, 5)
 def engine() -> str:
     """Return the identifier a printout header carries.
 
-    doc/cli.md prints the same string for ``sr.py version``, so an artifact
-    and the code that made it can be matched up.
+    doc/cli.md prints the same string for ``s-reports version``,
+    so an artifact and the code that made it can be matched up.
 
     """
     return f"{NAME} {VERSION}"

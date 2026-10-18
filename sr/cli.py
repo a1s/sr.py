@@ -88,7 +88,7 @@ __all__ = [
     "version",
 ]
 
-# What each command is for, in the order `sr.py help` lists them.
+# What each command is for, in the order `s-reports help` lists them.
 SUMMARY = {
     "build": "template plus data in, PDF or printout out",
     "validate": "check a template without data",
@@ -258,7 +258,7 @@ def main(argv: Sequence[str] | None = None, out: TextIO | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     stream = utf8_streams(out)
     if not arguments:
-        print("sr: a command is required; try `sr.py help`", file=sys.stderr)
+        print("sr: a command is required; try `s-reports help`", file=sys.stderr)
         return USAGE
     command = arguments[0]
     rest = arguments[1:]
@@ -290,7 +290,7 @@ def unknown_command(command: str) -> str:
         if respelled(command) in HELP | VERSION:
             return f"{command!r}: {DASHES}, as {respelled(command)}"
         return f"{command!r} is a flag, and flags come after the command"
-    return f"unknown command {command!r}; try `sr.py help`"
+    return f"unknown command {command!r}; try `s-reports help`"
 
 
 def utf8_streams(out: TextIO | None) -> TextIO:
@@ -370,11 +370,11 @@ def version(arguments: Sequence[str], out: TextIO) -> int:
     return OK
 
 
-# What `sr.py help` says about each command: the arguments it takes,
+# What `s-reports help` says about each command: the arguments it takes,
 # and then one line per flag.
 USAGES = {
     "build": (
-        "sr.py build -t TEMPLATE [-d DATA] -o OUT [flags]",
+        "s-reports build -t TEMPLATE [-d DATA] -o OUT [flags]",
         (
             ("-t, --template FILE", "the template to apply"),
             ("-d, --data FILE", "the records, - for standard input"),
@@ -391,7 +391,7 @@ USAGES = {
         ),
     ),
     "validate": (
-        "sr.py validate [-t] TEMPLATE [flags]",
+        "s-reports validate [-t] TEMPLATE [flags]",
         (
             ("-t, --template FILE", "the template to check"),
             ("--param NAME=VALUE", "a report parameter, repeatable"),
@@ -403,21 +403,21 @@ USAGES = {
         ),
     ),
     "render": (
-        "sr.py render PRINTOUT -o OUT [flags]",
+        "s-reports render PRINTOUT -o OUT [flags]",
         (
             ("-o, --out FILE", "where to write, - for standard output"),
             ("--uncompressed", "leave PDF streams uncompressed"),
         ),
     ),
     "inspect": (
-        "sr.py inspect PRINTOUT [flags]",
+        "s-reports inspect PRINTOUT [flags]",
         (
             ("--pages RANGES", "which pages to dump, as 1,4-6"),
             ("--summary", "the header only, no pages"),
         ),
     ),
-    "version": ("sr.py version", ()),
-    "help": ("sr.py help [COMMAND]", ()),
+    "version": ("s-reports version", ()),
+    "help": ("s-reports help [COMMAND]", ()),
 }
 
 
@@ -441,7 +441,7 @@ def help_for(arguments: Sequence[str], out: TextIO) -> int:
     if arguments:
         name = arguments[0]
         if name not in USAGES:
-            raise Usage(f"help knows no command {name!r}; try `sr.py help`")
+            raise Usage(f"help knows no command {name!r}; try `s-reports help`")
         usage, flags = USAGES[name]
         print(f"usage: {usage}", file=out)
         print(f"  {SUMMARY[name]}", file=out)
@@ -449,10 +449,10 @@ def help_for(arguments: Sequence[str], out: TextIO) -> int:
         for spelling, what in flags:
             print(f"  {spelling:<{width}}  {what}", file=out)
         return OK
-    print("usage: sr.py <command> [flags]", file=out)
+    print("usage: s-reports <command> [flags]", file=out)
     for name, what in SUMMARY.items():
         print(f"  {name:<9}{what}", file=out)
-    print("sr.py help <command> describes one of them.", file=out)
+    print("s-reports help <command> describes one of them.", file=out)
     return OK
 
 

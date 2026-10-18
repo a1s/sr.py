@@ -1,0 +1,116 @@
+name: Test
+
+# The one definition of what "the code is in good shape" means.
+# Pull requests run it, and the release calls it through workflow_call,
+# so a tag cannot enforce a different bar than the PR that was merged.
+#
+# Pushes to main are covered too: a PR is tested against its own merge
+# commit, which is not what ends up on the branch after other PRs land.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  # Called by the release workflow, which gates the upload on these jobs.
+  workflow_call:
+
+permissions:
+  contents: read
+
+# A new push to a pull request makes the previous run's answer stale,
+# so drop it.  Runs on main are kept: each one reports its own commit,
+# and so are release runs, which must not cancel a half-finished upload.
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+  PIP_PROGRESS_BAR: 'off'
+
+jobs:
+  # ruff and mypy check the syntax and the types against the 3.11 floor
+  # whatever interpreter runs them, so one run of each is enough.
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      # The same install `make install` does, minus the venv: the runner's
+      # interpreter is already a throwaway.  mypy reads the tests too,
+      # and they import the oracles, so the extras come along.
+      - run: python -m pip install -e ".[dev,oracles]"
+      - run: make lint PYTHON=python
+      - run: make typecheck PYTHON=python
+
+  # Font enumeration is per-platform, and doc/template.md names three
+  # platforms, so the suite runs on each of them.  Every platform runs
+  # the floor `requires-python` promises and the current release;
+  # Linux, the cheapest runner, also covers the versions in between,
+  # which is the range the GNUmakefile's `test-linux-matrix` checks.
+  test:
+    name: Test ${{ matrix.os }}, Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      # Report every platform, rather than letting the first failure
+      # hide what the others would have said.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ['3.11', '3.14']
+        include:
+          - os: ubuntu-latest
+            python: '3.12'
+          - os: ubuntu-latest
+            python: '3.13'
+    env:
+      # The differential suite builds the Go reference from this tree.
+      # It is checked out under tmp/, which git, ruff and pytest ignore.
+      SR_GO_REPO: ${{ github.workspace }}/tmp/sr
+      # Here the oracle is meant to exist, so a comparison that cannot
+      # run fails instead of skipping: a suite that measured nothing
+      # must not pass.
+      SR_DIFFERENTIAL_REQUIRED: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # The reference's main branch rather than a tag, as next to a local
+      # checkout: tests/differential/README.md keeps the oracle in step
+      # with its source, and the divergence register records where the
+      # two engines are known to part.
+      - name: Check out the Go reference
+        uses: actions/checkout@v7
+        with:
+          repository: a1s/sr
+          ref: main
+          path: tmp/sr
+          persist-credentials: false
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: tmp/sr/go.mod
+          cache-dependency-path: tmp/sr/go.sum
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - run: python -m pip install -e ".[dev,oracles]"
+
+      # Called directly rather than through `make test`: the makefile
+      # wants a POSIX shell, which the Windows runner does not give it
+      # by default.  The target runs the same command.
+      - run: python -m pytest -n auto

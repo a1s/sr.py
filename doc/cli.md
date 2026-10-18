@@ -1,8 +1,12 @@
 # Command line
 
-`sr.py` is a command line script over the [library](../README.md#library).
+`s-reports` is a command line script over the [library](../README.md#library).
 It applies a [template](template.md) to JSON data and writes a PDF
 or a [printout](printout.md).
+
+An installed package puts the `s-reports` command on the path, and
+`python -m sr` runs the same program. In a checkout, the launcher at the
+root runs it as `python sr.py`. Whichever starts it, what follows holds.
 
 The command line decides nothing. Every flag maps to a library option, every
 diagnostic comes from the engine or the renderer, and the two routes to a PDF
@@ -14,11 +18,11 @@ reporting commands print.
 ## Contents
 
 - [Conventions](#conventions)
-- [`sr.py build`](#sr-build)
-- [`sr.py validate`](#sr-validate)
-- [`sr.py render`](#sr-render)
-- [`sr.py inspect`](#sr-inspect)
-- [`sr.py version`](#sr-version)
+- [`s-reports build`](#sr-build)
+- [`s-reports validate`](#sr-validate)
+- [`s-reports render`](#sr-render)
+- [`s-reports inspect`](#sr-inspect)
+- [`s-reports version`](#sr-version)
 - [Reproducibility](#reproducibility)
 - [What the command line does not do](#what-the-command-line-does-not-do)
 
@@ -27,20 +31,21 @@ reporting commands print.
 ### Subcommands
 
 ```
-sr.py build     template plus data in, PDF or printout out
-sr.py validate  check a template without data
-sr.py render    printout in, PDF out
-sr.py inspect   dump a printout as readable text
-sr.py version   print the version
-sr.py help      print usage, for one command or for all of them
+s-reports build     template plus data in, PDF or printout out
+s-reports validate  check a template without data
+s-reports render    printout in, PDF out
+s-reports inspect   dump a printout as readable text
+s-reports version   print the version
+s-reports help      print usage, for one command or for all of them
 ```
 
-`sr.py` with no arguments says that a command is required, points at
-`sr.py help`, and exits 2. `sr.py help build`, `sr.py build -h`, and
-`sr.py build --help` all print the same thing and exit 0. Every command
-rejects an argument it has no use for, `version` included,
-and `help` takes one command at most and no flags: a command
-it does not know is a usage error, and so is a flag after it.
+`s-reports` with no arguments says that a command is required,
+points at `s-reports help`, and exits 2. `s-reports help build`,
+`s-reports build -h`, and `s-reports build --help` all print
+the same thing and exit 0. Every command rejects an argument
+it has no use for, `version` included, and `help` takes one command
+at most and no flags: a command it does not know is a usage error,
+and so is a flag after it.
 
 ### Flags
 
@@ -56,12 +61,13 @@ and it leaves each of a flag's names one spelling.
 Help is `-h` or `--help`, in place of a command or anywhere among
 a command's flags. It is looked for before any other flag is read,
 so it wins over a mistake elsewhere in the command line, and a flag
-that takes a value does not take it as one: `sr.py build -t --help`
+that takes a value does not take it as one: `s-reports build -t --help`
 prints the usage of `build`. After `--` it is positional, as everything
 there is. Help is a [switch](#flags), so `--help=false` does not ask
 for it, and `--help=yes` is a usage error.
 
-Flags may follow positional arguments, so `sr.py render out.srp.jsonl -o out.pdf`
+Flags may follow positional arguments,
+so `s-reports render out.srp.jsonl -o out.pdf`
 works. `--` ends them: what follows it is positional,
 even where it starts with a dash. A `-` alone is positional
 wherever it is, since it names a [stream](#--for-a-stream).
@@ -125,7 +131,7 @@ to a file or to standard output, that escape is JSON's own. CBOR has
 no escapes, and a [CBOR printout](printout.md#cbor) writes U+FFFD instead.
 No environment variable changes the bytes, `PYTHONIOENCODING` included.
 
-On Windows this settles what `sr.py` writes, not what the next program
+On Windows this settles what `s-reports` writes, not what the next program
 makes of it:
 
 - **A console** shows the text as it should. Python writes to it through
@@ -141,8 +147,8 @@ makes of it:
 ### `-` for a stream
 
 `--data -` reads records from standard input. `--out -` writes to standard
-output; for `sr.py build` that also requires `--format`, because there is no
-extension left to read the format from.
+output; for `s-reports build` that also requires `--format`, because there
+is no extension left to read the format from.
 
 Records on standard input are [UTF-8](template.md#data-input), as they are
 in a file, and are read the same way. On Windows a pipe would otherwise be
@@ -151,7 +157,7 @@ two other characters with nothing said about it.
 
 Windows PowerShell 5.1 encodes what it pipes into a program with
 `$OutputEncoding`, which is ASCII by default and turns every other
-character into `?` before `sr.py` reads it. Set it to UTF-8 first:
+character into `?` before `s-reports` reads it. Set it to UTF-8 first:
 
 ```powershell
 $OutputEncoding = [Text.Encoding]::UTF8
@@ -182,7 +188,7 @@ produced, and the warning list says what is wrong with it. A caller that wants
 to treat warnings as failures tests the header, which survives archiving; an
 exit code does not.
 
-## `sr.py build`
+## `s-reports build`
 
 ```bash
 sr build -t sakila.kdl -d payments.jsonl -o report.pdf
@@ -262,7 +268,7 @@ them as `warning:` and the diagnostic.
 A build without `--allow-overflow` that meets a band too tall for an empty frame
 fails instead, with the node named -- that is the engine's rule, not this one's.
 
-## `sr.py validate`
+## `s-reports validate`
 
 ```bash
 sr validate -t sakila.kdl
@@ -352,7 +358,7 @@ or a `--param` value does not parse as its parameter's type.
 A `--param` naming a parameter the template does not declare
 is a usage error, exit 2, as it is for `build`.
 
-## `sr.py render`
+## `s-reports render`
 
 ```bash
 sr render report.srp.jsonl -o report.pdf
@@ -385,7 +391,7 @@ and a last line names the output and counts the pages the PDF has:
 report.pdf: 15 pages
 ```
 
-## `sr.py inspect`
+## `s-reports inspect`
 
 ```bash
 sr inspect report.srp.jsonl
@@ -510,13 +516,13 @@ or how many rows a 2-D one has, `25 rows`; the runs themselves are
 not shown. An image's line ends with its `crop` where it has one,
 written as a box is, in pixels: `crop 7,3.5 10x5`.
 
-## `sr.py version`
+## `s-reports version`
 
 ```
 sr 0.1.0
 ```
 
-`sr.py --version` prints the same. `sr.py -version` is a usage error,
+`s-reports --version` prints the same. `s-reports -version` is a usage error,
 since a long name takes [two dashes](#flags). The version is
 what a printout header's [`engine`](printout.md#the-engine-field)
 field carries, so an artifact and the version of the engine that made it

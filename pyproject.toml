@@ -3,7 +3,7 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sr-py"
+name = "s-reports"
 dynamic = ["version"]
 description = "A banded report formatter: template plus records in, PDF out."
 readme = "README.md"
@@ -37,6 +37,12 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/a1s/sr.py"
 Reference = "https://github.com/a1s/sr"
+
+# The command doc/cli.md documents, named after the distribution.
+# Not `sr.py`, the launcher's name: pip on Windows drops a `.py` from
+# a command's name, which would make it `sr`, the Go engine's command.
+[project.scripts]
+s-reports = "sr.cli:main"
 
 [project.optional-dependencies]
 # Test and lint only.  None of these is imported by the `sr` package.
