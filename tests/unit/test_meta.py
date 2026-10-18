@@ -51,9 +51,7 @@ def test_the_installed_command_is_the_one_doc_cli_md_names() -> None:
         installed = distribution(DISTRIBUTION)
     except PackageNotFoundError:
         pytest.skip(f"{DISTRIBUTION} is not installed; run `make install`")
-    scripts = [
-        point for point in installed.entry_points if point.group == "console_scripts"
-    ]
+    scripts = list(installed.entry_points.select(group="console_scripts"))
     assert [point.name for point in scripts] == ["s-reports"]
     assert scripts[0].load() is cli.main
 

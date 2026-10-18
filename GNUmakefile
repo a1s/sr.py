@@ -107,8 +107,17 @@ fmt:
 	$(PYTHON) -m ruff check --fix .
 	$(PYTHON) -m ruff format .
 
+# Font enumeration branches on sys.platform, and mypy checks only the
+# branches of the platform it checks as: a call that exists on one
+# platform alone passes there and fails everywhere else.  So each of
+# the three platforms doc/template.md names gets a run of its own.
+TYPECHECK_PLATFORMS ?= linux darwin win32
+
 typecheck:
-	$(PYTHON) -m mypy
+	@for one in $(TYPECHECK_PLATFORMS); do \
+	    echo "-- mypy --platform $$one"; \
+	    $(PYTHON) -m mypy --platform $$one || exit 1; \
+	done
 
 check: lint typecheck test
 

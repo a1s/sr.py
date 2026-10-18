@@ -6,6 +6,12 @@ name: Test
 #
 # Pushes to main are covered too: a PR is tested against its own merge
 # commit, which is not what ends up on the branch after other PRs land.
+#
+# Everything a run depends on is pinned: the actions to commits,
+# the Go reference to a commit, and ruff and mypy in pyproject.toml.
+# A commit then gets the same answer whenever it is tested, and a tag
+# is held to the bar its pull request met.  Dependabot moves the actions;
+# the rest moves in a pull request of its own.
 on:
   pull_request:
   push:
@@ -18,11 +24,14 @@ permissions:
   contents: read
 
 # A new push to a pull request makes the previous run's answer stale,
-# so drop it.  Runs on main are kept: each one reports its own commit,
-# and so are release runs, which must not cancel a half-finished upload.
+# so drop it.  Every other run gets a group of its own: GitHub keeps one
+# pending run per group and cancels the one before it, which would leave
+# a commit on main without a result when several land close together.
 concurrency:
-  group: test-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: >-
+    test-${{ github.event_name == 'pull_request'
+    && github.ref || github.run_id }}
+  cancel-in-progress: true
 
 env:
   PIP_DISABLE_PIP_VERSION_CHECK: '1'
@@ -36,10 +45,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.14'
           cache: pip
@@ -74,35 +83,34 @@ jobs:
             python: '3.13'
     env:
       # The differential suite builds the Go reference from this tree.
-      # It is checked out under tmp/, which git, ruff and pytest ignore.
+      # It is checked out under tmp/, which git, ruff, and pytest ignore.
       SR_GO_REPO: ${{ github.workspace }}/tmp/sr
       # Here the oracle is meant to exist, so a comparison that cannot
       # run fails instead of skipping: a suite that measured nothing
       # must not pass.
       SR_DIFFERENTIAL_REQUIRED: '1'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      # The reference's main branch rather than a tag, as next to a local
-      # checkout: tests/differential/README.md keeps the oracle in step
-      # with its source, and the divergence register records where the
-      # two engines are known to part.
+      # A commit rather than main, so that a change to the Go engine
+      # reaches this suite in a pull request here that moves the pin,
+      # instead of in whichever run happens to start next.  This is v0.1.0.
       - name: Check out the Go reference
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: a1s/sr
-          ref: main
+          ref: 84639336c1423b02ca26507e74484bac9ce93e9a
           path: tmp/sr
           persist-credentials: false
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: tmp/sr/go.mod
           cache-dependency-path: tmp/sr/go.sum
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python }}
           cache: pip

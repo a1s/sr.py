@@ -76,17 +76,23 @@ from sr.template.model import Blob, Font, Parameter, Report, parse_text
 __all__ = [
     "COMMANDS",
     "FORMATS",
+    "PROG",
     "Fonts",
     "Usage",
     "as_written",
     "build",
     "inspect_printout",
     "main",
+    "program_name",
     "render",
     "resolve_fonts",
     "validate",
     "version",
 ]
+
+# The command an installed package puts on the path, and the name help
+# gives the program unless it was started another way: program_name().
+PROG = "s-reports"
 
 # What each command is for, in the order `s-reports help` lists them.
 SUMMARY = {
@@ -258,7 +264,8 @@ def main(argv: Sequence[str] | None = None, out: TextIO | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     stream = utf8_streams(out)
     if not arguments:
-        print("sr: a command is required; try `s-reports help`", file=sys.stderr)
+        hint = f"try `{program_name()} help`"
+        print(f"sr: a command is required; {hint}", file=sys.stderr)
         return USAGE
     command = arguments[0]
     rest = arguments[1:]
@@ -290,7 +297,7 @@ def unknown_command(command: str) -> str:
         if respelled(command) in HELP | VERSION:
             return f"{command!r}: {DASHES}, as {respelled(command)}"
         return f"{command!r} is a flag, and flags come after the command"
-    return f"unknown command {command!r}; try `s-reports help`"
+    return f"unknown command {command!r}; try `{program_name()} help`"
 
 
 def utf8_streams(out: TextIO | None) -> TextIO:
@@ -374,7 +381,7 @@ def version(arguments: Sequence[str], out: TextIO) -> int:
 # and then one line per flag.
 USAGES = {
     "build": (
-        "s-reports build -t TEMPLATE [-d DATA] -o OUT [flags]",
+        "build -t TEMPLATE [-d DATA] -o OUT [flags]",
         (
             ("-t, --template FILE", "the template to apply"),
             ("-d, --data FILE", "the records, - for standard input"),
@@ -391,7 +398,7 @@ USAGES = {
         ),
     ),
     "validate": (
-        "s-reports validate [-t] TEMPLATE [flags]",
+        "validate [-t] TEMPLATE [flags]",
         (
             ("-t, --template FILE", "the template to check"),
             ("--param NAME=VALUE", "a report parameter, repeatable"),
@@ -403,22 +410,42 @@ USAGES = {
         ),
     ),
     "render": (
-        "s-reports render PRINTOUT -o OUT [flags]",
+        "render PRINTOUT -o OUT [flags]",
         (
             ("-o, --out FILE", "where to write, - for standard output"),
             ("--uncompressed", "leave PDF streams uncompressed"),
         ),
     ),
     "inspect": (
-        "s-reports inspect PRINTOUT [flags]",
+        "inspect PRINTOUT [flags]",
         (
             ("--pages RANGES", "which pages to dump, as 1,4-6"),
             ("--summary", "the header only, no pages"),
         ),
     ),
-    "version": ("s-reports version", ()),
-    "help": ("s-reports help [COMMAND]", ()),
+    "version": ("version", ()),
+    "help": ("help [COMMAND]", ()),
 }
+
+
+def program_name() -> str:
+    """Return the program's name as it was started, for help to repeat.
+
+    ``python -m sr`` and a checkout's launcher, ``python sr.py``,
+    both work without ``s-reports`` on the path, so a hint to try
+    ``s-reports help`` could name a command that is not there.
+    Anything else gets :data:`PROG`: the installed command,
+    and a program of its own that calls :func:`main`.
+
+    """
+    started = sys.modules.get("__main__")
+    spec = getattr(started, "__spec__", None)
+    if spec is not None and spec.name == "sr.__main__":
+        return "python -m sr"
+    launched = sys.argv[0] if sys.argv else ""
+    if Path(launched).name == "sr.py":
+        return "python sr.py"
+    return PROG
 
 
 def help_for(arguments: Sequence[str], out: TextIO) -> int:
@@ -436,23 +463,25 @@ def help_for(arguments: Sequence[str], out: TextIO) -> int:
         Usage: More than one command was named, or one that is not.
 
     """
+    program = program_name()
     if len(arguments) > 1:
         raise Usage(f"help takes one command, and got {arguments[1]!r} too")
     if arguments:
         name = arguments[0]
         if name not in USAGES:
-            raise Usage(f"help knows no command {name!r}; try `s-reports help`")
+            hint = f"try `{program} help`"
+            raise Usage(f"help knows no command {name!r}; {hint}")
         usage, flags = USAGES[name]
-        print(f"usage: {usage}", file=out)
+        print(f"usage: {program} {usage}", file=out)
         print(f"  {SUMMARY[name]}", file=out)
         width = max((len(spelling) for spelling, _ in flags), default=0)
         for spelling, what in flags:
             print(f"  {spelling:<{width}}  {what}", file=out)
         return OK
-    print("usage: s-reports <command> [flags]", file=out)
+    print(f"usage: {program} <command> [flags]", file=out)
     for name, what in SUMMARY.items():
         print(f"  {name:<9}{what}", file=out)
-    print("s-reports help <command> describes one of them.", file=out)
+    print(f"{program} help <command> describes one of them.", file=out)
     return OK
 
 

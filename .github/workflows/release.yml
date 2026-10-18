@@ -4,6 +4,11 @@ name: Release
 #
 # The pattern below is the glob GitHub understands; the verify job re-checks
 # the tag as a real regexp and refuses anything the glob lets through.
+#
+# Every job can be re-run, whole runs included.  A rebuild of one tag
+# does not reproduce the sdist byte for byte, so the upload skips the
+# files PyPI already holds, and the GitHub release carries notes only:
+# the files live on PyPI alone, and there is nothing to keep in step.
 on:
   push:
     tags:
@@ -30,17 +35,17 @@ jobs:
     outputs:
       version: ${{ steps.check.outputs.version }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The branch check needs the branch, not just the tagged commit.
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.14'
 
-      - name: Check the tag against the branch, the package and the changelog
+      - name: Check the tag against the branch, the package, and the changelog
         id: check
         run: |
           set -euo pipefail
@@ -69,13 +74,12 @@ jobs:
             fail "sr/meta.py says $package_version, but the tag says $version"
           fi
 
-          # The first release heading: `## [0.1.0] - 2026-09-05`.
-          changelog="$(sed -nE \
-            '/^## \[/{s/^## \[([^]]*)\]( - ([0-9-]+))?.*$/\1 \3/p;q}' \
-            CHANGELOG.md)"
+          # The same reader extracts the notes below, so the heading
+          # checked here is the heading the notes are taken from.
+          changelog="$(python .github/scripts/changelog.py latest)"
           read -r changelog_version changelog_date <<< "$changelog"
           if [ "$changelog_version" != "$version" ]; then
-            fail "CHANGELOG.md heads with ${changelog_version:-nothing}," \
+            fail "CHANGELOG.md heads with $changelog_version," \
               "but the tag says $version"
           fi
           if [ "$changelog_date" != "$package_date" ]; then
@@ -89,17 +93,21 @@ jobs:
         env:
           VERSION: ${{ steps.check.outputs.version }}
         run: |
-          bash .github/scripts/changelog-section.sh "$VERSION" \
-            > release-notes.md
+          set -euo pipefail
+          {
+            python .github/scripts/changelog.py notes "$VERSION"
+            echo
+            echo "On PyPI: https://pypi.org/project/s-reports/$VERSION/"
+          } > release-notes.md
           cat release-notes.md
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-notes
           path: release-notes.md
           if-no-files-found: error
 
-  # The same lint, type and test checks a pull request gets,
+  # The same lint, type, and test checks a pull request gets,
   # run here from their own file rather than copied into this one.
   checks:
     name: Checks
@@ -114,11 +122,11 @@ jobs:
     env:
       VERSION: ${{ needs.verify.outputs.version }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.14'
 
@@ -172,16 +180,16 @@ jobs:
             fi
           done
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist
           path: dist/*
           if-no-files-found: error
 
-  # The one step that cannot be taken back: PyPI never accepts a second
-  # file under a name it has seen, even after the first is deleted.
-  # Hence everything above gates it, and it runs in an environment,
-  # which is where a required reviewer can be set in the repository.
+  # The one step that cannot be taken back: once PyPI holds a file,
+  # it never accepts different bytes under that name, even after the
+  # first is deleted.  Hence everything above gates it, and it runs in
+  # an environment, which is where a required reviewer can be set.
   publish:
     name: Publish to PyPI
     needs: [verify, checks, build]
@@ -196,12 +204,18 @@ jobs:
       # a short-lived upload token, so no secret is stored anywhere.
       id-token: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: dist
           path: dist
 
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      # A re-run after a successful upload rebuilds the sdist, whose
+      # bytes differ from the one PyPI already holds under its name.
+      # The file there was built from this same tag, so it is skipped
+      # rather than refused, and the run goes on to the release.
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          skip-existing: true
 
   release:
     name: GitHub release
@@ -211,37 +225,28 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          path: staging
+          name: release-notes
 
-      - name: Collect the distributions and checksum them
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          cp -t dist -- staging/dist/*
-          (cd dist && sha256sum -- * > SHA256SUMS)
-          ls -l dist
-          cat dist/SHA256SUMS
-
+      # Notes only, so a release that already exists, from an earlier run
+      # or made by hand as a draft, needs its text and nothing else.
       - name: Create or update the release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
-          NOTES: staging/release-notes/release-notes.md
         run: |
           set -euo pipefail
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" \
               --title "$TAG" \
-              --notes-file "$NOTES" \
+              --notes-file release-notes.md \
               --draft=false \
               --prerelease=false
-            gh release upload "$TAG" dist/* --clobber
           else
-            gh release create "$TAG" dist/* \
+            gh release create "$TAG" \
               --verify-tag \
               --title "$TAG" \
-              --notes-file "$NOTES"
+              --notes-file release-notes.md
           fi

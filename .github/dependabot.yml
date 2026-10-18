@@ -1,0 +1,13 @@
+# The workflows pin every action to a commit, so that a moved tag cannot
+# change what runs with the release's upload permission.  This keeps
+# those pins current, one pull request a week, each one run by the tests.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - '*'

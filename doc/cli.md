@@ -6,7 +6,9 @@ or a [printout](printout.md).
 
 An installed package puts the `s-reports` command on the path, and
 `python -m sr` runs the same program. In a checkout, the launcher at the
-root runs it as `python sr.py`. Whichever starts it, what follows holds.
+root runs it as `python sr.py`. Whichever starts it, what follows holds,
+with one difference: help and usage errors name the program the way it
+was started, so that the command they suggest is one that works.
 
 The command line decides nothing. Every flag maps to a library option, every
 diagnostic comes from the engine or the renderer, and the two routes to a PDF
@@ -114,7 +116,7 @@ What a command **produces** goes to stdout. What it **says about the run**
 goes to stderr: the summary line, warnings, host diagnostics. So
 
 ```bash
-sr inspect report.srp.jsonl | less
+s-reports inspect report.srp.jsonl | less
 ```
 
 pages through the dump and nothing else, and a warning is still visible on the
@@ -188,10 +190,12 @@ produced, and the warning list says what is wrong with it. A caller that wants
 to treat warnings as failures tests the header, which survives archiving; an
 exit code does not.
 
+<a id="sr-build"></a>
+
 ## `s-reports build`
 
 ```bash
-sr build -t sakila.kdl -d payments.jsonl -o report.pdf
+s-reports build -t sakila.kdl -d payments.jsonl -o report.pdf
 ```
 
 | Flag | |
@@ -268,11 +272,13 @@ them as `warning:` and the diagnostic.
 A build without `--allow-overflow` that meets a band too tall for an empty frame
 fails instead, with the node named -- that is the engine's rule, not this one's.
 
+<a id="sr-validate"></a>
+
 ## `s-reports validate`
 
 ```bash
-sr validate -t sakila.kdl
-sr validate sakila.kdl
+s-reports validate -t sakila.kdl
+s-reports validate sakila.kdl
 ```
 
 Loads and validates a template, resolves the fonts it declares, and reports what
@@ -358,10 +364,12 @@ or a `--param` value does not parse as its parameter's type.
 A `--param` naming a parameter the template does not declare
 is a usage error, exit 2, as it is for `build`.
 
+<a id="sr-render"></a>
+
 ## `s-reports render`
 
 ```bash
-sr render report.srp.jsonl -o report.pdf
+s-reports render report.srp.jsonl -o report.pdf
 ```
 
 Reads a printout and renders it. The renderer does no layout, so this
@@ -391,12 +399,14 @@ and a last line names the output and counts the pages the PDF has:
 report.pdf: 15 pages
 ```
 
+<a id="sr-inspect"></a>
+
 ## `s-reports inspect`
 
 ```bash
-sr inspect report.srp.jsonl
-sr inspect report.srp.cbor --summary
-sr inspect report.srp.jsonl --pages 1,4-6
+s-reports inspect report.srp.jsonl
+s-reports inspect report.srp.cbor --summary
+s-reports inspect report.srp.jsonl --pages 1,4-6
 ```
 
 Dumps a printout as text, one mark per line, in paint order. The printout
@@ -516,6 +526,8 @@ or how many rows a 2-D one has, `25 rows`; the runs themselves are
 not shown. An image's line ends with its `crop` where it has one,
 written as a box is, in pixels: `crop 7,3.5 10x5`.
 
+<a id="sr-version"></a>
+
 ## `s-reports version`
 
 ```
@@ -531,7 +543,8 @@ can be matched up.
 ## Reproducibility
 
 ```bash
-sr build -t t.kdl -d d.jsonl -o out.pdf --build-time 2026-08-04T09:12:44Z --strict-fonts
+s-reports build -t t.kdl -d d.jsonl -o out.pdf \
+    --build-time 2026-08-04T09:12:44Z --strict-fonts
 ```
 
 Those two flags are what make the output byte-identical on any machine. Without

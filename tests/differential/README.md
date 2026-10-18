@@ -17,6 +17,9 @@ pytest tests/differential
 The reference is built once per session into `tmp/reference/`, from the
 Go source tree found beside this repository. Go's own build cache makes
 a repeat build a no-op, so the oracle is always in step with its source.
+Under `pytest -n`, each worker builds into a directory of its own,
+`tmp/reference/gw0/` and so on, so that no worker runs a binary another
+one is still writing.
 
 | | |
 |---|---|

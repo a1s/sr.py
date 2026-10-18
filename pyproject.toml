@@ -49,8 +49,11 @@ s-reports = "sr.cli:main"
 dev = [
     "pytest>=8",
     "pytest-xdist>=3",
-    "ruff>=0.6",
-    "mypy>=1.11",
+    # Pinned: a new release brings new checks, and an unpinned linter
+    # turns one into a commit that passed yesterday and fails today,
+    # or a release that cannot be cut.  Moved by hand, with the fixes.
+    "ruff==0.16.6",
+    "mypy==2.3.1",
 ]
 # Verification tools for the renderer and a second opinion on
 # expression semantics.  Split out because their wheels are
