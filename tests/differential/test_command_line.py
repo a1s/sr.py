@@ -17,6 +17,7 @@ and fails once it does not, as a probe does.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -37,8 +38,11 @@ def printouts(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
     """Return the printouts a command line reads, built once, by this engine.
 
     The minimal example, as ``{printout}``, and the invoices example,
-    as ``{pages}``: seven pages, three of them landscape pages
-    a subreport made, which is what ``--pages`` wants to choose among.
+    as ``{pages}``: seven pages, three of them landscape pages a subreport
+    made, which is what ``--pages`` wants to choose among.  ``{gaps}``
+    is the invoices printout with its pages numbered 1, 2, and then
+    5 to 9, which is a printout whose numbering is broken, the kind
+    an open range has to reach past the page count in.
 
     """
     directory = tmp_path_factory.mktemp("printouts")
@@ -53,7 +57,26 @@ def printouts(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
         outcome = run_local([*argv, "--build-time", BUILD_TIME, "--strict-fonts"])
         assert outcome.code == 0, outcome.stderr
         built[key] = path
+    built["gaps"] = renumbered(built["pages"], directory / "gaps.srp.jsonl")
     return built
+
+
+def renumbered(source: Path, target: Path) -> Path:
+    """Write a printout with its pages numbered 1, 2, and then on from 5.
+
+    Args:
+        source: The printout to copy.
+        target: Where to write the copy.
+
+    """
+    numbers = iter([1, 2, *range(5, 1000)])
+    lines = source.read_bytes().decode("utf-8").splitlines()
+    pages = [json.loads(one) for one in lines[1:]]
+    for page in pages:
+        page["number"] = next(numbers)
+    written = [lines[0], *(json.dumps(one, separators=(",", ":")) for one in pages)]
+    target.write_bytes(("\n".join(written) + "\n").encode("utf-8"))
+    return target
 
 
 @pytest.mark.differential

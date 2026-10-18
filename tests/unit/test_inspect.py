@@ -21,8 +21,8 @@ from typing import Any
 import cbor2
 import pytest
 
-from sr.errors import BuildError
-from sr.printout.inspect import cbor_records, dump, read_cbor
+from sr.errors import BadValue, BuildError
+from sr.printout.inspect import cbor_records, dump, page_ranges, read_cbor
 from sr.printout.verify import violations
 from tests.unit.test_verify import marks, printout
 
@@ -203,6 +203,63 @@ def test_text_is_quoted_as_the_expression_language_quotes_it() -> None:
     assert expected in dumped(records)
 
 
+def numbered(*numbers: int) -> list[Any]:
+    """Return a printout whose pages carry the numbers given, in order.
+
+    Args:
+        *numbers: Each page's ``number``.
+
+    """
+    records = printout()
+    page = records[1]
+    records[1:] = [{**page, "number": one} for one in numbers]
+    return records
+
+
+def pages_shown(records: list[Any], pages: str) -> list[int]:
+    """Return the numbers of the pages a ``--pages`` value dumps.
+
+    Args:
+        records: The printout's records.
+        pages: The flag's value.
+
+    """
+    lines = dump("out.srp.jsonl", records, page_ranges(pages))
+    return [int(one.split()[1]) for one in lines if one.startswith("page ")]
+
+
+@pytest.mark.parametrize(
+    ("pages", "shown"),
+    [
+        ("3-", [5, 6]),
+        ("6-", [6]),
+        ("-4", [1, 2]),
+        ("2-5", [2, 5]),
+        ("3-4", []),
+        ("1-300000000", [1, 2, 5, 6]),
+    ],
+)
+def test_a_page_is_held_to_the_ranges_by_its_own_number(
+    pages: str, shown: list[int]
+) -> None:
+    """doc/cli.md#sr-inspect: an open end has no bound, whatever the count."""
+    assert pages_shown(numbered(1, 2, 5, 6), pages) == shown
+
+
+def test_a_page_number_of_any_length_is_one() -> None:
+    many = "9" * 5000
+    assert pages_shown(numbered(1, 2), f"1-{many}") == [1, 2]
+    assert pages_shown(numbered(1, 2), many) == []
+    with pytest.raises(BadValue):
+        page_ranges(f"{many}-1")
+
+
+def test_leading_zeros_name_the_page_they_would_without_them() -> None:
+    assert pages_shown(numbered(1, 7), "007") == [7]
+    with pytest.raises(BadValue):
+        page_ranges("00")
+
+
 # -- wrong types everywhere ---------------------------------------------
 
 
@@ -274,5 +331,5 @@ def test_inspect_reads_a_wrong_value_anywhere_without_crashing(
 ) -> None:
     records = changed(path, wrong)
     list(dump("broken.srp.jsonl", records, None))
-    list(dump("broken.srp.jsonl", records, {1}))
+    list(dump("broken.srp.jsonl", records, page_ranges("1")))
     violations(records)

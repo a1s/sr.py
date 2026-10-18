@@ -1457,11 +1457,57 @@ def test_a_letter_does_not_run_into_its_value() -> None:
         ("help", "frobnicate"),
         ("help", "build", "extra"),
         ("-t", "x.kdl"),
+        ("help", "-h"),
     ],
 )
 def test_help_takes_one_command_it_knows(argv: tuple[str, ...]) -> None:
     code, said = run(*argv)
     assert (code, said) == (2, "")
+
+
+@pytest.mark.parametrize(
+    ("argv", "said"),
+    [
+        (("help", "-x"), "help knows no command '-x'"),
+        (("help", "--version"), "help knows no command '--version'"),
+        (("help", "build", "-h"), "got '-h' too"),
+    ],
+)
+def test_help_names_the_argument_it_was_given(
+    capsys: pytest.CaptureFixture[str], argv: tuple[str, ...], said: str
+) -> None:
+    assert run(*argv)[0] == 2
+    assert said in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("validate", "--wobble", "--help"),
+        ("validate", "-t", "--help"),
+        ("validate", "-t", "-h"),
+        ("validate", "--strict-fonts=yes", "-h"),
+        ("validate", "--help=true"),
+    ],
+)
+def test_help_wins_over_everything_else_on_the_command_line(
+    argv: tuple[str, ...],
+) -> None:
+    """doc/cli.md#flags: help is looked for before any other flag is read."""
+    assert run(*argv) == run("help", "validate")
+
+
+def test_help_given_false_does_not_ask_for_it() -> None:
+    assert run("validate", str(SAKILA), "--help=false", "-q") == (0, "")
+    assert run("validate", str(SAKILA), "-h=false", "-q") == (0, "")
+
+
+def test_help_given_another_value_is_a_usage_error() -> None:
+    assert run("validate", str(SAKILA), "--help=yes") == (2, "")
+
+
+def test_help_after_the_end_of_the_flags_is_positional() -> None:
+    assert run("validate", "--", str(SAKILA), "--help") == (2, "")
 
 
 def test_two_dashes_alone_end_the_flags() -> None:
@@ -1566,6 +1612,31 @@ def test_a_format_is_named_as_its_extension_is(
     data = out.read_bytes()
     starts = {"jsonl": b'{"sr":1', "cbor": bytes.fromhex("aa6273"), "pdf": b"%PDF"}
     assert data.startswith(starts[written])
+
+
+def test_a_refused_command_line_warns_of_nothing_first(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The ``--format`` warning waits until no usage error is left to find."""
+    out = tmp_path / "out.jsonl"
+    argv = ("build", "-t", str(MINIMAL), "-o", str(out), "--format", "cbor")
+    assert run(*argv, "--build-time", "nope")[0] == 2
+    assert "warning" not in capsys.readouterr().err
+    assert run(*argv)[0] == 0
+    said = capsys.readouterr().err
+    assert "warning: --format cbor over an output named .jsonl" in said
+
+
+def test_a_check_quotes_text_as_the_dump_does() -> None:
+    """doc/cli.md#sr-validate, as probes/printout/quoted-text answers it."""
+    probes = ROOT / "tests" / "differential" / "probes"
+    probe = probes / "printout" / "quoted-text.kdl"
+    code, said = run("validate", str(probe), "--strict-fonts")
+    assert code == 0
+    lines = said.splitlines()
+    name = '"printout/quoted-text \\"a\\\\b\\"\\t' + "\\u00a0" + 'c"'
+    assert lines[1] == f'  report {name} version 2 by al "s"'
+    assert '  when  string  default "x\\"y\\tz"' in lines
 
 
 def test_the_summary_line_counts_pages_and_fonts_and_names_the_stream(

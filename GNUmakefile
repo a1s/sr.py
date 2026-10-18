@@ -67,14 +67,16 @@ install: venv build-dir
 
 # -------- dev hygiene --------
 
+TEST_ARGS ?= -n auto
+
 test:
-	$(PYTHON) -m pytest
+	$(PYTHON) -m pytest $(TEST_ARGS)
 
 # For a machine that is supposed to have the oracle:
 # an engine that cannot be built is a failure rather than a skip,
 # so a suite that measured nothing does not pass.
 test-required:
-	$(PYTHON) -m pytest --differential-required
+	$(PYTHON) -m pytest $(TEST_ARGS) --differential-required
 
 # Font enumeration is the one part of the engine whose answer
 # depends on the machine, and doc/template.md names three platforms.

@@ -40,9 +40,10 @@ from sr.printout.verify import listed, mapped
 __all__ = [
     "cbor_item",
     "cbor_records",
+    "counted",
     "dump",
     "page_ranges",
-    "pages_wanted",
+    "page_wanted",
     "read_cbor",
     "read_jsonl",
     "read_printout",
@@ -301,18 +302,24 @@ def records_of(records: list[Any]) -> tuple[dict[str, Any], list[dict[str, Any]]
 # of every script Unicode has, and none of them is a page number.
 DIGITS = frozenset("0123456789")
 
+# One range of ``--pages``: its first page and its last, either of them
+# ``None`` where that end is open.  A number is a ``Decimal`` because
+# that holds any number of digits exactly, where ``int`` refuses to read
+# more than 4300 of them, and a page past the last is not an error.
+PageRange = tuple[Decimal | None, Decimal | None]
 
-def page_ranges(text: str) -> tuple[tuple[int | None, int | None], ...]:
+
+def page_ranges(text: str) -> tuple[PageRange, ...]:
     """Return the ranges a ``--pages`` value names, as written.
 
     doc/cli.md#sr-inspect: ``1``, ``4-6``, ``10-`` and ``-3`` are all
     ranges, and they combine with commas.  An open end is ``None``,
-    and means the first or the last page once the printout is read,
-    so a bare ``-`` is every page.  Spaces around a number are ignored.
-    What is not a range is refused here, before the printout is read,
-    since it is a mistake in the command line rather than in the file:
-    a range that is empty, a page number below 1, a number that is not
-    decimal digits, and a range that counts backwards.
+    and has no bound, so a bare ``-`` is every page.  Spaces around
+    a number are ignored.  What is not a range is refused here,
+    before the printout is read, since it is a mistake in the
+    command line rather than in the file: a range that is empty,
+    a page number below 1, a number that is not decimal digits,
+    and a range that counts backwards.
 
     Args:
         text: The flag's value.
@@ -321,7 +328,7 @@ def page_ranges(text: str) -> tuple[tuple[int | None, int | None], ...]:
         BadValue: A part of it is not a range.
 
     """
-    ranges: list[tuple[int | None, int | None]] = []
+    ranges: list[PageRange] = []
     for part in text.split(","):
         piece = part.strip()
         if not piece:
@@ -339,7 +346,7 @@ def page_ranges(text: str) -> tuple[tuple[int | None, int | None], ...]:
     return tuple(ranges)
 
 
-def as_page(written: str, text: str) -> int:
+def as_page(written: str, text: str) -> Decimal:
     """Return one page number a ``--pages`` range names.
 
     Args:
@@ -353,31 +360,41 @@ def as_page(written: str, text: str) -> int:
     number = written.strip()
     if not number or not set(number) <= DIGITS:
         raise BadValue(f"--pages {text!r}: {number!r} is not a page number")
-    if int(number) < 1:
+    if not number.strip("0"):
         raise BadValue(f"--pages {text!r}: pages count from 1, and {number} does not")
-    return int(number)
+    return Decimal(number)
 
 
-def pages_wanted(
-    ranges: tuple[tuple[int | None, int | None], ...] | None, count: int
-) -> set[int] | None:
-    """Return the page numbers some ranges name, or ``None`` for all.
+def page_wanted(number: Any, ranges: tuple[PageRange, ...] | None) -> bool:
+    """Return whether a page is one of those some ranges name.
+
+    Each page's own number is held to the ranges, rather than the
+    ranges counted out into page numbers.  So a range costs nothing
+    however far it reaches, and an open end has no bound: ``3-`` names
+    a page numbered 5 in a printout of three pages, which a printout
+    whose numbering is broken has, and which is what ``inspect`` is
+    there to show.
 
     Args:
-        ranges: What :func:`page_ranges` read, where ``--pages`` was given.
-        count: How many pages the printout has, which an open end means.
+        number: The page line's ``number``, whatever the file holds there.
+        ranges: What :func:`page_ranges` read, or ``None`` for every page.
 
     """
     if ranges is None:
-        return None
-    wanted: set[int] = set()
-    for first, last in ranges:
-        wanted.update(range(first or 1, (count if last is None else last) + 1))
-    return wanted
+        return True
+    if not isinstance(number, int) or isinstance(number, bool):
+        return False
+    return any(
+        (first is None or first <= number) and (last is None or number <= last)
+        for first, last in ranges
+    )
 
 
 def dump(
-    name: str, records: list[Any], pages: set[int] | None, summary: bool = False
+    name: str,
+    records: list[Any],
+    pages: tuple[PageRange, ...] | None,
+    summary: bool = False,
 ) -> Iterator[str]:
     """Yield the dump of a printout, line by line.
 
@@ -385,7 +402,7 @@ def dump(
         name: The file it was read from, as the caller named it,
             for the first line.
         records: What the file held.
-        pages: The page numbers to show, or ``None`` for all.
+        pages: The ranges of pages to show, or ``None`` for all.
         summary: Whether to show the header alone.
 
     """
@@ -394,12 +411,8 @@ def dump(
     if summary:
         return
     for page in page_lines:
-        number_of = page.get("number")
-        if pages is not None and not (
-            isinstance(number_of, int) and number_of in pages
-        ):
-            continue
-        yield from page_dump(page, header)
+        if page_wanted(page.get("number"), pages):
+            yield from page_dump(page, header)
 
 
 def header_lines(name: str, header: dict[str, Any], count: int) -> Iterator[str]:
@@ -575,9 +588,9 @@ def size_of(content: str, encoding: Any) -> int:
     """
     if encoding != "base64":
         return len(content.encode("utf-8", "surrogatepass"))
-    spelled = "".join(content.split())
-    padding = len(spelled) - len(spelled.rstrip("="))
-    return len(spelled) * 3 // 4 - min(padding, 2)
+    compact = "".join(content.split())
+    padding = len(compact) - len(compact.rstrip("="))
+    return len(compact) * 3 // 4 - min(padding, 2)
 
 
 def warning_lines(warnings: list[Any]) -> list[str]:

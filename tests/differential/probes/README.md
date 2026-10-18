@@ -155,6 +155,7 @@ the reference gave, and names the section of `doc/` that answer became.
 | `printout/font-warning` | the warning a substituted typeface gives |
 | `printout/twin-fonts` | two fonts that resolve to one face at one size |
 | `printout/margins` | a mark outside the page's printable area |
+| `printout/quoted-text` | how the reports quote a report's name and a default |
 | `layout/band-height` | the two maxima a band's height is |
 | `layout/alignment` | where a field's content sits in its box |
 | `layout/field-format` | what an element's `format` applies to |

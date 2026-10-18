@@ -47,8 +47,9 @@
 # Its case is a render, which the harness names `render/` and then
 # the case whose printout was rendered.
 # M15 compared the two reports and the command line, under `validate/`,
-# `inspect/` and `cli/`, and added two decisions about the command
-# line, `flag-values-by-the-host` and `flag-dashes`, one about the dump,
+# `inspect/` and `cli/`, and added three decisions about the command
+# line, `flag-values-by-the-host`, `flag-dashes`, and `help-flag`,
+# one about the dump,
 # `outline-name-quoted`, and three defects: `help-arguments`
 # and `subreport-fonts-listed` in the reference, and
 # `load-diagnostic-spelling` on both sides.  Ten entries above
@@ -1204,9 +1205,10 @@ doc/cli.md said a flag's value may be attached or separate, and nothing \
 about what a switch's value may be, or how a page number of `--pages` is \
 written.  The reference takes what Go's own parsers take: `--strict-fonts=1`, \
 `=0`, `=t`, `=T`, `=TRUE`, `=True`, and their `false` counterparts, and \
-`+1` as a page number.  doc/cli.md#flags now names `true` and `false` as \
+`+1` as a page number, and it refuses a page number past what a 64-bit \
+integer holds.  doc/cli.md#flags now names `true` and `false` as \
 the values a switch may be given, and doc/cli.md#sr-inspect makes a page \
-number decimal digits, so that the two engines agree on a grammar \
+number decimal digits, however many, so that the two engines agree on a grammar \
 written down rather than on whichever their hosts happen to share.  \
 Both already agree on the spellings doc/ names, and refuse `=yes`.  \
 The reference is the side that changes.\
@@ -1219,6 +1221,7 @@ affects = [
     "cli/switches/letter",
     "cli/switches/upper-case",
     "cli/inspect/plus-sign",
+    "cli/inspect/past-any-integer",
 ]
 
 [[divergence]]
@@ -1244,6 +1247,30 @@ affects = [
 ]
 
 [[divergence]]
+id = "help-flag"
+summary = "help is looked for before any other flag here, and is a switch; the reference reads it in its turn, and takes any value as asking"
+reason = """\
+doc/cli.md#flags now looks for `-h` and `--help` before any other \
+flag is read, among every argument before `--`, so that help wins \
+over a mistake elsewhere in the command line, and a flag that takes \
+a value does not take `--help` as one.  Help is a switch, so \
+`--help=false` does not ask and `--help=yes` is a usage error.  The \
+reference reads the flags in order: an unknown flag before `--help` \
+is a usage error, `-t --help` reads a template named `--help`, and \
+`--help` given any value prints the usage, even after `--`.  A \
+decision, and the reference is the side that changes.\
+"""
+ticket = "M15: flags, cli.md#flags; filed against the Go engine"
+since = "2026-10-18"
+affects = [
+    "cli/help/before-a-mistake",
+    "cli/help/as-a-value",
+    "cli/help/false",
+    "cli/help/other-value",
+    "cli/help/after-the-end",
+]
+
+[[divergence]]
 id = "help-arguments"
 summary = "help refuses a second argument here; the reference takes the first and ignores the rest"
 reason = """\
@@ -1255,7 +1282,7 @@ that changes.\
 """
 ticket = "M15: filed against the Go engine; cli.md#subcommands already states the rule"
 since = "2026-10-17"
-affects = ["cli/help/extra"]
+affects = ["cli/help/extra", "cli/help/a-command-and-a-flag"]
 
 [[divergence]]
 id = "subreport-fonts-listed"

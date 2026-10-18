@@ -1382,12 +1382,21 @@ def quote(text: str) -> str:
     Double quotes, because that is what ``repr`` and ``%q`` produce
     and what the reference's printouts carry.  The same spelling
     quotes text everywhere a person reads it: in a diagnostic,
-    in a warning, and in the dump of doc/cli.md#sr-inspect.
+    in a warning, in a check's report, and in the dump of
+    doc/cli.md#sr-inspect.
+
+    Most text needs no escape at all, and is quoted as it is without
+    looking at it a character at a time.  That is text Unicode calls
+    printable throughout, a lone surrogate not being printable, and
+    with neither of the two characters that are printable and still
+    escaped: the quotation mark and the backslash.
 
     Args:
         text: The string to quote.
 
     """
+    if text.isprintable() and '"' not in text and "\\" not in text:
+        return f'"{text}"'
     return '"' + "".join(escaped(one, '"') for one in text) + '"'
 
 

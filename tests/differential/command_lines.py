@@ -18,6 +18,7 @@ The arguments are written with placeholders, filled in per run:
 | ``{sakila}``, ``{payments}`` | the sakila example and its records |
 | ``{printout}`` | a printout of the minimal example, built once |
 | ``{pages}`` | a printout of the invoices example, of seven pages |
+| ``{gaps}`` | the same, its pages numbered 1, 2, and then 5 to 9 |
 | ``{out}`` | a directory of the engine's own, for what it writes |
 
 """
@@ -209,6 +210,13 @@ def command_lines() -> list[CommandLine]:
         line("help/flag-long", "--help", output=False),
         line("help/flag-one-dash", "-help"),
         line("help/flag-two-dash-short", "--h"),
+        line("help/before-a-mistake", "build", "--wobble", "--help", output=False),
+        line("help/as-a-value", "validate", "-t", "--help", output=False),
+        line("help/false", "validate", "{template}", "--help=false"),
+        line("help/other-value", "validate", "{template}", "--help=yes"),
+        line("help/after-the-end", "validate", "--", "{template}", "--help"),
+        line("help/a-flag-after-help", "help", "-h"),
+        line("help/a-command-and-a-flag", "help", "build", "-h", output=False),
         line("help/among-arguments", "validate", "--help", "nosuch", output=False),
         line("help/unknown", "help", "frobnicate"),
         line("help/extra", "help", "build", "extra", output=False),
@@ -500,6 +508,17 @@ def command_lines() -> list[CommandLine]:
         line("inspect/gap", "inspect", "{pages}", "--pages", "1,,2"),
         line("inspect/three-ends", "inspect", "{pages}", "--pages", "1-2-3"),
         line("inspect/plus-sign", "inspect", "{pages}", "--pages", "+1"),
+        line("inspect/far", "inspect", "{pages}", "--summary", "--pages=1-300000000"),
+        line(
+            "inspect/past-any-integer",
+            "inspect",
+            "{pages}",
+            "--pages",
+            "1-" + "9" * 20,
+        ),
+        line("inspect/open-past-a-gap", "inspect", "{gaps}", "--pages", "3-"),
+        line("inspect/open-beyond-the-count", "inspect", "{gaps}", "--pages", "8-"),
+        line("inspect/closed-across-a-gap", "inspect", "{gaps}", "--pages", "2-5"),
         line(
             "inspect/pages-before-the-file",
             "inspect",

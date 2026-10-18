@@ -37,6 +37,7 @@ import io
 import sys
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
+from itertools import takewhile
 from pathlib import Path
 from typing import Any, BinaryIO, TextIO
 
@@ -56,11 +57,12 @@ from sr.expr import evaluate
 from sr.expr.values import go_shortest, quote
 from sr.fonts.resolve import Resolution, Resolver
 from sr.pdf import render as render_pdf
-from sr.printout.inspect import dump, page_ranges, pages_wanted, read_printout
+from sr.printout.inspect import counted, dump, page_ranges, read_printout
 from sr.printout.model import Printout
 from sr.printout.read import read as read_model
 from sr.printout.verify import violations
 from sr.printout.write import write_cbor, write_jsonl
+from sr.settle import declared_parameters
 from sr.template import load as load_template
 from sr.template.load import (
     Loaded,
@@ -139,9 +141,9 @@ class Usage(Exception):
 class Help(Exception):
     """The command line asked for a command's usage.
 
-    Raised by the parser where it meets ``-h`` or ``--help``,
-    so that a help flag anywhere among a command's arguments
-    is read as the parser reads every other flag.
+    Raised by the parser where ``-h`` or ``--help`` is anywhere among
+    a command's flags, before it reads any of them, so that help wins
+    over a mistake made elsewhere in the command line.
 
     """
 
@@ -231,6 +233,9 @@ HELP_FLAG = Flag("help", "h", value=False)
 # with one dash for a letter and two for a long name, as every flag is.
 HELP = {"-h", "--help"}
 VERSION = {"--version"}
+
+# The argument after which every argument is positional.
+ENDS_FLAGS = "--"
 
 # What doc/cli.md#flags says about dashes, for a flag that breaks it.
 DASHES = "a one-letter flag takes one dash, and a long one two"
@@ -374,7 +379,7 @@ USAGES = {
             ("-t, --template FILE", "the template to apply"),
             ("-d, --data FILE", "the records, - for standard input"),
             ("-o, --out FILE", "where to write, - for standard output"),
-            ("--format NAME", "pdf, jsonl or cbor, where --out does not say"),
+            ("--format NAME", "pdf, jsonl, or cbor, where --out does not say"),
             ("--param NAME=VALUE", "a report parameter, repeatable"),
             ("--build-time TIME", "RFC 3339, fixes BUILD_TIME"),
             ("--strict-fonts", "resolve only fonts named by path"),
@@ -420,8 +425,8 @@ def help_for(arguments: Sequence[str], out: TextIO) -> int:
     """Print usage, for one command or for all of them.
 
     doc/cli.md#subcommands: ``help`` takes one command at most,
-    and one it does not know is a usage error, as it would be
-    named first.
+    and one it does not know is a usage error.  It takes no flags,
+    so a flag after it is an argument that names no command.
 
     Args:
         arguments: The command to describe, where one was named.
@@ -431,13 +436,12 @@ def help_for(arguments: Sequence[str], out: TextIO) -> int:
         Usage: More than one command was named, or one that is not.
 
     """
-    named = ["help" if one in HELP else one for one in arguments]
-    if len(named) > 1:
-        raise Usage(f"help takes one command, and got {named[1]!r} too")
-    if named:
-        name = named[0]
+    if len(arguments) > 1:
+        raise Usage(f"help takes one command, and got {arguments[1]!r} too")
+    if arguments:
+        name = arguments[0]
         if name not in USAGES:
-            raise Usage(unknown_command(name))
+            raise Usage(f"help knows no command {name!r}; try `sr.py help`")
         usage, flags = USAGES[name]
         print(f"usage: {usage}", file=out)
         print(f"  {SUMMARY[name]}", file=out)
@@ -466,6 +470,8 @@ def build(arguments: Sequence[str], out: TextIO) -> int:
     is read, ``--build-time`` among them, so that a mistyped flag
     is reported as itself.  A ``--param`` the template does not
     declare is a usage error too, and is found once it has been read.
+    Nothing is printed until every usage error has been looked for,
+    so a command line that is refused has said nothing else first.
 
     Args:
         arguments: What followed the command.
@@ -481,7 +487,8 @@ def build(arguments: Sequence[str], out: TextIO) -> int:
     target = text_of(given.flags.get("out"))
     if target is None:
         raise Usage("build needs an output, as -o")
-    encoding = format_of(target, text_of(given.flags.get("format")))
+    asked = text_of(given.flags.get("format"))
+    encoding, disagreement = format_of(target, asked)
     built = text_of(given.flags.get("build-time"))
     if built is not None:
         try:
@@ -508,6 +515,8 @@ def build(arguments: Sequence[str], out: TextIO) -> int:
     except (SrError, OSError) as refused:
         print(f"sr: {refused}", file=sys.stderr)
         return FAILED
+    if disagreement is not None:
+        print(f"warning: {disagreement}", file=sys.stderr)
     # What the build said comes first, even where what follows fails:
     # a render that refuses a face is explained by the warning that
     # the face was a substitute, and by the diagnostics of `-v`.
@@ -551,8 +560,8 @@ def data_source(given: Arguments) -> Path | TextIO | None:
     return sys.stdin if data == "-" else Path(str(data))
 
 
-def format_of(target: str, asked: str | None) -> str:
-    """Return the encoding to write, and complain where the two disagree.
+def format_of(target: str, asked: str | None) -> tuple[str, str | None]:
+    """Return the encoding to write, and what to say where the two disagree.
 
     doc/cli.md#sr-build: the format comes from ``--format``, or from
     what ``--out`` ends in.  ``--format`` names one as an extension
@@ -560,6 +569,8 @@ def format_of(target: str, asked: str | None) -> str:
     that names another format it warns and proceeds, because the file
     it writes will be read back by its extension; over an unrecognized
     one, or none, it is silent, since overriding is what the flag is for.
+    The warning is returned rather than printed, for the caller to print
+    once it knows the command line is not refused.
 
     Args:
         target: What ``--out`` named.
@@ -578,19 +589,18 @@ def format_of(target: str, asked: str | None) -> str:
                 raise Usage("--out - needs --format, since there is no extension")
             raise Usage(
                 f"the extension {suffix!r} names no format; "
-                "expected .pdf, .jsonl or .cbor, or give --format"
+                "expected .pdf, .jsonl, .ndjson, or .cbor, or give --format"
             )
-        return named
+        return named, None
     wanted = FORMAT_NAMES.get(asked.lower())
     if wanted is None:
-        raise Usage(f"--format {asked}: expected pdf, jsonl or cbor")
+        raise Usage(f"--format {asked}: expected pdf, jsonl, ndjson, or cbor")
     if named is not None and named != wanted:
-        print(
-            f"warning: --format {asked} over an output named {suffix}, "
-            f"which render and inspect will read as {named}",
-            file=sys.stderr,
+        return wanted, (
+            f"--format {asked} over an output named {suffix}, "
+            f"which render and inspect will read as {named}"
         )
-    return wanted
+    return wanted, None
 
 
 def suffix_of(target: str) -> str:
@@ -713,17 +723,6 @@ def summary(printout: Printout) -> str:
     if printout.warnings:
         terms.append(counted(len(printout.warnings), "warning"))
     return ", ".join(terms)
-
-
-def counted(value: int, noun: str) -> str:
-    """Return a count and its noun, which is plural unless the count is 1.
-
-    Args:
-        value: The count.
-        noun: What is counted, in the singular.
-
-    """
-    return f"{value} {noun if value == 1 else noun + 's'}"
 
 
 def shown(target: str) -> str:
@@ -852,8 +851,7 @@ def inspect_printout(arguments: Sequence[str], out: TextIO) -> int:
     except (SrError, OSError) as refused:
         print(f"sr: {refused}", file=sys.stderr)
         return FAILED
-    wanted = pages_wanted(ranges, len(records) - 1)
-    for line in dump(name, records, wanted, bool(given.flags.get("summary"))):
+    for line in dump(name, records, ranges, bool(given.flags.get("summary"))):
         print(line, file=out)
     broken = violations(records)
     if not broken:
@@ -940,14 +938,10 @@ def parameters_given(report: Report, params: dict[str, str]) -> list[str]:
         Usage: A name is not declared.
 
     """
-    declared = {one.name: one for one in report.parameters}
-    for name in params:
-        if name not in declared:
-            known = ", ".join(sorted(declared)) or "none"
-            raise Usage(
-                f"--param {name}: the template declares no such parameter; "
-                f"it declares: {known}"
-            )
+    try:
+        declared = declared_parameters(report, params)
+    except UnknownParameter as refused:
+        raise Usage(str(refused)) from None
     failures: list[str] = []
     for name, text in params.items():
         parameter = declared[name]
@@ -1250,10 +1244,10 @@ def font_lines(resolved: tuple[Resolution, ...]) -> list[str]:
         parts.extend(style_words(one.font))
         wanted = one.requested
         if wanted is not None and wanted != one.face.family:
-            parts.append(f'"{wanted}" wanted')
+            parts.append(f"{quote(wanted)} wanted")
         parts.append(one.step)
         parts.append(one.face.origin.shown())
-        parts.append(f'"{one.face.family}"')
+        parts.append(quote(one.face.family))
         lines.append("  ".join(parts))
     return lines
 
@@ -1316,7 +1310,7 @@ def headline(report: Report) -> str:
 
     """
     parts = ["report"]
-    parts.append(f'"{report.name}"' if report.name else "(unnamed)")
+    parts.append(quote(report.name) if report.name else "(unnamed)")
     if report.version:
         parts.append(f"version {report.version}")
     if report.author:
@@ -1347,20 +1341,16 @@ def tally(report: Report) -> str:
     columns = layout.columns.count if layout is not None and layout.columns else 1
     groups = 0 if layout is None else len(levels_of(layout)) - 1
     members = len(report.records.members) if report.records is not None else 0
-    counted = (
-        (columns, "column", "columns"),
-        (groups, "group", "groups"),
-        (members, "member", "members"),
-        (len(report.variables), "variable", "variables"),
-        (len(report.fonts), "font", "fonts"),
-        (len(report.data), "data blob", "data blobs"),
-        (len(subreports_of(report)), "subreport", "subreports"),
+    terms = (
+        (columns, "column"),
+        (groups, "group"),
+        (members, "member"),
+        (len(report.variables), "variable"),
+        (len(report.fonts), "font"),
+        (len(report.data), "data blob"),
+        (len(subreports_of(report)), "subreport"),
     )
-    return ", ".join(
-        f"{count} {one if count == 1 else many}"
-        for count, one, many in counted
-        if count
-    )
+    return ", ".join(counted(count, noun) for count, noun in terms if count)
 
 
 def parameter_lines(parameters: tuple[Parameter, ...]) -> list[str]:
@@ -1375,7 +1365,7 @@ def parameter_lines(parameters: tuple[Parameter, ...]) -> list[str]:
     lines = []
     for one in parameters:
         if one.default is not None:
-            source = f'default "{one.default}"'
+            source = f"default {quote(one.default)}"
         elif one.defaultexpr is not None:
             source = "defaultexpr"
         else:
@@ -1425,6 +1415,11 @@ def parse(arguments: Sequence[str], flags: Sequence[Flag]) -> Arguments:
     comes after it is positional, whatever it starts with.  A lone ``-``
     is a positional argument, since it names a stream.
 
+    A help flag is looked for first, among every argument before ``--``.
+    So it wins over an unknown flag before it, and a flag that takes
+    a value does not take it as one: ``-t --help`` asks for help rather
+    than naming a template ``--help``.
+
     Args:
         arguments: What followed the command.
         flags: The flags the command takes.
@@ -1433,9 +1428,12 @@ def parse(arguments: Sequence[str], flags: Sequence[Flag]) -> Arguments:
         Usage: A flag is unknown, is spelled with the wrong number
             of dashes, or is missing the value it takes, or a switch
             was given a value other than ``true`` or ``false``.
-        Help: ``-h`` or ``--help`` was given.
+        Help: ``-h`` or ``--help`` was given, and not ``=false``.
 
     """
+    flagged = takewhile(lambda one: one != ENDS_FLAGS, arguments)
+    if any(asks_for_help(one) for one in flagged):
+        raise Help
     known = (*flags, HELP_FLAG)
     names = {one.name: one for one in known}
     letters = {one.letter: one for one in known if one.letter is not None}
@@ -1443,7 +1441,7 @@ def parse(arguments: Sequence[str], flags: Sequence[Flag]) -> Arguments:
     pending = list(arguments)
     while pending:
         argument = pending.pop(0)
-        if argument == "--":
+        if argument == ENDS_FLAGS:
             found.positional.extend(pending)
             break
         if argument == "-" or not argument.startswith("-"):
@@ -1460,13 +1458,32 @@ def parse(arguments: Sequence[str], flags: Sequence[Flag]) -> Arguments:
                 raise Usage(f"{argument!r}: {DASHES}, as {spelled}")
             raise Usage(f"unknown flag {argument!r}")
         if flag is HELP_FLAG:
-            raise Help
+            # Read already, by asks_for_help, and given =false.
+            continue
         if not flag.value:
             found.flags[flag.name] = switched(argument, attached if equals else None)
             continue
         value = attached if equals else taken(argument, pending)
         record(found, flag, value)
     return found
+
+
+def asks_for_help(argument: str) -> bool:
+    """Return whether one argument is a help flag that asks for help.
+
+    ``-h`` and ``--help`` are a switch, as doc/cli.md#flags has
+    every flag that takes no value: given alone or ``=true`` they ask,
+    and given ``=false`` they do not.
+
+    Args:
+        argument: One argument, as it was written.
+
+    Raises:
+        Usage: A help flag was given a value other than ``true`` or ``false``.
+
+    """
+    name, equals, value = argument.partition("=")
+    return name in HELP and switched(argument, value if equals else None)
 
 
 def respelled(argument: str) -> str:

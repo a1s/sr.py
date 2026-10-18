@@ -39,8 +39,8 @@ sr.py help      print usage, for one command or for all of them
 `sr.py help`, and exits 2. `sr.py help build`, `sr.py build -h`, and
 `sr.py build --help` all print the same thing and exit 0. Every command
 rejects an argument it has no use for, `version` included,
-and `help` takes one command at most: one it does not know
-is a usage error, as it would be named first.
+and `help` takes one command at most and no flags: a command
+it does not know is a usage error, and so is a flag after it.
 
 ### Flags
 
@@ -50,9 +50,16 @@ and its value is attached after an `=` or separate:
 are the same flag. `--t` and `-template` are no flags, and nor is
 anything with three dashes: each is a usage error, and the message says
 how a flag is spelled. A letter does not run into its value, so `-tx.kdl`
-is an unknown flag. Help is `-h` or `--help`, inside a command and
-in place of one. This is the convention most command lines keep,
+is an unknown flag. This is the convention most command lines keep,
 and it leaves each of a flag's names one spelling.
+
+Help is `-h` or `--help`, in place of a command or anywhere among
+a command's flags. It is looked for before any other flag is read,
+so it wins over a mistake elsewhere in the command line, and a flag
+that takes a value does not take it as one: `sr.py build -t --help`
+prints the usage of `build`. After `--` it is positional, as everything
+there is. Help is a [switch](#flags), so `--help=false` does not ask
+for it, and `--help=yes` is a usage error.
 
 Flags may follow positional arguments, so `sr.py render out.srp.jsonl -o out.pdf`
 works. `--` ends them: what follows it is positional,
@@ -70,7 +77,12 @@ is the flag not given, so `-d ""` reads no records and `-o ""` is
 a missing `--out`. That lets a script pass a variable that may be empty
 without a test around the flag.
 
-`--param` and `--accept` are the repeatable flags, and are the exception:
+A switch is the exception: its values are `true` and `false`,
+and an empty one is neither, so `--strict-fonts=` is a usage error,
+as `--strict-fonts=yes` is. A script that sets a switch from a variable
+sets the variable to one of the two.
+
+`--param` and `--accept` are the repeatable flags, and are an exception too:
 an empty one names nothing, and is a usage error. An `--accept` given
 twice is the one name. `--param` values accumulate in the order given,
 and two mistakes in them are refused rather than absorbed:
@@ -205,7 +217,7 @@ extensions the [printout format](printout.md#encoding) itself names.
 An extension is compared in any case, so `report.PDF` is a PDF.
 
 `--format` names a format as an extension does, without the dot and in any case:
-`pdf`, `jsonl`, `ndjson` or `cbor`, the third being the second's other name.
+`pdf`, `jsonl`, `ndjson`, or `cbor`, the third being the second's other name.
 
 `--format` **over a recognized extension warns**, on stderr, and proceeds:
 `--format cbor -o report.jsonl` writes a file that `render` and `inspect`
@@ -318,7 +330,11 @@ A font line is the name the template gave it, its size and style, the
 inside that file.
 
 The first line names the template as the command line gave it,
-as `inspect` names a printout.
+as `inspect` names a printout. Text is quoted as the expression language
+[quotes a string](expressions.md#quoted-strings): the report's name,
+a typeface a font asked for, the family of the face it got,
+and a parameter's default. A version and an author are written
+as they are, as the dump writes them.
 
 `ok` is the last line, so a `tail -1` reads the verdict; a check that failed
 does not print it. Four sections may appear before it, each only when it
@@ -383,15 +399,18 @@ read and diffed.
 
 | Flag | |
 |---|---|
-| `--pages` | Page numbers to dump: `1`, `4-6`, `10-` and `-3` are all ranges, and they combine with commas. An open end means the first or the last page, so a bare `-` is every page. Default: all. |
+| `--pages` | Page numbers to dump: `1`, `4-6`, `10-`, and `-3` are all ranges, and they combine with commas. An open end has no bound, so `10-` is every page numbered 10 or more, and a bare `-` is every page. Default: all. |
 | `--summary` | The header only, no pages. |
 
-A page number is decimal digits, counting from 1, and spaces around
-a number are ignored. What is not a range is a usage error, found before
-the printout is read: a range that is empty, as between two commas,
-a number below 1 or written in anything but decimal digits, and a range
-that counts backwards, as `3-1`. A page past the last is not an error;
-there is just no page there to dump.
+A page number is decimal digits, however many, counting from 1, and
+spaces around a number are ignored. What is not a range is a usage error,
+found before the printout is read: a range that is empty, as between
+two commas, a number below 1 or written in anything but decimal digits,
+and a range that counts backwards, as `3-1`. A page past the last is
+not an error; there is just no page there to dump. Each page is held
+to the ranges by the `number` its page line carries, so in a printout
+whose numbering is broken, which is one `inspect` is there to show,
+`3-` still reaches a page numbered 5 where there are only three.
 
 A CBOR printout is read as [the format writes one](printout.md#cbor),
 and a tag, a byte string, or an indefinite length is refused at the byte
