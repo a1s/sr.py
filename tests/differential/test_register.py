@@ -14,11 +14,12 @@ from pathlib import Path
 import pytest
 
 from tests.differential.cases import (
-    corpus,
     example_cases,
+    identifiers,
+    inspected,
     probe_cases,
-    render_cases,
     rendered,
+    validated,
 )
 from tests.differential.register import load_register
 
@@ -61,7 +62,7 @@ def test_the_examples_are_never_excused() -> None:
     """
     register = load_register()
     for case in example_cases():
-        for ident in (case.ident, rendered(case)):
+        for ident in (case.ident, rendered(case), validated(case), inspected(case)):
             entry = register.entry_for(ident)
             said = f"{ident} is covered by divergence"
             assert entry is None, f"{said} {entry.ident}"
@@ -79,10 +80,9 @@ def test_every_entry_covers_a_case_that_exists() -> None:
     probes = probe_cases()
     if not probes:
         pytest.skip("no probes yet; M1 adds them, and this starts enforcing")
-    identifiers = [case.ident for case in corpus()]
-    identifiers += [rendered(case) for case in render_cases()]
+    known = identifiers()
     for entry in load_register().entries:
-        assert any(entry.matches(ident) for ident in identifiers), (
+        assert any(entry.matches(ident) for ident in known), (
             f"divergence {entry.ident!r} matches no case; its patterns are "
             f"{list(entry.affects)}. Either the probe was renamed, or the "
             "entry outlived it and should be removed."

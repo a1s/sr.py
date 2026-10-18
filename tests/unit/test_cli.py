@@ -99,7 +99,7 @@ def test_help_names_no_milestone_any_more() -> None:
         ("validate", "-t", str(SAKILA)),
         ("validate", "--template", str(SAKILA)),
         ("validate", "--template=" + str(SAKILA)),
-        ("validate", "-template", str(SAKILA)),
+        ("validate", "-t=" + str(SAKILA)),
         ("validate", str(SAKILA)),
         ("validate", str(SAKILA), "--quiet"),
     ],
@@ -149,9 +149,11 @@ def test_an_attached_parameter_value_is_the_same_flag() -> None:
     assert code == 0
 
 
-def test_a_parameter_the_template_does_not_declare_is_refused() -> None:
+def test_a_parameter_the_template_does_not_declare_is_a_usage_error() -> None:
+    # doc/cli.md#flags: the mistake is in the command line,
+    # although the template has to be read to find it.
     code, _ = run("validate", str(SAKILA), "--param", "nosuch=1", "-q")
-    assert code == 1
+    assert code == 2
 
 
 def test_a_parameter_given_twice_is_refused_rather_than_taken_last() -> None:
@@ -562,18 +564,20 @@ def test_a_subreport_font_warning_reaches_the_host(tmp_path: Path) -> None:
     assert 'typeface "NoSuchFamilyAnywhere" was not found' in said
 
 
-def test_a_font_warning_is_spelled_the_way_a_load_warning_is(tmp_path: Path) -> None:
+def test_a_font_warning_is_spelled_the_way_the_dump_spells_one(
+    tmp_path: Path,
+) -> None:
     # A warning knows its kind and the node it happened at, and the line
     # used to carry the message alone: a substituted typeface said what
     # had happened without saying which `font` node it happened to,
     # which in a subreport is the only thing that identifies it.
+    # doc/cli.md#sr-inspect spells one, and the check spells it alike.
     host = nested(tmp_path, 'font "inner" typeface="NoSuchFamilyAnywhere" size=9')
     code, said = run("validate", str(host))
     assert code == 0
     lines = [one.strip() for one in said.splitlines() if "NoSuchFamily" in one]
     assert len(lines) == 1
-    assert lines[0].startswith("font: ")
-    assert lines[0].endswith('(report > font "inner")')
+    assert lines[0].startswith('font  report > font "inner"  typeface ')
 
 
 def test_a_subreport_font_is_not_listed_among_the_host_s(tmp_path: Path) -> None:
@@ -777,11 +781,11 @@ def test_build_takes_no_positional_arguments(tmp_path: Path) -> None:
     assert code == 2
 
 
-def test_a_parameter_the_template_does_not_declare_fails_the_build(
+def test_a_parameter_the_template_does_not_declare_is_a_build_usage_error(
     tmp_path: Path,
 ) -> None:
     code, _ = build_minimal(tmp_path, "--param", "nosuch=1")
-    assert code == 1
+    assert code == 2
 
 
 def test_a_template_that_will_not_load_fails_the_build(tmp_path: Path) -> None:
@@ -796,21 +800,26 @@ def test_a_template_that_will_not_load_fails_the_build(tmp_path: Path) -> None:
     assert code == 1
 
 
-def test_a_build_time_that_is_not_a_time_fails_the_build(tmp_path: Path) -> None:
+@pytest.mark.parametrize("template", [MINIMAL, ROOT / "nosuch.kdl"])
+def test_a_build_time_that_is_not_a_time_is_a_usage_error(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    template: Path,
+) -> None:
+    """doc/cli.md#sr-build: checked before the template is read."""
     out = tmp_path / "out.srp.jsonl"
     code, _ = run(
         "build",
         "-t",
-        str(MINIMAL),
-        "-d",
-        str(FILMS),
+        str(template),
         "-o",
         str(out),
         "--build-time",
         "yesterday",
-        "--strict-fonts",
     )
-    assert code == 1
+    assert code == 2
+    assert "--build-time" in capsys.readouterr().err
+    assert not out.exists()
 
 
 # -- render -----------------------------------------------------------
@@ -903,11 +912,12 @@ def test_render_repeats_the_warnings_the_printout_carries(
     code, _ = run("render", str(printout), "-o", str(out))
     said = capsys.readouterr().err.splitlines()
     assert code == 0
-    assert [one.split(":")[:2] for one in said[:2]] == [
-        ["warning", " unknown"],
-        ["warning", " unknown"],
-    ]
-    assert said[-1] == f"{out}: 1 page, 2 warnings"
+    assert said[0] == (
+        "warning: unknown  report > layout > detail wobble=  "
+        "unknown property `wobble`, accepted and ignored"
+    )
+    assert said[1].startswith("warning: unknown  report > layout > detail > ")
+    assert said[-1] == f"{out}: 1 page"
 
 
 def test_a_render_that_fails_leaves_the_previous_file_alone(
@@ -1043,10 +1053,10 @@ def test_inspect_takes_a_range_of_pages(tmp_path: Path) -> None:
     assert "page 1  " not in said
 
 
-def test_a_range_that_is_not_one_fails(tmp_path: Path) -> None:
+def test_a_range_that_is_not_one_is_a_usage_error(tmp_path: Path) -> None:
     _, out = build_minimal(tmp_path)
     code, _ = run("inspect", str(out), "--pages", "first")
-    assert code == 1
+    assert code == 2
 
 
 def test_inspect_needs_one_printout() -> None:
@@ -1086,7 +1096,7 @@ def test_inspect_says_which_invariants_a_printout_breaks(
         "invariant: the header counts 2 pages, and 1 page lines follow",
         'invariant: page 1, mark 1: its font "nowhere" is not in'
         " the header's font table",
-        "sr: " + broken.as_posix() + ": 2 invariants broken",
+        f"sr: {broken}: 2 invariants broken",
     ]
 
 
@@ -1121,7 +1131,7 @@ def test_inspect_dumps_an_outline_entry_at_its_point(tmp_path: Path) -> None:
     code, said = run("inspect", str(out))
     assert code == 0
     lines = [one.strip() for one in said.splitlines()]
-    assert 'outline  at 5,5  "Top"  level 1  name "top"  closed' in lines
+    assert 'outline  at 5,5  level 1  "Top"  name "top"  closed' in lines
     assert 'xref  box 5,11 20x6  outline  "top"  caption "Back up"' in lines, "\n".join(
         lines
     )
@@ -1256,7 +1266,7 @@ def test_a_diagnostic_on_standard_error_is_utf8_too(
     monkeypatch.setattr(sys, "stderr", held)
     code, _ = run("validate", str(SAKILA), "--param", f"{LATVIAN}=1", "-q")
     held.flush()
-    assert code == 1
+    assert code == 2
     assert f"--param {LATVIAN}: " in raw.getvalue().decode("utf-8")
 
 
@@ -1391,3 +1401,271 @@ def test_an_output_directory_that_is_not_there_is_a_diagnostic(
 def test_verbose_is_accepted_by_build(tmp_path: Path) -> None:
     code, _ = build_minimal(tmp_path, "-v")
     assert code == 0
+
+
+# -- the shell, as doc/cli.md#conventions spells it -------------------
+#
+# tests/differential/command_lines.py holds the same questions to the
+# reference.  These hold the answers this engine gives, so that one
+# that changes is caught where there is no reference to compare with.
+
+
+def test_the_version_flag_prints_what_the_command_does() -> None:
+    assert run("--version") == run("version")
+
+
+@pytest.mark.parametrize("spelling", ["-h", "--help"])
+def test_every_spelling_of_help_is_the_command_s_help(spelling: str) -> None:
+    assert run("build", spelling) == run("help", "build")
+
+
+@pytest.mark.parametrize("spelling", ["-h", "--help"])
+def test_help_in_place_of_a_command_is_the_help_command(spelling: str) -> None:
+    assert run(spelling) == run("help")
+
+
+@pytest.mark.parametrize(
+    ("argv", "spelled"),
+    [
+        (("validate", "--t", str(SAKILA)), "-t"),
+        (("validate", "-template", str(SAKILA)), "--template"),
+        (("validate", "--t=" + str(SAKILA)), "-t="),
+        (("validate", str(SAKILA), "--q"), "-q"),
+        (("validate", str(SAKILA), "-quiet"), "--quiet"),
+        (("validate", str(SAKILA), "-strict-fonts"), "--strict-fonts"),
+        (("build", "--h"), "-h"),
+        (("build", "-help"), "--help"),
+        (("--h",), "-h"),
+        (("-help",), "--help"),
+        (("-version",), "--version"),
+    ],
+)
+def test_a_letter_takes_one_dash_and_a_long_name_two(
+    capsys: pytest.CaptureFixture[str], argv: tuple[str, ...], spelled: str
+) -> None:
+    assert run(*argv) == (2, "")
+    assert f"as {spelled}" in capsys.readouterr().err
+
+
+def test_a_letter_does_not_run_into_its_value() -> None:
+    assert run("validate", "-t" + str(SAKILA)) == (2, "")
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("help", "frobnicate"),
+        ("help", "build", "extra"),
+        ("-t", "x.kdl"),
+    ],
+)
+def test_help_takes_one_command_it_knows(argv: tuple[str, ...]) -> None:
+    code, said = run(*argv)
+    assert (code, said) == (2, "")
+
+
+def test_two_dashes_alone_end_the_flags() -> None:
+    # After them `-q` is the template, which is not there.
+    assert run("validate", "-q", "--", str(SAKILA))[0] == 0
+    assert run("validate", "--", "-q")[0] == 1
+
+
+@pytest.mark.parametrize("flag", ["---t", "----template"])
+def test_three_dashes_are_not_a_flag(tmp_path: Path, flag: str) -> None:
+    out = tmp_path / "out.srp.jsonl"
+    code, _ = run("build", flag, str(MINIMAL), "-o", str(out))
+    assert code == 2
+
+
+@pytest.mark.parametrize(
+    ("given", "strict"),
+    [
+        ((), False),
+        (("--strict-fonts",), True),
+        (("--strict-fonts=true",), True),
+        (("--strict-fonts=false",), False),
+        (("--strict-fonts=false", "--strict-fonts"), True),
+        (("--strict-fonts", "--strict-fonts=false"), False),
+    ],
+)
+def test_a_switch_takes_true_or_false(
+    tmp_path: Path, given: tuple[str, ...], strict: bool
+) -> None:
+    out = tmp_path / "out.srp.jsonl"
+    code, _ = run("build", "-t", str(MINIMAL), "-o", str(out), *given)
+    assert code == 0
+    header = json.loads(out.read_text(encoding="utf-8").splitlines()[0])
+    assert header["strictFonts"] is strict
+
+
+@pytest.mark.parametrize("value", ["1", "0", "T", "TRUE", "yes", ""])
+def test_a_switch_takes_no_other_value(tmp_path: Path, value: str) -> None:
+    out = tmp_path / "out.srp.jsonl"
+    code, _ = run(
+        "build", "-t", str(MINIMAL), "-o", str(out), f"--strict-fonts={value}"
+    )
+    assert code == 2
+
+
+def test_an_empty_value_is_the_flag_not_given(tmp_path: Path) -> None:
+    out = tmp_path / "out.srp.jsonl"
+    assert run("build", "-t", str(MINIMAL), "-d", "", "-o", str(out))[0] == 0
+    assert run("build", "-t", "", "-o", str(out))[0] == 2
+    assert run("build", "-t", str(MINIMAL), "-o", "")[0] == 2
+
+
+def test_any_other_flag_given_twice_takes_the_last_value(tmp_path: Path) -> None:
+    first, last = tmp_path / "first.srp.jsonl", tmp_path / "last.srp.jsonl"
+    code, _ = run("build", "-t", str(MINIMAL), "-o", str(first), "-o", str(last))
+    assert code == 0
+    assert last.is_file()
+    assert not first.exists()
+
+
+@pytest.mark.parametrize("value", ["=1", "", "period_start"])
+def test_a_parameter_needs_a_name_and_an_equals_sign(value: str) -> None:
+    code, _ = run("validate", str(SAKILA), "--param", value, "-q")
+    assert code == 2
+
+
+def test_accept_needs_a_name() -> None:
+    assert run("validate", str(UNKNOWN), "--accept", "")[0] == 2
+
+
+@pytest.mark.parametrize(
+    "flag",
+    [("--param", "x=1"), ("--accept", "x"), ("--strict-fonts",)],
+)
+def test_render_and_inspect_take_only_their_own_flags(
+    tmp_path: Path, flag: tuple[str, ...]
+) -> None:
+    printout = built(tmp_path, "out.srp.jsonl")
+    pdf = str(tmp_path / "out.pdf")
+    assert run("render", str(printout), "-o", pdf, *flag)[0] == 2
+    assert run("inspect", str(printout), *flag)[0] == 2
+
+
+@pytest.mark.parametrize("command", ["render", "inspect"])
+def test_a_printout_is_not_read_from_standard_input(
+    tmp_path: Path, command: str
+) -> None:
+    output = ("-o", str(tmp_path / "out.pdf")) if command == "render" else ()
+    assert run(command, "-", *output)[0] == 2
+
+
+@pytest.mark.parametrize(
+    ("name", "written"),
+    [("ndjson", "jsonl"), ("JSONL", "jsonl"), ("Cbor", "cbor"), ("PDF", "pdf")],
+)
+def test_a_format_is_named_as_its_extension_is(
+    tmp_path: Path, name: str, written: str
+) -> None:
+    out = tmp_path / "out.x"
+    code, _ = run("build", "-t", str(MINIMAL), "-o", str(out), "--format", name)
+    assert code == 0
+    data = out.read_bytes()
+    starts = {"jsonl": b'{"sr":1', "cbor": bytes.fromhex("aa6273"), "pdf": b"%PDF"}
+    assert data.startswith(starts[written])
+
+
+def test_the_summary_line_counts_pages_and_fonts_and_names_the_stream(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """doc/cli.md#sr-build: fonts always, warnings where there are any."""
+    code, _ = run(
+        "build",
+        "-t",
+        str(SAKILA),
+        "-d",
+        str(SAKILA_DATA),
+        "-o",
+        "-",
+        "--format",
+        "jsonl",
+    )
+    assert code == 0
+    assert (
+        capsys.readouterr().err.splitlines()[-1] == "standard output: 1 page, 4 fonts"
+    )
+
+
+def test_a_document_of_no_fonts_says_so(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A font declared and nothing printed in it, as in
+    # tests/differential/probes/printout/no-fonts.kdl.
+    template = tmp_path / "empty.kdl"
+    template.write_text(
+        f"""
+report name="empty" {{
+  font "body" file="{FACE}" size=9
+  layout pagesize="A4" {{
+    style font="body" color="black"
+    detail height=10 {{
+      field text="a" left=0 width=100 printwhen="False"
+    }}
+  }}
+}}
+""",
+        encoding="utf-8",
+    )
+    out = tmp_path / "out.srp.jsonl"
+    assert run("build", "-t", str(template), "-o", str(out))[0] == 0
+    assert capsys.readouterr().err.splitlines()[-1] == f"{out}: 1 page, 0 fonts"
+
+
+def test_a_render_counts_its_pages(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    printout = built(tmp_path, "out.srp.jsonl")
+    capsys.readouterr()
+    pdf = tmp_path / "out.pdf"
+    assert run("render", str(printout), "-o", str(pdf))[0] == 0
+    assert capsys.readouterr().err.splitlines() == [f"{pdf}: 1 page"]
+
+
+@pytest.mark.parametrize(
+    "pages",
+    ["first", "0", "3-1", "1,,2", "1,", "1-2-3", "+1", "1_0", chr(0x661)],
+)
+def test_pages_that_are_not_ranges_are_refused_before_the_file_is_read(
+    pages: str,
+) -> None:
+    code, _ = run("inspect", str(ROOT / "nosuch.srp.jsonl"), "--pages", pages)
+    assert code == 2
+
+
+@pytest.mark.parametrize(
+    ("pages", "shown"),
+    [
+        ("", [1]),
+        ("-", [1]),
+        (" 1 ", [1]),
+        ("2-", []),
+        ("-9", [1]),
+        ("1,1", [1]),
+    ],
+)
+def test_pages_that_are_ranges_choose_pages(
+    tmp_path: Path, pages: str, shown: list[int]
+) -> None:
+    _, out = build_minimal(tmp_path)
+    code, said = run("inspect", str(out), "--pages", pages)
+    assert code == 0
+    headings = [one for one in said.splitlines() if one.startswith("page ")]
+    assert [int(one.split()[1]) for one in headings] == shown
+
+
+def test_what_a_command_writes_ends_its_lines_with_a_line_feed() -> None:
+    """doc/cli.md#streams: the bytes do not change with the machine.
+
+    The stand-in translates a line feed as a Windows pipe does.
+
+    """
+    raw = io.BytesIO()
+    stream = io.TextIOWrapper(raw, encoding="utf-8", newline="\r\n")
+    code = main(["validate", str(SAKILA)], stream)
+    stream.flush()
+    assert code == 0
+    assert b"\r" not in raw.getvalue()
+    assert raw.getvalue().endswith(b"\nok\n")

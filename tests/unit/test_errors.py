@@ -167,8 +167,12 @@ def test_a_warning_says_where_it_happened_where_it_knows() -> None:
         record=3,
     )
     assert str(warning) == (
-        "glyph: no glyph for U+0161 (report > layout > detail > field, record 3)"
+        "glyph  record 3  report > layout > detail > field  no glyph for U+0161"
     )
     assert str(BuildWarning("font", "typeface substituted")) == (
-        "font: typeface substituted"
+        "font  typeface substituted"
     )
+    unknown = BuildWarning(
+        "unknown", "unknown property", node="report > layout", prop="wobble"
+    )
+    assert str(unknown) == "unknown  report > layout wobble=  unknown property"

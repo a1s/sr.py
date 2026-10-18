@@ -46,6 +46,13 @@
 # M14 added one decision about rendering, `image-past-its-pixels`.
 # Its case is a render, which the harness names `render/` and then
 # the case whose printout was rendered.
+# M15 compared the two reports and the command line, under `validate/`,
+# `inspect/` and `cli/`, and added two decisions about the command
+# line, `flag-values-by-the-host` and `flag-dashes`, one about the dump,
+# `outline-name-quoted`, and three defects: `help-arguments`
+# and `subreport-fonts-listed` in the reference, and
+# `load-diagnostic-spelling` on both sides.  Ten entries above
+# cover a report or a command line as well as a printout.
 #
 # The milestone numbers:
 #   M0: Scaffold and oracle
@@ -151,11 +158,15 @@ Go's refuses.  A template one engine can read and the other cannot is worse \
 than either rule alone, so doc/template.md#dimension now spells the grammar \
 out -- decimal digits, an optional point, an optional exponent, underscores \
 between digits -- and a hexadecimal float is outside it.  The reference is \
-the side that changes; no template in the corpus writes one.\
+the side that changes; no template in the corpus writes one.  The check \
+refuses the probe here, as the build does.\
 """
 ticket = "M2: dimension grammar, template.md#dimension"
 since = "2026-09-12"
-affects = ["probe/values/hex-float"]
+affects = [
+    "probe/values/hex-float",
+    "validate/probe/values/hex-float",
+]
 
 [[divergence]]
 id = "non-finite-dimensions"
@@ -169,11 +180,15 @@ built -- and where it does not, it builds a printout: an infinite `maxwidth` \
 clamps nothing and the mark comes out intact.  doc/template.md#dimension \
 already said a dimension is finite, so this is a defect rather than a \
 decision; what M2 added was judging it on the points the dimension resolves \
-to, which is the only place all three routes meet.\
+to, which is the only place all three routes meet.  The check refuses the \
+probe here, as the build does.\
 """
 ticket = "M2: filed against the Go engine; template.md#dimension already states the rule"
 since = "2026-09-12"
-affects = ["probe/values/non-finite"]
+affects = [
+    "probe/values/non-finite",
+    "validate/probe/values/non-finite",
+]
 
 [[divergence]]
 id = "time-before-year-one"
@@ -261,11 +276,20 @@ listed in a template's `accept`, and names given to `--accept` are \
 accepted in silence, which is how an extension says it is one.  \
 `--strict-names` restores the old behaviour for anyone who wants it.  \
 The reference is the side that changes, and the `accept` node is the part \
-of it that it does not have yet.\
+of it that it does not have yet.  Its command line has neither `--accept` \
+nor `--strict-names`, and its dump has no place for the `prop` that \
+the warning about an unknown property carries, so a check, a dump and \
+two command lines differ with the printouts.\
 """
 ticket = "M4: unknown names, template.md#unknown-names"
 since = "2026-09-13"
-affects = ["probe/values/unknown-names*"]
+affects = [
+    "probe/values/unknown-names*",
+    "validate/probe/values/unknown-names*",
+    "inspect/probe/image/type",
+    "cli/validate/accept",
+    "cli/validate/strict-names",
+]
 
 [[divergence]]
 id = "glyph-warning-order"
@@ -344,11 +368,15 @@ negative size is written more plainly with a size of 0 or a negative \
 doc/template.md#position-and-size-any-two-of-three now makes a negative \
 size an error, on an element, an `xref`, and a section alike, as the \
 reference already does for a negative stroke width.  The reference is \
-the side that changes.\
+the side that changes.  The check refuses the probe here, as the build \
+does.\
 """
 ticket = "M7: negative sizes, template.md#position-and-size-any-two-of-three"
 since = "2026-09-27"
-affects = ["probe/values/negative-size"]
+affects = [
+    "probe/values/negative-size",
+    "validate/probe/values/negative-size",
+]
 
 [[divergence]]
 id = "font-warning-node"
@@ -363,11 +391,16 @@ kind, so a reader that goes from a warning to the template cannot find \
 which of several fonts fell back without matching the typeface in the \
 message.  The difference dates from M5; it went unregistered until \
 the harness could build a probe without `--strict-fonts`, which refuses a \
-`typeface` outright.  The reference is the side that changes.\
+`typeface` outright.  The reference is the side that changes.  Its check \
+writes the warning as the message alone, where doc/cli.md#sr-inspect has \
+every report write one as the dump does, kind and node first.\
 """
 ticket = "M5: font warnings, printout.md#header-line; filed against the Go engine"
 since = "2026-09-27"
-affects = ["probe/printout/font-warning"]
+affects = [
+    "probe/printout/font-warning",
+    "validate/probe/printout/font-warning",
+]
 
 [[divergence]]
 id = "column-floor"
@@ -423,11 +456,18 @@ first record was produced by record 0, and the reference writes `record` on \
 the second such warning and not on the first, which is what serializing an \
 integer with its zero value omitted does rather than a rule about warnings.  \
 doc/layout.md#errors now says the first record's 0 is included.  The \
-reference is the side that changes.\
+reference is the side that changes.  Its dump reads a `record` of 0 the \
+same way, as no record, so the dump of a printout that carries one \
+leaves it out.\
 """
 ticket = "M8: overflow, layout.md#errors; filed against the Go engine"
 since = "2026-09-27"
-affects = ["probe/pagination/overflow-first-record"]
+affects = [
+    "probe/pagination/overflow-first-record",
+    "inspect/probe/pagination/overflow-first-record",
+    "inspect/probe/pagination/swapfooter-overflow",
+    "inspect/probe/printout/margins",
+]
 
 [[divergence]]
 id = "last-outer-summary"
@@ -686,11 +726,15 @@ has left.  When a scope ends no band is being measured.  The reference \
 answers with the last band it happened to measure, which depends on \
 lookaheads and reservations a template cannot see.  doc/ now leaves both \
 out of FINAL, and FINAL itself, and validation refuses them.  It is a \
-decision rather than a defect, and the reference is the side that changes.\
+decision rather than a defect, and the reference is the side that changes.  \
+The check refuses the probe here, as the build does.\
 """
 ticket = "M9: FINAL, expressions.md#final"
 since = "2026-10-03"
-affects = ["probe/deferred/final-vertical"]
+affects = [
+    "probe/deferred/final-vertical",
+    "validate/probe/deferred/final-vertical",
+]
 
 [[divergence]]
 id = "final-at-a-group-break"
@@ -781,11 +825,15 @@ standard: `charset="iso-8859-1"`, a byte per character, and `eci=#true`, \
 which names the charset in the symbol whenever the value is not ASCII.  \
 doc/barcode.md says where each type writes the ECI.  The reference \
 refuses both, as it refuses any property it does not know (see \
-`unknown-names-accepted`), and is the side that changes.\
+`unknown-names-accepted`), and is the side that changes.  Its check \
+refuses the probe too.\
 """
 ticket = "M10: template.md#character-set and barcode.md; filed against the Go engine"
 since = "2026-10-04"
-affects = ["probe/barcode/charset"]
+affects = [
+    "probe/barcode/charset",
+    "validate/probe/barcode/charset",
+]
 
 [[divergence]]
 id = "qr-numeric-plus"
@@ -881,11 +929,18 @@ about them reach this engine's printout and not the reference's.  This \
 also retires a defect in the reference, which keeps the `type` the \
 first element gave a file for every later element reading the same \
 path.  A decision, since doc/ never said what `type` does; the \
-reference is the side that changes.\
+reference is the side that changes.  The check here lists the three \
+warnings about `type`, and the reference's lists none.  The reference's \
+dump also writes a format on an image's line, read from the mark's `type`, \
+and empty for a printout of this engine's; test_reports.py drops that \
+column as test_corpus.py drops the field.\
 """
 ticket = "M11: image, template.md#image"
 since = "2026-10-10"
-affects = ["probe/image/type"]
+affects = [
+    "probe/image/type",
+    "validate/probe/image/type",
+]
 
 [[divergence]]
 id = "image-without-pixels"
@@ -937,11 +992,18 @@ list and no mark names.  This holds for `file` and `data` fonts alike.  \
 doc/printout.md#fonts now lists each font under the name its template \
 gave it and never merges it into an entry of another name, and \
 doc/render.md embeds one font per face, so two entries over one face \
-cost nothing in the PDF.  The reference is the side that changes.\
+cost nothing in the PDF.  The reference is the side that changes.  Its \
+check merges them too: the `fonts` table lists one of the two, and a font \
+read out of a `data` node is named by the blob the merged entry took, \
+not by the one its own node reads.\
 """
 ticket = "M7: the font table, printout.md#fonts"
 since = "2026-10-11"
-affects = ["probe/printout/twin-fonts"]
+affects = [
+    "probe/printout/twin-fonts",
+    "validate/probe/printout/twin-fonts",
+    "validate/probe/data/font-blob",
+]
 
 [[divergence]]
 id = "subreport-rollback"
@@ -1133,3 +1195,127 @@ changes.\
 ticket = "M14: images, render.md#images; filed against the Go engine"
 since = "2026-10-17"
 affects = ["render/probe/image/natural"]
+
+[[divergence]]
+id = "flag-values-by-the-host"
+summary = "a switch takes true or false, and a page number decimal digits, here; the reference also takes what its host's parsers take"
+reason = """\
+doc/cli.md said a flag's value may be attached or separate, and nothing \
+about what a switch's value may be, or how a page number of `--pages` is \
+written.  The reference takes what Go's own parsers take: `--strict-fonts=1`, \
+`=0`, `=t`, `=T`, `=TRUE`, `=True`, and their `false` counterparts, and \
+`+1` as a page number.  doc/cli.md#flags now names `true` and `false` as \
+the values a switch may be given, and doc/cli.md#sr-inspect makes a page \
+number decimal digits, so that the two engines agree on a grammar \
+written down rather than on whichever their hosts happen to share.  \
+Both already agree on the spellings doc/ names, and refuse `=yes`.  \
+The reference is the side that changes.\
+"""
+ticket = "M15: flags, cli.md#flags; filed against the Go engine"
+since = "2026-10-17"
+affects = [
+    "cli/switches/digit-one",
+    "cli/switches/digit-zero",
+    "cli/switches/letter",
+    "cli/switches/upper-case",
+    "cli/inspect/plus-sign",
+]
+
+[[divergence]]
+id = "flag-dashes"
+summary = "a one-letter flag takes one dash and a long one two here; the reference takes either name with either"
+reason = """\
+doc/cli.md#flags let a flag be written with one dash or two, so that \
+`-template`, `--t`, `-help`, and `--h` were flags.  It now gives a \
+one-letter name one dash and a long name two, the convention most \
+command lines keep, and makes the other spellings usage errors.  The \
+reference still takes them inside a command.  In place of a command it \
+already takes only `-h`, `--help`, and `--version`, so the two engines \
+agree there.  A decision, and the reference is the side that changes.\
+"""
+ticket = "M15: flags, cli.md#flags; filed against the Go engine"
+since = "2026-10-18"
+affects = [
+    "cli/flags/one-dash-long",
+    "cli/flags/one-dash-switch",
+    "cli/flags/two-dash-short",
+    "cli/help/one-dash",
+    "cli/help/two-dash-short",
+]
+
+[[divergence]]
+id = "help-arguments"
+summary = "help refuses a second argument here; the reference takes the first and ignores the rest"
+reason = """\
+doc/cli.md#subcommands has every command reject an argument it has no use \
+for, and the reference prints the usage of `sr help build extra` as though \
+`extra` were not there.  This engine refuses it.  doc/ already said so, \
+so this is a defect rather than a decision, and the reference is the side \
+that changes.\
+"""
+ticket = "M15: filed against the Go engine; cli.md#subcommands already states the rule"
+since = "2026-10-17"
+affects = ["cli/help/extra"]
+
+[[divergence]]
+id = "subreport-fonts-listed"
+summary = "the check's font table lists the fonts its template declares here; the reference lists a subreport's fonts in it too"
+reason = """\
+doc/cli.md#sr-validate resolves a `template=` subreport's fonts with its \
+host, against the subreport's own `basedir`, and reports what goes wrong \
+with them, "but its fonts are not listed in `fonts`: that table is what \
+*this* template declares".  The reference lists them, under the names \
+the build would give them in the printout's font table, with `-2` added \
+where a host font has the name already, and with an absolute path, where \
+every font the host declares is listed relative to the directory the \
+check ran in.  The reference is the side that changes.\
+"""
+ticket = "M15: the check, cli.md#sr-validate; filed against the Go engine"
+since = "2026-10-17"
+affects = [
+    "validate/probe/subreport/font-suffix",
+    "validate/probe/subreport/names",
+    "validate/probe/subreport/names-order",
+    "validate/probe/subreport/names-reserved",
+]
+
+[[divergence]]
+id = "outline-name-quoted"
+summary = "the dump quotes an outline entry's name here; the reference writes it bare"
+reason = """\
+doc/cli.md#sr-inspect quotes text a template wrote, so that a space or \
+an empty string in it cannot be misread, and both engines quote an \
+xref's target and an entry's title.  The reference writes the name of \
+the entry the target names bare: `name a b "q"` for the name `a b "q"`, \
+which a reader cannot tell from a name `a` followed by fields it does \
+not have, and which does not read as the target `"a b \\"q\\""` it is.  \
+doc/cli.md#sr-inspect now spells an outline entry's line, the name \
+quoted.  The reference is the side that changes.  The sakila example's \
+dump shows it too, and waits in pending.toml, since an example is not \
+covered here.\
+"""
+ticket = "M15: the dump, cli.md#sr-inspect; filed against the Go engine"
+since = "2026-10-17"
+affects = ["inspect/probe/outline/names", "inspect/probe/outline/placement"]
+
+[[divergence]]
+id = "load-diagnostic-spelling"
+summary = "a load diagnostic in the check names its file as given and no line here; the reference names its base name and a line"
+reason = """\
+The check's `warnings` section carries the diagnostics the load raised, \
+which doc/template.md#validation has name the file, the node path, and \
+the property.  The reference names the file by its base name and the line \
+the node is on, `band-height.kdl:33`, where its errors name the file as \
+it was given.  This engine names the file as given, as both engines' \
+errors do, and has no line to give: the KDL parser it reads templates with \
+reports no positions, which PLAN.md accepted as a loss of polish rather \
+than of conformance.  So this is a defect on both sides, and what retires \
+it is a reader that reports positions here, and the reference naming the \
+file as it was given.\
+"""
+ticket = "M15: positions from the KDL reader (PLAN.md, dependencies); the file's name filed against the Go engine"
+since = "2026-10-17"
+affects = [
+    "validate/probe/layout/band-height",
+    "validate/probe/layout/style-walk",
+]

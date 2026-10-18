@@ -162,6 +162,11 @@ def judge(
     )
     if entry is None and waiting is None:
         assert comparison.identical, comparison.report
+        said = summary_of(reference_build), summary_of(local_build)
+        assert said[0] == said[1], (
+            f"{case.ident}: one printout, and two summary lines: "
+            f"{said[0]!r} from the reference, {said[1]!r} here"
+        )
         return
     listed = entry if entry is not None else waiting
     assert listed is not None
@@ -176,6 +181,23 @@ def judge(
     if entry is not None:
         expected(entry, comparison.report)
     unbuilt(listed, comparison.report)
+
+
+def summary_of(build: Build) -> str:
+    """Return the summary line a build ended with, without its output's name.
+
+    doc/cli.md#sr-build ends a build with one line on standard error,
+    the output and then what the document holds.  Each engine writes
+    a file of its own name, so the name is what is left out, and what
+    two engines that built one document have to agree on is the rest.
+
+    Args:
+        build: What one engine produced.
+
+    """
+    lines = build.stderr.splitlines()
+    last = lines[-1] if lines else ""
+    return last.removeprefix(f"{build.path}: ")
 
 
 @pytest.mark.differential

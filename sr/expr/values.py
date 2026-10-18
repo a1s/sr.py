@@ -1320,44 +1320,87 @@ def go_general(digits: str, point: int, threshold: int) -> str:
     return f"{digits[:point]}.{digits[point:]}"
 
 
-# What a quoted string escapes.  Everything printable and non-ASCII
-# is left alone: the reference's own output quotes `Š` as itself
-# and reaches for `\x` only where the bytes are not a character.
+# The characters a quoted string writes as a backslash and a letter.
+# doc/expressions.md#quoted-strings: the seven of them, and the backslash.
+# The quotation mark that delimits the string is escaped too, and is
+# added by the caller, since a string and a character differ in it.
 ESCAPES: Final = {
     "\\": "\\\\",
-    '"': '\\"',
+    "\a": "\\a",
+    "\b": "\\b",
+    "\f": "\\f",
     "\n": "\\n",
     "\r": "\\r",
     "\t": "\\t",
+    "\v": "\\v",
 }
+
+# Below this a character that is not printable is written `\xNN`,
+# below the next `\uNNNN`, and above it `\UNNNNNNNN`.
+ASCII_LIMIT: Final = 0x80
+BMP_LIMIT: Final = 0x10000
+
+
+def escaped(character: str, delimiter: str) -> str:
+    """Return one character as a quoted string or character writes it.
+
+    doc/expressions.md#quoted-strings.  A printable character is itself,
+    and Unicode's sense of printable is what decides it: a letter,
+    a mark, a number, punctuation, or a symbol, or the ASCII space.
+    That is ``str.isprintable``, and Go's ``strconv.IsPrint``, so a
+    no-break space or a zero-width joiner is escaped and `Š` is not.
+
+    A byte that is not part of a valid UTF-8 sequence, which only
+    a bytes value's ``repr`` brings here, as ``surrogateescape``
+    decoded it, is written as the byte it stands for.
+
+    Args:
+        character: One codepoint.
+        delimiter: The quotation mark around it, which is escaped.
+
+    """
+    if character == delimiter:
+        return "\\" + character
+    named = ESCAPES.get(character)
+    if named is not None:
+        return named
+    code = ord(character)
+    if 0xDC80 <= code <= 0xDCFF:
+        return f"\\x{code - 0xDC00:02x}"
+    if character.isprintable():
+        return character
+    if code < ASCII_LIMIT:
+        return f"\\x{code:02x}"
+    if code < BMP_LIMIT:
+        return f"\\u{code:04x}"
+    return f"\\U{code:08x}"
 
 
 def quote(text: str) -> str:
     """Return a string quoted the way the language writes one.
 
     Double quotes, because that is what ``repr`` and ``%q`` produce
-    and what the reference's printouts carry.  A byte that is not part
-    of a valid UTF-8 sequence, which only a bytes value's ``repr``
-    brings here, as ``surrogateescape`` decoded it, is written
-    as the byte it stands for.
+    and what the reference's printouts carry.  The same spelling
+    quotes text everywhere a person reads it: in a diagnostic,
+    in a warning, and in the dump of doc/cli.md#sr-inspect.
 
     Args:
         text: The string to quote.
 
     """
-    written = ['"']
-    for character in text:
-        escape = ESCAPES.get(character)
-        if escape is not None:
-            written.append(escape)
-        elif character < " " or character == "\x7f":
-            written.append(f"\\x{ord(character):02x}")
-        elif "\udc80" <= character <= "\udcff":
-            written.append(f"\\x{ord(character) - 0xDC00:02x}")
-        else:
-            written.append(character)
-    written.append('"')
-    return "".join(written)
+    return '"' + "".join(escaped(one, '"') for one in text) + '"'
+
+
+def quote_char(character: str) -> str:
+    """Return one character quoted, as a missing-glyph warning names it.
+
+    Single quotes, and otherwise the escapes :func:`quote` uses.
+
+    Args:
+        character: One codepoint.
+
+    """
+    return "'" + escaped(character, "'") + "'"
 
 
 # A surrogate code point.  No string the language makes holds one: where

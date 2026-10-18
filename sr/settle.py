@@ -28,6 +28,7 @@ from sr.errors import (
     ExpressionError,
     FontError,
     Location,
+    UnknownParameter,
 )
 from sr.expr import Decimal, FrozenList, Record, Time, evaluate, type_name
 from sr.fonts.resolve import Resolution, Resolver
@@ -93,15 +94,16 @@ def parameter_values(
         built: The run's ``BUILD_TIME``.
 
     Raises:
-        BuildError: A name is not declared, or a value is missing,
-            will not parse, or is not of the declared type.
+        UnknownParameter: A name is not declared.
+        BuildError: A value is missing, will not parse,
+            or is not of the declared type.
 
     """
     declared = {one.name: one for one in report.parameters}
     for name in params:
         if name not in declared:
             known = ", ".join(sorted(declared)) or "none"
-            raise BuildError(
+            raise UnknownParameter(
                 f"--param {name}: the template declares no such parameter; "
                 f"it declares: {known}"
             )

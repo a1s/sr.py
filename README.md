@@ -58,6 +58,8 @@ python sr.py build --template sakila.kdl --data payments.jsonl --out report.pdf
 | `--param NAME=VALUE` | Supply a report parameter. Repeatable. `VALUE` is text, parsed per the parameter's declared type. A name the template does not declare is an error, not a value that goes nowhere. |
 | `--build-time` | RFC 3339. Fixes `BUILD_TIME` for reproducible output. |
 | `--strict-fonts` | Resolve only explicitly named font files; fail otherwise. |
+| `--strict-names` | Refuse a node or property the format does not define, instead of warning about it. |
+| `--accept NAME` | Take one such name without a warning. Repeatable. |
 | `--allow-overflow` | Downgrade oversized-band errors to warnings recorded in the printout. |
 | `--uncompressed` | Leave PDF streams uncompressed, to read the file in an editor. |
 | `-v`, `--verbose` | Report host font diagnostics. |
@@ -73,10 +75,14 @@ python sr.py render report.srp.jsonl -o report.pdf
 `build` writing a printout and `render` reading one back produce the same PDF as
 `build` writing PDF directly, which is what makes printouts worth archiving.
 
-The document goes to standard output and everything about the run to standard
-error, so `-o -` pipes. Exit 0 is success, 1 a run that failed, 2 a mistake in
-the command line; warnings never change it, because they travel in the printout
-header where archiving keeps them. Full reference: [doc/cli.md](doc/cli.md).
+The document goes to standard output and everything about the run to
+standard error, so `-o -` pipes. Exit 0 is success, 1 a run that failed,
+2 a mistake in the command line; warnings never change it, because they
+travel in the printout header where archiving keeps them. A one-letter flag
+takes one dash and a long one two, so `-t` and `--template`, but not `--t`
+or `-template`. A value is attached with `=` or separate, a flag may follow
+the positional arguments, and a switch also takes `=true` or `=false`.
+Full reference: [doc/cli.md](doc/cli.md).
 
 ## Library
 
@@ -206,6 +212,10 @@ It compares the renderers too, by drawing each page of both PDFs
 with pdfium, from the `oracles` extra, and comparing the pixels;
 a PDF is also held to its structure by the tests' own reader,
 and by `qpdf --check` where qpdf is on the path.
+And it compares the command line: what `validate` reports on every
+template in the corpus, what `inspect` dumps of every printout,
+and the exit code, the output, and the summary line of a table
+of command lines, each asking one question of doc/cli.md.
 
 The engine was built a milestone at a time, and every command and
 output format is here now. Every node the format has is built: it paginates
@@ -223,6 +233,7 @@ reference, the drawing, the outline and the links. `fontTools` subsets
 the faces and Pillow decodes the images the file does not carry
 as they stand. Each rendered page is drawn by pdfium and compared,
 pixel by pixel, with the same printout rendered by the reference.
+The command line and its two reports are held to the reference's too.
 The cases the differential corpus cannot yet compare are listed,
 with what each waits for, in
 [tests/differential/pending.toml](tests/differential/pending.toml).

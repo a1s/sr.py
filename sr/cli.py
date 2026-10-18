@@ -21,12 +21,12 @@ under ``--verbose``, what enumerating the host had to say.  Enumeration
 is lazy, so a template whose fonts all name a file never touches it.
 
 Flag parsing follows doc/cli.md#flags: one dash or two,
-the value attached or separate, and flags after positionals.
-``--param`` is the one repeatable flag, and the two mistakes in it
-are refused rather than absorbed: a name given twice, and a name
-the template does not declare.  The first is a command-line mistake
-and is caught before the template is read; the second needs the
-template and is caught after.
+the value attached or separate, flags after positionals, and ``--``
+to end them.  ``--param`` and ``--accept`` are the repeatable flags,
+and the two mistakes in ``--param`` are refused rather than absorbed:
+a name given twice, and a name the template does not declare.
+The first is caught before the template is read; the second needs
+the template and is caught after.  Both are usage errors.
 
 """
 
@@ -43,18 +43,20 @@ from typing import Any, BinaryIO, TextIO
 from sr import api, meta
 from sr.errors import (
     BadValue,
+    BuildError,
     BuildWarning,
     Diagnostic,
     ExpressionError,
     FontError,
     SrError,
     TemplateError,
+    UnknownParameter,
 )
 from sr.expr import evaluate
 from sr.expr.values import go_shortest, quote
 from sr.fonts.resolve import Resolution, Resolver
 from sr.pdf import render as render_pdf
-from sr.printout.inspect import dump, pages_wanted, read_printout
+from sr.printout.inspect import dump, page_ranges, pages_wanted, read_printout
 from sr.printout.model import Printout
 from sr.printout.read import read as read_model
 from sr.printout.verify import violations
@@ -102,12 +104,23 @@ FORMATS = {
     ".cbor": "cbor",
 }
 
+# What ``--format`` takes: the extensions above without their dot,
+# in any case, which is how the extensions themselves are compared.
+FORMAT_NAMES = {suffix[1:]: name for suffix, name in FORMATS.items()}
+
 # What a printout does with the one thing UTF-8 cannot encode, a lone
 # surrogate from a file name that was not valid text, on either route.
 # The backslash escape it writes is a `u` and four hex digits, which
 # inside a JSON string is the escape for that same code point: so the
 # printout stays JSON, and a font path in it reads back as it was given.
 PRINTOUT_ERRORS = "backslashreplace"
+
+# What the summary line calls an output that went to standard output,
+# since `-` names nothing a reader would recognize.
+STANDARD_OUTPUT = "standard output"
+
+# The values a switch may be given, per doc/cli.md#flags.
+SWITCH_VALUES = {"true": True, "false": False}
 
 # The exit codes of doc/cli.md#exit-codes.
 OK = 0
@@ -123,12 +136,42 @@ class Usage(Exception):
     """
 
 
+class Help(Exception):
+    """The command line asked for a command's usage.
+
+    Raised by the parser where it meets ``-h`` or ``--help``,
+    so that a help flag anywhere among a command's arguments
+    is read as the parser reads every other flag.
+
+    """
+
+
+@dataclass(frozen=True)
+class Flag:
+    """One flag a command takes.
+
+    Attributes:
+        name: The long name, without the two dashes it is written with.
+        letter: The one-letter name, where there is one,
+            without the one dash it is written with.
+        value: Whether it takes a value.  One that does not
+            is a switch, which may be given ``=true`` or ``=false``.
+
+    """
+
+    name: str
+    letter: str | None = None
+    value: bool = True
+
+
 @dataclass
 class Arguments:
     """One command's arguments, as the parser read them.
 
     Attributes:
         flags: Every flag given, by its long name, last one winning.
+            A switch is a boolean, and a flag given an empty value
+            is not here at all, since that is the flag not given.
         params: The ``--param`` values, in the order they were given.
         accepted: The ``--accept`` names, which are a set because
             a name given twice asks for exactly what one name asks for.
@@ -142,43 +185,55 @@ class Arguments:
     positional: list[str] = field(default_factory=list)
 
 
-# The flags `validate` takes: the long name, the short one,
-# and whether it carries a value.  doc/cli.md gives `build`
-# and `render` more; they are declared with the commands
-# that use them.
+# The flags `validate` takes, per doc/cli.md#sr-validate.
 VALIDATE_FLAGS = (
-    ("template", "t", True),
-    ("strict-fonts", None, False),
-    ("strict-names", None, False),
-    ("quiet", "q", False),
-    ("verbose", "v", False),
+    Flag("template", "t"),
+    Flag("param"),
+    Flag("strict-fonts", value=False),
+    Flag("strict-names", value=False),
+    Flag("accept"),
+    Flag("quiet", "q", value=False),
+    Flag("verbose", "v", value=False),
 )
 
 # The flags `build` takes, per doc/cli.md#sr-build.
 BUILD_FLAGS = (
-    ("template", "t", True),
-    ("data", "d", True),
-    ("out", "o", True),
-    ("format", None, True),
-    ("build-time", None, True),
-    ("strict-fonts", None, False),
-    ("strict-names", None, False),
-    ("allow-overflow", None, False),
-    ("uncompressed", None, False),
-    ("verbose", "v", False),
+    Flag("template", "t"),
+    Flag("data", "d"),
+    Flag("out", "o"),
+    Flag("format"),
+    Flag("param"),
+    Flag("build-time"),
+    Flag("strict-fonts", value=False),
+    Flag("strict-names", value=False),
+    Flag("accept"),
+    Flag("allow-overflow", value=False),
+    Flag("uncompressed", value=False),
+    Flag("verbose", "v", value=False),
 )
 
 # The flags `render` takes, per doc/cli.md#sr-render.
 RENDER_FLAGS = (
-    ("out", "o", True),
-    ("uncompressed", None, False),
+    Flag("out", "o"),
+    Flag("uncompressed", value=False),
 )
 
 # The flags `inspect` takes, per doc/cli.md#sr-inspect.
 INSPECT_FLAGS = (
-    ("pages", None, True),
-    ("summary", None, False),
+    Flag("pages"),
+    Flag("summary", value=False),
 )
+
+# The flag every command takes, which asks for its usage.
+HELP_FLAG = Flag("help", "h", value=False)
+
+# How the command line spells a help flag and a version flag,
+# with one dash for a letter and two for a long name, as every flag is.
+HELP = {"-h", "--help"}
+VERSION = {"--version"}
+
+# What doc/cli.md#flags says about dashes, for a flag that breaks it.
+DASHES = "a one-letter flag takes one dash, and a long one two"
 
 
 def main(argv: Sequence[str] | None = None, out: TextIO | None = None) -> int:
@@ -198,30 +253,39 @@ def main(argv: Sequence[str] | None = None, out: TextIO | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     stream = utf8_streams(out)
     if not arguments:
-        print("a command is required; try `sr.py help`", file=sys.stderr)
+        print("sr: a command is required; try `sr.py help`", file=sys.stderr)
         return USAGE
     command = arguments[0]
     rest = arguments[1:]
-    if command in ("-h", "--help", "help"):
-        return help_for(rest, stream)
-    if any(one in ("-h", "--help") for one in rest):
-        return help_for([command], stream)
     try:
-        if command == "version":
-            return version(rest, stream)
-        if command == "validate":
-            return validate(rest, stream)
-        if command == "build":
-            return build(rest, stream)
-        if command == "render":
-            return render(rest, stream)
-        if command == "inspect":
-            return inspect_printout(rest, stream)
+        if command == "help" or command in HELP:
+            return help_for(rest, stream)
+        if command in VERSION:
+            command = "version"
+        run = COMMANDS.get(command)
+        if run is None:
+            raise Usage(unknown_command(command))
+        try:
+            return run(rest, stream)
+        except Help:
+            return help_for([command], stream)
     except Usage as refused:
-        print(f"{refused}", file=sys.stderr)
+        print(f"sr: {refused}", file=sys.stderr)
         return USAGE
-    print(f"unknown command {command!r}; try `sr.py help`", file=sys.stderr)
-    return USAGE
+
+
+def unknown_command(command: str) -> str:
+    """Return what to say about a first argument that names no command.
+
+    Args:
+        command: The first argument.
+
+    """
+    if command.startswith("-") and command != "-":
+        if respelled(command) in HELP | VERSION:
+            return f"{command!r}: {DASHES}, as {respelled(command)}"
+        return f"{command!r} is a flag, and flags come after the command"
+    return f"unknown command {command!r}; try `sr.py help`"
 
 
 def utf8_streams(out: TextIO | None) -> TextIO:
@@ -251,8 +315,14 @@ def utf8_streams(out: TextIO | None) -> TextIO:
         sys.stdout if out is None else out,
         encoding="utf-8",
         errors="backslashreplace",
+        newline="\n",
     )
-    reconfigured(sys.stderr, encoding="utf-8", errors="backslashreplace")
+    reconfigured(
+        sys.stderr,
+        encoding="utf-8",
+        errors="backslashreplace",
+        newline="\n",
+    )
     reconfigured(sys.stdin, encoding="utf-8", errors="surrogateescape")
     return stream
 
@@ -288,58 +358,97 @@ def version(arguments: Sequence[str], out: TextIO) -> int:
         out: Where to print.
 
     """
-    if arguments:
-        raise Usage(f"version takes no arguments, and got {arguments[0]!r}")
+    given = parse(arguments, ())
+    if given.positional:
+        raise Usage(f"version takes no arguments, and got {given.positional[0]!r}")
     print(meta.engine(), file=out)
     return OK
+
+
+# What `sr.py help` says about each command: the arguments it takes,
+# and then one line per flag.
+USAGES = {
+    "build": (
+        "sr.py build -t TEMPLATE [-d DATA] -o OUT [flags]",
+        (
+            ("-t, --template FILE", "the template to apply"),
+            ("-d, --data FILE", "the records, - for standard input"),
+            ("-o, --out FILE", "where to write, - for standard output"),
+            ("--format NAME", "pdf, jsonl or cbor, where --out does not say"),
+            ("--param NAME=VALUE", "a report parameter, repeatable"),
+            ("--build-time TIME", "RFC 3339, fixes BUILD_TIME"),
+            ("--strict-fonts", "resolve only fonts named by path"),
+            ("--strict-names", "refuse an unknown name"),
+            ("--accept NAME", "take one name in silence, repeatable"),
+            ("--allow-overflow", "an oversized band is a warning"),
+            ("--uncompressed", "leave PDF streams uncompressed"),
+            ("-v, --verbose", "report host font diagnostics"),
+        ),
+    ),
+    "validate": (
+        "sr.py validate [-t] TEMPLATE [flags]",
+        (
+            ("-t, --template FILE", "the template to check"),
+            ("--param NAME=VALUE", "a report parameter, repeatable"),
+            ("--strict-fonts", "resolve only fonts named by path"),
+            ("--strict-names", "refuse an unknown name"),
+            ("--accept NAME", "take one name in silence, repeatable"),
+            ("-q, --quiet", "print nothing on success"),
+            ("-v, --verbose", "include host font diagnostics"),
+        ),
+    ),
+    "render": (
+        "sr.py render PRINTOUT -o OUT [flags]",
+        (
+            ("-o, --out FILE", "where to write, - for standard output"),
+            ("--uncompressed", "leave PDF streams uncompressed"),
+        ),
+    ),
+    "inspect": (
+        "sr.py inspect PRINTOUT [flags]",
+        (
+            ("--pages RANGES", "which pages to dump, as 1,4-6"),
+            ("--summary", "the header only, no pages"),
+        ),
+    ),
+    "version": ("sr.py version", ()),
+    "help": ("sr.py help [COMMAND]", ()),
+}
 
 
 def help_for(arguments: Sequence[str], out: TextIO) -> int:
     """Print usage, for one command or for all of them.
 
+    doc/cli.md#subcommands: ``help`` takes one command at most,
+    and one it does not know is a usage error, as it would be
+    named first.
+
     Args:
         arguments: The command to describe, where one was named.
         out: Where to print.
 
+    Raises:
+        Usage: More than one command was named, or one that is not.
+
     """
-    if arguments and arguments[0] in SUMMARY:
-        name = arguments[0]
-        print(f"sr.py {name}  {SUMMARY[name]}", file=out)
-        if name == "build":
-            print("  -t, --template FILE   the template to apply", file=out)
-            print("  -d, --data FILE       the records, - for stdin", file=out)
-            print("  -o, --out FILE        where to write, - for stdout", file=out)
-            print("  --format NAME         pdf, jsonl or cbor", file=out)
-            print("  --build-time TIME     RFC 3339, fixes BUILD_TIME", file=out)
-            print("  --param NAME=VALUE    a report parameter, repeatable", file=out)
-            print("  --strict-fonts        resolve only fonts named by path", file=out)
-            print("  --strict-names        refuse an unknown name", file=out)
-            print(
-                "  --accept NAME         take one name in silence, repeatable", file=out
-            )
-            print("  --allow-overflow      an oversized band is a warning", file=out)
-            print("  --uncompressed        leave PDF streams uncompressed", file=out)
-            print("  -v, --verbose         report host font diagnostics", file=out)
-        if name == "render":
-            print("  -o, --out FILE        where to write, - for stdout", file=out)
-            print("  --uncompressed        leave PDF streams uncompressed", file=out)
-        if name == "inspect":
-            print("  --pages RANGES        which pages to dump, as 1,4-6", file=out)
-            print("  --summary             the header only, no pages", file=out)
-        if name == "validate":
-            print("  -t, --template FILE   the template to check", file=out)
-            print("  --param NAME=VALUE    a report parameter, repeatable", file=out)
-            print("  --strict-fonts        resolve only fonts named by path", file=out)
-            print("  --strict-names        refuse an unknown name", file=out)
-            print(
-                "  --accept NAME         take one name in silence, repeatable", file=out
-            )
-            print("  -q, --quiet           print nothing on success", file=out)
-            print("  -v, --verbose         include host font diagnostics", file=out)
+    named = ["help" if one in HELP else one for one in arguments]
+    if len(named) > 1:
+        raise Usage(f"help takes one command, and got {named[1]!r} too")
+    if named:
+        name = named[0]
+        if name not in USAGES:
+            raise Usage(unknown_command(name))
+        usage, flags = USAGES[name]
+        print(f"usage: {usage}", file=out)
+        print(f"  {SUMMARY[name]}", file=out)
+        width = max((len(spelling) for spelling, _ in flags), default=0)
+        for spelling, what in flags:
+            print(f"  {spelling:<{width}}  {what}", file=out)
         return OK
-    print("usage: sr.py <command> [options]", file=out)
+    print("usage: sr.py <command> [flags]", file=out)
     for name, what in SUMMARY.items():
         print(f"  {name:<9}{what}", file=out)
+    print("sr.py help <command> describes one of them.", file=out)
     return OK
 
 
@@ -353,6 +462,11 @@ def build(arguments: Sequence[str], out: TextIO) -> int:
     and everything about the run to standard error: the warnings,
     one per line, and then the summary line.
 
+    Every check on the command line comes before the template
+    is read, ``--build-time`` among them, so that a mistyped flag
+    is reported as itself.  A ``--param`` the template does not
+    declare is a usage error too, and is found once it has been read.
+
     Args:
         arguments: What followed the command.
         out: Where a document written to standard output goes.
@@ -361,17 +475,22 @@ def build(arguments: Sequence[str], out: TextIO) -> int:
     given = parse(arguments, BUILD_FLAGS)
     if given.positional:
         raise Usage(f"build takes no arguments, and got {given.positional[0]!r}")
-    template = given.flags.get("template")
+    template = text_of(given.flags.get("template"))
     if template is None:
         raise Usage("build needs a template, as -t")
-    destination = given.flags.get("out")
-    if destination is None:
+    target = text_of(given.flags.get("out"))
+    if target is None:
         raise Usage("build needs an output, as -o")
-    target = str(destination)
-    encoding = format_of(target, given.flags.get("format"))
+    encoding = format_of(target, text_of(given.flags.get("format")))
+    built = text_of(given.flags.get("build-time"))
+    if built is not None:
+        try:
+            api.build_time_of(built)
+        except BuildError as refused:
+            raise Usage(str(refused)) from None
     options = api.Options(
         params=dict(given.params),
-        build_time=text_of(given.flags.get("build-time")),
+        build_time=built,
         strict_fonts=bool(given.flags.get("strict-fonts")),
         strict_names=bool(given.flags.get("strict-names")),
         accepted=frozenset(given.accepted),
@@ -379,7 +498,9 @@ def build(arguments: Sequence[str], out: TextIO) -> int:
         verbose=bool(given.flags.get("verbose")),
     )
     try:
-        result = api.build(Path(str(template)), data_source(given), options)
+        result = api.build(Path(template), data_source(given), options)
+    except UnknownParameter as refused:
+        raise Usage(str(refused)) from None
     except TemplateError as refused:
         for diagnostic in refused.diagnostics:
             print(diagnostic, file=sys.stderr)
@@ -408,7 +529,7 @@ def build(arguments: Sequence[str], out: TextIO) -> int:
     except (SrError, OSError) as refused:
         print(f"sr: {refused}", file=sys.stderr)
         return FAILED
-    print(f"{target}: {counted(result.printout)}", file=sys.stderr)
+    print(f"{shown(target)}: {summary(result.printout)}", file=sys.stderr)
     return OK
 
 
@@ -430,14 +551,15 @@ def data_source(given: Arguments) -> Path | TextIO | None:
     return sys.stdin if data == "-" else Path(str(data))
 
 
-def format_of(target: str, asked: str | bool | None) -> str:
+def format_of(target: str, asked: str | None) -> str:
     """Return the encoding to write, and complain where the two disagree.
 
     doc/cli.md#sr-build: the format comes from ``--format``, or from
-    what ``--out`` ends in.  ``--format`` over a recognized extension
-    warns and proceeds, because the file it writes will be read back
-    by its extension; over an unrecognized one, or none, it is silent,
-    since overriding is what the flag is for.
+    what ``--out`` ends in.  ``--format`` names one as an extension
+    does, without the dot and in any case.  Over a recognized extension
+    that names another format it warns and proceeds, because the file
+    it writes will be read back by its extension; over an unrecognized
+    one, or none, it is silent, since overriding is what the flag is for.
 
     Args:
         target: What ``--out`` named.
@@ -459,12 +581,12 @@ def format_of(target: str, asked: str | bool | None) -> str:
                 "expected .pdf, .jsonl or .cbor, or give --format"
             )
         return named
-    wanted = str(asked)
-    if wanted not in set(FORMATS.values()):
-        raise Usage(f"--format {wanted}: expected pdf, jsonl or cbor")
+    wanted = FORMAT_NAMES.get(asked.lower())
+    if wanted is None:
+        raise Usage(f"--format {asked}: expected pdf, jsonl or cbor")
     if named is not None and named != wanted:
         print(
-            f"warning: --format {wanted} over an output named {suffix}, "
+            f"warning: --format {asked} over an output named {suffix}, "
             f"which render and inspect will read as {named}",
             file=sys.stderr,
         )
@@ -575,29 +697,43 @@ def byte_stream(out: TextIO, document: str) -> BinaryIO:
     return buffer  # type: ignore[no-any-return]
 
 
-def counted(printout: Printout) -> str:
-    """Return the summary line doc/cli.md#sr-build ends a build with.
+def summary(printout: Printout) -> str:
+    """Return what the summary line doc/cli.md#sr-build says of a document.
 
-    What it names is the document rather than the run: pages, fonts,
-    blobs, warnings.  The file it went to is the caller's to print,
-    because the caller is the one that knows what the user wrote.
-    A render ends with the same line, since it is the same document.
+    Its pages and its fonts, always, and its warnings where there
+    are any.  What it names is the document rather than the run.
+    The file it went to is the caller's to print, because
+    the caller is the one that knows what the user wrote.
 
     Args:
         printout: The document.
 
     """
-    counts = (
-        (len(printout.pages), "page", "pages"),
-        (len(printout.fonts), "font", "fonts"),
-        (len(printout.data), "data blob", "data blobs"),
-        (len(printout.warnings), "warning", "warnings"),
-    )
-    return ", ".join(
-        f"{value} {one if value == 1 else many}"
-        for value, one, many in counts
-        if value or one == "page"
-    )
+    terms = [counted(len(printout.pages), "page"), counted(len(printout.fonts), "font")]
+    if printout.warnings:
+        terms.append(counted(len(printout.warnings), "warning"))
+    return ", ".join(terms)
+
+
+def counted(value: int, noun: str) -> str:
+    """Return a count and its noun, which is plural unless the count is 1.
+
+    Args:
+        value: The count.
+        noun: What is counted, in the singular.
+
+    """
+    return f"{value} {noun if value == 1 else noun + 's'}"
+
+
+def shown(target: str) -> str:
+    """Return an output as the summary line names it.
+
+    Args:
+        target: What ``--out`` named.
+
+    """
+    return STANDARD_OUTPUT if target == "-" else target
 
 
 def write_document(document: bytes, target: str, out: TextIO) -> None:
@@ -630,7 +766,8 @@ def render(arguments: Sequence[str], out: TextIO) -> int:
     doc/cli.md#sr-render: the printout is positional, and its extension
     says which encoding to read.  The warnings it carries, recorded when
     it was built, are repeated on standard error, because this is where
-    somebody looks at the document; then the summary line.
+    somebody looks at the document; then a summary line that counts
+    the pages the PDF has.
 
     Args:
         arguments: What followed the command.
@@ -638,24 +775,48 @@ def render(arguments: Sequence[str], out: TextIO) -> int:
 
     """
     given = parse(arguments, RENDER_FLAGS)
-    if len(given.positional) != 1:
-        raise Usage("render takes one printout")
-    destination = given.flags.get("out")
-    if destination is None or isinstance(destination, bool):
+    source = printout_named(given, "render")
+    target = text_of(given.flags.get("out"))
+    if target is None:
         raise Usage("render needs an output, as -o")
-    path = Path(given.positional[0])
     try:
-        printout = read_model(path)
+        printout = read_model(Path(source))
         compress = not given.flags.get("uncompressed")
         document = render_pdf(printout, compress=compress)
-        write_document(document, destination, out)
+        write_document(document, target, out)
     except (SrError, OSError) as refused:
         print(f"sr: {refused}", file=sys.stderr)
         return FAILED
     for warning in printout.warnings:
         print(f"warning: {warning}", file=sys.stderr)
-    print(f"{destination}: {counted(printout)}", file=sys.stderr)
+    print(f"{shown(target)}: {counted(len(printout.pages), 'page')}", file=sys.stderr)
     return OK
+
+
+def printout_named(given: Arguments, command: str) -> str:
+    """Return the one printout ``render`` or ``inspect`` reads.
+
+    doc/cli.md#--for-a-stream: a printout being read is always a file,
+    because the paths inside it resolve against the directory it was
+    read from, and standard input has none.
+
+    Args:
+        given: The arguments, for the positional one.
+        command: Which command it is, for the diagnostic.
+
+    Raises:
+        Usage: There is not exactly one, or it is ``-``.
+
+    """
+    if len(given.positional) != 1:
+        raise Usage(f"{command} takes one printout")
+    named = given.positional[0]
+    if named == "-":
+        raise Usage(
+            f"{command} reads a printout from a file, not from standard input: "
+            "the paths inside it resolve against the directory it came from"
+        )
+    return named
 
 
 # -- inspect ----------------------------------------------------------
@@ -671,22 +832,28 @@ def inspect_printout(arguments: Sequence[str], out: TextIO) -> int:
     left out of the dump: an inspector that read a broken printout
     without saying so would be the wrong tool.
 
+    A ``--pages`` that is not a list of ranges is a usage error,
+    and is refused before the printout is read.
+
     Args:
         arguments: What followed the command.
         out: Where the dump goes.
 
     """
     given = parse(arguments, INSPECT_FLAGS)
-    if len(given.positional) != 1:
-        raise Usage("inspect takes one printout")
-    path = Path(given.positional[0])
+    name = printout_named(given, "inspect")
+    asked = text_of(given.flags.get("pages"))
     try:
-        records = read_printout(path)
-        wanted = pages_wanted(text_of(given.flags.get("pages")), len(records) - 1)
+        ranges = None if asked is None else page_ranges(asked)
+    except BadValue as refused:
+        raise Usage(str(refused)) from None
+    try:
+        records = read_printout(Path(name))
     except (SrError, OSError) as refused:
         print(f"sr: {refused}", file=sys.stderr)
         return FAILED
-    for line in dump(path, records, wanted, bool(given.flags.get("summary"))):
+    wanted = pages_wanted(ranges, len(records) - 1)
+    for line in dump(name, records, wanted, bool(given.flags.get("summary"))):
         print(line, file=out)
     broken = violations(records)
     if not broken:
@@ -694,11 +861,8 @@ def inspect_printout(arguments: Sequence[str], out: TextIO) -> int:
     out.flush()
     for one in broken:
         print(f"invariant: {one}", file=sys.stderr)
-    count = len(broken)
-    print(
-        f"sr: {path.as_posix()}: {count} invariant{'' if count == 1 else 's'} broken",
-        file=sys.stderr,
-    )
+    said = counted(len(broken), "invariant")
+    print(f"sr: {name}: {said} broken", file=sys.stderr)
     return FAILED
 
 
@@ -724,7 +888,7 @@ def validate(arguments: Sequence[str], out: TextIO) -> int:
 
     """
     given = parse(arguments, VALIDATE_FLAGS)
-    template = given.flags.get("template")
+    template = text_of(given.flags.get("template"))
     if template is None:
         if len(given.positional) != 1:
             raise Usage("validate needs a template, as -t or as the one argument")
@@ -736,7 +900,7 @@ def validate(arguments: Sequence[str], out: TextIO) -> int:
         accepted=frozenset(given.accepted),
         strict=bool(given.flags.get("strict-names")),
     )
-    loaded = load_template(Path(str(template)), options)
+    loaded = load_template(Path(template), options)
     if loaded.report is None or loaded.errors:
         for diagnostic in loaded.errors:
             print(diagnostic, file=sys.stderr)
@@ -744,7 +908,7 @@ def validate(arguments: Sequence[str], out: TextIO) -> int:
     refused = parameters_given(loaded.report, given.params)
     if refused:
         for message in refused:
-            print(message, file=sys.stderr)
+            print(f"sr: {message}", file=sys.stderr)
         return FAILED
     fonts = resolve_fonts(
         loaded.report,
@@ -753,11 +917,10 @@ def validate(arguments: Sequence[str], out: TextIO) -> int:
         verbose=bool(given.flags.get("verbose")),
     )
     if not quiet:
-        describe(loaded, str(template), fonts, out)
+        describe(loaded, template, fonts, out)
     if fonts.failures:
-        count = len(fonts.failures)
-        one = "font" if count == 1 else "fonts"
-        print(f"sr: {count} {one} did not resolve", file=sys.stderr)
+        said = counted(len(fonts.failures), "font")
+        print(f"sr: {said} did not resolve", file=sys.stderr)
         return FAILED
     return OK
 
@@ -765,22 +928,29 @@ def validate(arguments: Sequence[str], out: TextIO) -> int:
 def parameters_given(report: Report, params: dict[str, str]) -> list[str]:
     """Check ``--param`` values against what the template declares.
 
+    A name the template does not declare is a usage error, as it is
+    for ``build``; a value that does not parse as its declared type
+    is a failure of the check, one line for each.
+
     Args:
         report: The template that was loaded.
         params: The values given, by name.
 
+    Raises:
+        Usage: A name is not declared.
+
     """
     declared = {one.name: one for one in report.parameters}
-    failures: list[str] = []
-    for name, text in params.items():
-        parameter = declared.get(name)
-        if parameter is None:
+    for name in params:
+        if name not in declared:
             known = ", ".join(sorted(declared)) or "none"
-            failures.append(
+            raise Usage(
                 f"--param {name}: the template declares no such parameter; "
                 f"it declares: {known}"
             )
-            continue
+    failures: list[str] = []
+    for name, text in params.items():
+        parameter = declared[name]
         try:
             parse_text(parameter.kind, text, parameter.format)
         except BadValue as refused:
@@ -1246,98 +1416,160 @@ def number(value: float) -> str:
 # -- the flag parser --------------------------------------------------
 
 
-def parse(
-    arguments: Sequence[str], flags: tuple[tuple[str, str | None, bool], ...]
-) -> Arguments:
-    """Read one command's arguments.
+def parse(arguments: Sequence[str], flags: Sequence[Flag]) -> Arguments:
+    """Read one command's arguments, as doc/cli.md#flags spells them.
+
+    A flag is one dash and its letter, or two dashes and its long name,
+    with its value attached after an ``=`` or in the next argument.
+    Flags may follow positional arguments, and ``--`` ends them: what
+    comes after it is positional, whatever it starts with.  A lone ``-``
+    is a positional argument, since it names a stream.
 
     Args:
         arguments: What followed the command.
-        flags: Each flag as its long name, its short name,
-            and whether it carries a value.
+        flags: The flags the command takes.
 
     Raises:
-        Usage: A flag is unknown, or is missing the value it takes.
+        Usage: A flag is unknown, is spelled with the wrong number
+            of dashes, or is missing the value it takes, or a switch
+            was given a value other than ``true`` or ``false``.
+        Help: ``-h`` or ``--help`` was given.
 
     """
-    long = {name: takes for name, _, takes in flags}
-    short = {letter: name for name, letter, _ in flags if letter is not None}
+    known = (*flags, HELP_FLAG)
+    names = {one.name: one for one in known}
+    letters = {one.letter: one for one in known if one.letter is not None}
     found = Arguments()
     pending = list(arguments)
     while pending:
         argument = pending.pop(0)
+        if argument == "--":
+            found.positional.extend(pending)
+            break
         if argument == "-" or not argument.startswith("-"):
             found.positional.append(argument)
             continue
-        body = argument.lstrip("-")
-        value: str | None = None
-        if "=" in body:
-            body, value = body.split("=", 1)
-        name = short.get(body, body)
-        if name == "param":
-            parameter(found, value, pending)
-            continue
-        if name == "accept":
-            found.accepted.add(taken(argument, value, pending))
-            continue
-        if name not in long:
+        if argument.startswith("---"):
+            raise Usage(f"{argument!r}: {DASHES}")
+        long = argument.startswith("--")
+        name, equals, attached = argument[2 if long else 1 :].partition("=")
+        flag = (names if long else letters).get(name)
+        if flag is None:
+            if name in (letters if long else names):
+                spelled = respelled(argument)
+                raise Usage(f"{argument!r}: {DASHES}, as {spelled}")
             raise Usage(f"unknown flag {argument!r}")
-        if not long[name]:
-            if value is not None:
-                raise Usage(f"{argument!r} takes no value")
-            found.flags[name] = True
+        if flag is HELP_FLAG:
+            raise Help
+        if not flag.value:
+            found.flags[flag.name] = switched(argument, attached if equals else None)
             continue
-        if value is None:
-            if not pending:
-                raise Usage(f"{argument!r} needs a value")
-            value = pending.pop(0)
-        found.flags[name] = value
+        value = attached if equals else taken(argument, pending)
+        record(found, flag, value)
     return found
 
 
-def taken(argument: str, value: str | None, pending: list[str]) -> str:
-    """Return a flag's value, attached to it or following it.
+def respelled(argument: str) -> str:
+    """Return a flag written with the other number of dashes.
+
+    ``--t`` becomes ``-t``, and ``-template`` becomes ``--template``,
+    which is what to say to a command line that has the two mixed up.
+
+    Args:
+        argument: The flag as it was written.
+
+    """
+    return argument[1:] if argument.startswith("--") else "-" + argument
+
+
+def switched(argument: str, value: str | None) -> bool:
+    """Return what a switch was set to.
+
+    Given alone it is on.  ``=true`` and ``=false`` say so outright,
+    which is what lets a script that always writes the flag turn it off.
 
     Args:
         argument: The flag as it was written, for the diagnostic.
         value: What was attached after an ``=``, where anything was.
-        pending: The arguments still to read, for a detached value.
 
     Raises:
-        Usage: The flag has no value after it.
+        Usage: The value is neither ``true`` nor ``false``.
 
     """
-    if value is not None:
-        return value
+    if value is None:
+        return True
+    if value not in SWITCH_VALUES:
+        raise Usage(f"{argument!r}: a switch takes true or false, or nothing")
+    return SWITCH_VALUES[value]
+
+
+def taken(argument: str, pending: list[str]) -> str:
+    """Return the argument after a flag, which is its value.
+
+    Args:
+        argument: The flag as it was written, for the diagnostic.
+        pending: The arguments still to read.
+
+    Raises:
+        Usage: There is no argument after the flag.
+
+    """
     if not pending:
         raise Usage(f"{argument!r} needs a value")
     return pending.pop(0)
 
 
-def parameter(found: Arguments, value: str | None, pending: list[str]) -> None:
-    """Read one ``--param NAME=VALUE``.
+def record(found: Arguments, flag: Flag, value: str) -> None:
+    """Record one flag's value.
 
-    ``--param`` and ``--accept`` are the repeatable flags.  A parameter
-    given twice is refused rather than taken last-wins -- two places both
-    think they own that parameter, and one of them is wrong -- where an
-    ``--accept`` given twice is simply the one name.
+    ``--param`` and ``--accept`` are the repeatable flags,
+    and are kept apart from the rest.  Any other flag given twice
+    takes the last value given, and one given an empty value
+    is a flag not given, so that a script can pass a variable
+    that may be empty without a test around the flag.
 
     Args:
         found: What has been read so far, which this adds to.
-        value: The value attached to the flag, where it was attached.
-        pending: The arguments still to read, for a detached value.
+        flag: The flag.
+        value: Its value, as it was written.
 
     Raises:
-        Usage: The value is not ``NAME=VALUE``, or repeats a name.
+        Usage: A ``--param`` or an ``--accept`` with nothing in it.
 
     """
-    if value is None:
-        if not pending:
-            raise Usage("--param needs a NAME=VALUE")
-        value = pending.pop(0)
-    if "=" not in value:
+    if flag.name == "param":
+        parameter(found, value)
+        return
+    if flag.name == "accept":
+        if not value:
+            raise Usage("--accept needs a name")
+        found.accepted.add(value)
+        return
+    if value:
+        found.flags[flag.name] = value
+    else:
+        found.flags.pop(flag.name, None)
+
+
+def parameter(found: Arguments, value: str) -> None:
+    """Read one ``--param NAME=VALUE``.
+
+    A parameter given twice is refused rather than taken last-wins:
+    two places both think they own that parameter, and one of them
+    is wrong.  An ``--accept`` given twice is simply the one name.
+
+    Args:
+        found: What has been read so far, which this adds to.
+        value: What followed the flag.
+
+    Raises:
+        Usage: The value is not ``NAME=VALUE``, names nothing,
+            or repeats a name.
+
+    """
+    name, equals, text = value.partition("=")
+    if not equals or not name:
         raise Usage(f"--param takes NAME=VALUE, and got {value!r}")
-    name, text = value.split("=", 1)
     if name in found.params:
         raise Usage(f"--param {name} is given twice")
     found.params[name] = text

@@ -113,6 +113,47 @@ printout test already says why.
 
 pdfium comes from the `oracles` extra. Without it the renders skip.
 
+## Reports
+
+[doc/cli.md](../../doc/cli.md) specifies what `validate` and `inspect`
+print, so [test_reports.py](test_reports.py) holds both to the reference's,
+byte for byte: the exit code and standard output. Standard error is not
+compared, since what it carries is each engine's own diagnostics.
+
+The check runs over every case's template, with the case's parameters
+and its `--strict-fonts`, from the repository root, so that the paths
+it prints are the same on every machine. The dump is of the printout this
+engine built, inspected by both engines: a printout the two disagree on is
+the printout test's to report, and dumping one document with both dumpers
+keeps a difference here a difference between the dumpers. One column of the
+reference's dump is dropped before the comparison, the format of an image,
+for the reason `image-type-removed` gives.
+
+A report goes by its own identifier, `validate/` or `inspect/` and then
+its case's, as a render does.
+
+The printout test also compares the summary line each build ends with,
+once the two printouts agree, since doc/cli.md spells that line too.
+
+## The command line
+
+[command_lines.py](command_lines.py) is a table of command lines, each
+asking one question of doc/cli.md: a flag's spellings, a switch's values,
+what an empty value means, a `--param` mistake, a `--pages` range,
+which stream a document goes to. [test_command_line.py](test_command_line.py)
+runs each with both engines, each writing into a directory of its own, and
+compares the exit code, standard output, the files written and their bytes,
+and the summary line of a build or a render that succeeded.
+
+A line goes by `cli/` and then its question, which the register names
+as it names a probe. Adding a question is adding a line to the table.
+
+This engine runs these, and the reports, in the test's own process,
+through `sr.cli.main`, behind streams set up as the interpreter sets up
+a pipe, line feeds translated as the machine translates them, which is
+everything `sr.py` does but start an interpreter; the reference runs
+as the program it is.
+
 ## The pending list
 
 A second list, [pending.toml](pending.toml), holds the cases this engine

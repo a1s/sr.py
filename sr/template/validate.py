@@ -999,8 +999,8 @@ def collapsing(visit: Visit, band: Section) -> None:
     if any(contributes(element) for element in band.elements):
         return
     visit.warnings.error(
-        "this band declares no height and every element in it is anchored to "
-        "the band's bottom edge, so it collapses to nothing",
+        "this band declares no height and every element in it takes its "
+        "height from the band, so the band collapses to nothing",
         path=band.path,
     )
 

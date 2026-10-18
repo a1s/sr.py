@@ -308,6 +308,38 @@ def test_repr_leaves_a_printable_non_ascii_character_alone() -> None:
     assert starlark_repr("Š") == '"Š"'
 
 
+@pytest.mark.parametrize(
+    ("code", "shown"),
+    [
+        (0x07, "\\a"),
+        (0x08, "\\b"),
+        (0x0C, "\\f"),
+        (0x0B, "\\v"),
+        (0x00, "\\x00"),
+        (0x7F, "\\x7f"),
+        (0xA0, "\\u00a0"),
+        (0xAD, "\\u00ad"),
+        (0x200D, "\\u200d"),
+        (0x2028, "\\u2028"),
+        (0x3000, "\\u3000"),
+        (0x0378, "\\u0378"),
+        (0xE0001, "\\U000e0001"),
+        (0x1F600, chr(0x1F600)),
+        (0x0301, chr(0x0301)),
+        (0xFFFD, chr(0xFFFD)),
+    ],
+)
+def test_repr_escapes_what_unicode_does_not_call_printable(
+    code: int, shown: str
+) -> None:
+    """doc/expressions.md#quoted-strings, as the reference measured it.
+
+    tests/differential/probes/expressions/repr-escapes.kdl asks the same.
+
+    """
+    assert starlark_repr(chr(code)) == f'"{shown}"'
+
+
 def test_containers_print_the_way_the_language_prints_them() -> None:
     assert starlark_str([1, "a"]) == '[1, "a"]'
     assert starlark_str({"a": 1}) == '{"a": 1}'
