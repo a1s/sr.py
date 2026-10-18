@@ -1,4 +1,4 @@
-"""Reading a printout back, as `sr inspect` reads one another engine wrote.
+"""Reading a printout back, as `s-reports inspect` reads another engine's.
 
 doc/printout.md#cbor writes a printout in a small part of CBOR,
 and the reader takes that part and refuses the rest at its byte:

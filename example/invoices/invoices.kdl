@@ -11,7 +11,7 @@
 // `set`, `chain`, `std`, `var`, and `iter="item"`.
 //
 // Build it with:
-//   sr build -t invoices.kdl -d invoices.jsonl -o invoices.pdf
+//   s-reports build -t invoices.kdl -d invoices.jsonl -o invoices.pdf
 
 // basedir is where relative paths are resolved from -- logo.png below, and any
 // `font file=` or `subreport template=`. "." is the template's own directory,

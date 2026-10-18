@@ -17,7 +17,7 @@ families on macOS, and consulting the table first would set a macOS
 report in Arial.
 
 **Enumeration is lazy.**  A template whose fonts all name a `file`
-never builds the host table, which is what makes `sr validate
+never builds the host table, which is what makes `s-reports validate
 --strict-fonts` fast and what keeps a machine's font troubles out
 of a build that does not depend on the machine.  :class:`Resolver`
 holds the catalog and builds it on the first `typeface` that needs it.

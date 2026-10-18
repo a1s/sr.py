@@ -8,7 +8,7 @@
 // count, justified text, and typed parameters.
 //
 // Build it with:
-//   sr build -t sakila.kdl -d payments.jsonl -o sakila.pdf
+//   s-reports build -t sakila.kdl -d payments.jsonl -o sakila.pdf
 
 report name="DVD rental payments" \
        description="Payments by customer, from the Sakila sample database" \
@@ -17,7 +17,7 @@ report name="DVD rental payments" \
 
   // The reporting period. Payments outside it are suppressed by the detail
   // band's printwhen. The defaults cover the whole dataset; override either with
-  //   sr build ... --param period_start=2005-06-01
+  //   s-reports build ... --param period_start=2005-06-01
   parameter "period_start" type="date" default="2005-01-01" prompt=#true
   parameter "period_end"   type="date" default="2006-01-01" prompt=#true
 

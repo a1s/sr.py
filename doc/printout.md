@@ -760,7 +760,7 @@ produced in the test suite.
 
 The engine checks them before it hands a printout out, and a printout
 that breaks one is a failed build rather than a document: a fault
-in the engine is not the template's to discover later. `sr inspect`
+in the engine is not the template's to discover later. `s-reports inspect`
 [checks them](cli.md#sr-inspect) on whatever printout it reads,
 whichever engine wrote it.
 
@@ -800,7 +800,9 @@ over [films.jsonl](../example/minimal/films.jsonl), and these are
 the bytes that template produces, not an illustration of them:
 
 ```bash
-sr build -t example/minimal/minimal.kdl -d example/minimal/films.jsonl     -o example/minimal/minimal.srp.jsonl     --build-time 2026-08-04T09:12:44Z --strict-fonts
+s-reports build -t example/minimal/minimal.kdl \
+    -d example/minimal/films.jsonl -o example/minimal/minimal.srp.jsonl \
+    --build-time 2026-08-04T09:12:44Z --strict-fonts
 ```
 
 ```json
