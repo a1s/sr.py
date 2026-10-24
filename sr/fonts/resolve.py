@@ -20,7 +20,10 @@ report in Arial.
 never builds the host table, which is what makes `s-reports validate
 --strict-fonts` fast and what keeps a machine's font troubles out
 of a build that does not depend on the machine.  :class:`Resolver`
-holds the catalog and builds it on the first `typeface` that needs it.
+asks for the catalog on the first `typeface` that needs it, and
+:func:`sr.fonts.hostenum.host_catalog` builds it once per process
+rather than once per build, enumerating again only when a font file
+the machine offers has changed.
 
 Three things come out of a resolution besides the face: which step
 produced it, what the printout should record, and any warnings.
@@ -47,7 +50,7 @@ from sr.fonts.face import Face, Origin, build, faces_in, open_face, read_bytes
 from sr.fonts.hostenum import (
     Catalog,
     Entry,
-    enumerate_faces,
+    host_catalog,
     host_sources,
     substitute_candidates,
 )
@@ -161,13 +164,18 @@ class Resolver:
     """The chain, with the host table it may or may not need.
 
     One resolver serves one build, and a build is a tree of documents
-    rather than a single one.  It holds the catalog so that a report
-    with four `font` nodes enumerates the machine once, and enumerating it
-    once is also what makes the substitute face one face across the tree
-    rather than one per document.  :meth:`reading` is how it moves from
-    one document to the next; `basedir` and `blobs` belong to whichever
-    it is reading now, since a subreport resolves a `file` against its
-    own directory and finds a `data` blob among its own.
+    rather than a single one.  It holds its own copy of the host table,
+    taken on first use, so that every document of the tree resolves
+    against one table even if a font is installed while it builds;
+    the substitute face is one face across the tree for the same reason.
+    The table itself outlives the resolver, kept for the process by
+    :func:`sr.fonts.hostenum.host_catalog`, so the next build takes
+    a copy rather than enumerating again.
+
+    :meth:`reading` is how it moves from one document to the next;
+    `basedir` and `blobs` belong to whichever it is reading now, since
+    a subreport resolves a `file` against its own directory and finds
+    a `data` blob among its own.
 
     Attributes:
         basedir: What a ``file`` on a `font` node resolves against.
@@ -232,9 +240,9 @@ class Resolver:
         return () if self.catalog is None else tuple(self.catalog.diagnostics)
 
     def host(self) -> Catalog:
-        """Return the host table, enumerating the machine on first use."""
+        """Return the host table, asking for the process' copy on first use."""
         if self.catalog is None:
-            self.catalog = enumerate_faces(host_sources(self.platform))
+            self.catalog = host_catalog(host_sources(self.platform))
         return self.catalog
 
     def resolve(self, font: Font) -> Resolution:

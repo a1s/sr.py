@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - Support for building reports from a sequence of records.
+- Add per-proccess cache for the host font table lookups.
 
 ## [0.1.0] - 2026-10-18
 

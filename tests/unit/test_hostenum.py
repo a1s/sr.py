@@ -25,6 +25,7 @@ enumerated a `.ttc` holding `Helvetica`.
 
 from __future__ import annotations
 
+import os
 import struct
 import sys
 from pathlib import Path
@@ -43,6 +44,8 @@ from sr.fonts.hostenum import (
     Source,
     enumerate_faces,
     fontconfig_directories,
+    forget_host_catalog,
+    host_catalog,
     host_sources,
     peek,
     relaxations,
@@ -500,6 +503,153 @@ def test_a_link_that_points_back_up_the_tree_does_not_walk_for_ever(
         "a.ttf",
         "loop",
     ]
+
+
+# -- keeping the table ------------------------------------------------
+#
+# The table is kept for the process and handed out again while
+# the sources are as they were.  What these pin is that keeping
+# it changes when enumeration happens and never what it finds:
+# every change to a source that enumeration would see is seen here,
+# and the table handed out after one is the one a fresh enumeration builds.
+
+
+def same_table(kept: Catalog, built: Catalog) -> bool:
+    """Report whether two tables hold the same faces and say the same things.
+
+    Args:
+        kept: What :func:`host_catalog` handed out.
+        built: What :func:`enumerate_faces` built for the same sources.
+
+    """
+    return (kept.entries, kept.diagnostics, kept.files) == (
+        built.entries,
+        built.diagnostics,
+        built.files,
+    )
+
+
+def test_the_kept_table_is_the_one_enumeration_builds(
+    font_directory: Path, enumerations: list[tuple[Source, ...]]
+) -> None:
+    sources = (Source(directory=font_directory),)
+    first = host_catalog(sources)
+    again = host_catalog(sources)
+    assert same_table(first, enumerate_faces(sources))
+    assert same_table(again, enumerate_faces(sources))
+
+
+def test_the_table_is_enumerated_once_for_unchanged_sources(
+    font_directory: Path, enumerations: list[tuple[Source, ...]]
+) -> None:
+    sources = (Source(directory=font_directory),)
+    for _ in range(3):
+        host_catalog(sources)
+    assert enumerations == [sources]
+
+
+def test_a_font_installed_since_is_found(
+    tmp_path: Path, enumerations: list[tuple[Source, ...]]
+) -> None:
+    directory = tmp_path / "fonts"
+    directory.mkdir()
+    write_style(directory, "R")
+    sources = (Source(directory=directory),)
+    # A bold lookup relaxes to the regular face while there is no bold one.
+    before = host_catalog(sources).lookup("Go", bold=True, italic=False)
+    assert before is not None and not before.bold
+    write_style(directory, "B")
+    after = host_catalog(sources).lookup("Go", bold=True, italic=False)
+    assert after is not None and after.bold
+    assert len(enumerations) == 2
+
+
+def test_a_font_removed_since_is_gone(
+    tmp_path: Path, enumerations: list[tuple[Source, ...]]
+) -> None:
+    directory = tmp_path / "fonts"
+    directory.mkdir()
+    write_style(directory, "R")
+    bold = write_style(directory, "B")
+    sources = (Source(directory=directory),)
+    before = host_catalog(sources).lookup("Go", bold=True, italic=False)
+    assert before is not None and before.bold
+    bold.unlink()
+    after = host_catalog(sources).lookup("Go", bold=True, italic=False)
+    assert after is not None and not after.bold
+    assert len(enumerations) == 2
+
+
+def test_a_font_rewritten_since_is_read_again(
+    tmp_path: Path, enumerations: list[tuple[Source, ...]]
+) -> None:
+    directory = tmp_path / "fonts"
+    directory.mkdir()
+    face = write_style(directory, "R")
+    sources = (Source(directory=directory),)
+    upright = host_catalog(sources).lookup("Go", bold=False, italic=True)
+    assert upright is not None and not upright.italic
+    before = face.stat().st_mtime_ns
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    face.write_bytes(write_style(elsewhere, "I").read_bytes())
+    # Set rather than left to the clock, which on a file system with
+    # coarse times may not have moved between the two writes.
+    later = before + 2_000_000_000
+    os.utime(face, ns=(later, later))
+    slanted = host_catalog(sources).lookup("Go", bold=False, italic=True)
+    assert slanted is not None and slanted.italic
+    assert len(enumerations) == 2
+
+
+def test_what_a_build_adds_to_its_table_is_not_kept(
+    font_directory: Path, enumerations: list[tuple[Source, ...]]
+) -> None:
+    # A resolver appends to the diagnostics of the table it was handed,
+    # when a face it looked up would not open.  That line is about one
+    # build, and the next build must not inherit it.
+    sources = (Source(directory=font_directory),)
+    first = host_catalog(sources)
+    first.diagnostics.append("a face that would not open for one build")
+    first.entries.clear()
+    first.files.clear()
+    assert same_table(host_catalog(sources), enumerate_faces(sources))
+
+
+def test_forgetting_the_table_enumerates_again(
+    font_directory: Path, enumerations: list[tuple[Source, ...]]
+) -> None:
+    sources = (Source(directory=font_directory),)
+    host_catalog(sources)
+    forget_host_catalog()
+    host_catalog(sources)
+    assert enumerations == [sources, sources]
+
+
+def test_other_sources_get_a_table_of_their_own(
+    tmp_path: Path, font_directory: Path, enumerations: list[tuple[Source, ...]]
+) -> None:
+    host_catalog((Source(directory=font_directory),))
+    elsewhere = (Source(directory=tmp_path / "nowhere"),)
+    assert host_catalog(elsewhere).entries == {}
+    assert len(enumerations) == 2
+
+
+def test_a_table_kept_from_another_directory_is_built_again(
+    font_directory: Path,
+    enumerations: list[tuple[Source, ...]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The faces would be the same.  The diagnostics would not: each
+    # names its file relative to the working directory, and one kept
+    # from elsewhere would name them relative to somewhere this is not.
+    sources = (Source(directory=font_directory),)
+    host_catalog(sources)
+    monkeypatch.chdir(font_directory)
+    kept = host_catalog(sources)
+    assert len(enumerations) == 2
+    assert same_table(kept, enumerate_faces(sources))
+    assert "notes.txt: not an sfnt font; skipped" in kept.diagnostics
 
 
 # -- the platform tables ----------------------------------------------
