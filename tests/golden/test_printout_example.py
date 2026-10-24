@@ -17,17 +17,27 @@ the printout's `resolvedFile` is written relative to where it lands,
 so the example's ``../fonts/Go-Regular.ttf`` is a statement about
 the directory the file is in and is only true if the file is there.
 
+The example's `engine` names the latest release, and the build names
+this tree's version, which runs ahead of it while work on the next version
+is under way.  So the build is stamped with the latest release before
+the comparison.  At a release the two are one version and the stamp
+changes nothing, so the example has to follow each release.
+
 """
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
 import pytest
 
+from sr import meta
 from sr.api import Options, build
 from sr.printout.write import write_jsonl
+from tests.changelog import latest
+from tests.differential.diff import restamped
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = ROOT / "doc" / "printout.md"
@@ -89,7 +99,12 @@ def test_the_example_is_what_the_template_produces(tree: Path) -> None:
     out = tree / "minimal.srp.jsonl"
     with out.open("w", encoding="utf-8", newline="") as handle:
         write_jsonl(result.printout, handle, out.parent)
-    assert out.read_text(encoding="utf-8") == shown()
+    written = out.read_bytes()
+    header = json.loads(written.partition(b"\n")[0])
+    assert header["engine"] == meta.engine()
+    release = f"{meta.NAME} {latest()}"
+    written = restamped(written, meta.engine(), release)
+    assert written.decode("utf-8") == shown()
 
 
 def test_the_example_is_written_with_one_newline_per_record(tree: Path) -> None:

@@ -23,11 +23,15 @@ building. The suite rebuilds every probe with the reference and holds it
 to that file, so an oracle that changed its mind about line breaking fails
 here rather than moving both engines at once. It is the printout as written --
 the `lines`, the boxes, the `data` keys, and the exact spelling of every
-number -- with only the paths a template named replaced, since those record
-where the build happened rather than what it decided. A font's `resolvedFile`
+number -- with only the paths a template named and the engine's version
+replaced, since those record where the build happened and which version
+of the reference ran it, rather than what it decided. A font's `resolvedFile`
 is written `<resolved>`, and an `embed=#false` image's `file` is written
 `<resolved>/` and its base name, so that a probe reading several images
-still says which went where.
+still says which went where. The header's `engine` is written `sr <version>`
+when it holds the version the reference reports, so the reference starting
+work on its next version changes no answer, while a header that disagrees
+with the reference's `version` still fails.
 
 Regenerate after adding or deliberately changing a probe:
 

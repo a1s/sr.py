@@ -22,10 +22,13 @@ HEADER = (
 PAGE = '{"kind":"page","number":1,"marks":[{"kind":"text","lines":["Courier New"]}]}'
 PRINTOUT = HEADER + "\n" + PAGE + "\n"
 
+# What the reference says its version is.
+REPORTED = "sr 0.1.0"
+
 
 def test_a_strict_answer_keeps_the_face_it_resolved() -> None:
     """Only the path is the machine's when fonts are named by file."""
-    distilled = distil(PRINTOUT)
+    distilled = distil(PRINTOUT, REPORTED)
     assert '"resolvedFile":"<resolved>"' in distilled
     assert '"resolvedFace":"Courier New"' in distilled
     assert '"resolvedIndex":2' in distilled
@@ -39,13 +42,13 @@ def test_an_image_file_keeps_only_its_base_name() -> None:
         '{"kind":"image","type":"png","file":"wide.png"},'
         '{"kind":"image","type":"png","data":"file"}]}'
     )
-    distilled = distil(HEADER + "\n" + page + "\n").split("\n")[1]
+    distilled = distil(HEADER + "\n" + page + "\n", REPORTED).split("\n")[1]
     assert distilled.count('"file":"<resolved>/wide.png"') == 2
     assert '"data":"file"' in distilled
 
 
 def test_a_host_fonts_answer_names_no_substitute() -> None:
-    distilled = distil(PRINTOUT, host_fonts=True)
+    distilled = distil(PRINTOUT, REPORTED, host_fonts=True)
     assert "Courier New" not in distilled.split("\n")[0]
     assert f'"resolvedFace":"{SUBSTITUTE}"' in distilled
     assert f'substitute face \\"{SUBSTITUTE}\\"' in distilled
@@ -59,7 +62,29 @@ def test_a_host_fonts_answer_keeps_what_is_not_the_substitute() -> None:
     as the name of anything the host chose, and the answer keeps it.
 
     """
-    distilled = distil(PRINTOUT, host_fonts=True)
+    distilled = distil(PRINTOUT, REPORTED, host_fonts=True)
     assert '"resolvedFace":"Go"' in distilled
     assert '"requested":"Nowhere"' in distilled
     assert distilled.split("\n")[1] == PAGE
+
+
+def test_the_reported_version_is_left_out_and_the_name_kept() -> None:
+    """A page that prints the version keeps it, as content."""
+    header = '{"sr":1,"kind":"header","engine":"sr 0.1.0","pages":1}'
+    mark = '{"kind":"text","lines":["sr 0.1.0"]}'
+    page = '{"kind":"page","number":1,"marks":[' + mark + "]}"
+    distilled = distil(header + "\n" + page + "\n", REPORTED).split("\n")
+    assert distilled[0] == header.replace("sr 0.1.0", "sr <version>")
+    assert distilled[1] == page
+
+
+def test_a_version_the_reference_does_not_report_is_kept() -> None:
+    """A header that disagrees with `version` is a change in the oracle."""
+    header = '{"sr":1,"kind":"header","engine":"sr 0.0.9","pages":0}'
+    assert distil(header + "\n", REPORTED) == header + "\n"
+
+
+def test_a_name_of_several_words_is_kept_whole() -> None:
+    header = '{"sr":1,"kind":"header","engine":"sr go 0.1.0","pages":0}'
+    distilled = distil(header + "\n", "sr go 0.1.0")
+    assert '"engine":"sr go <version>"' in distilled

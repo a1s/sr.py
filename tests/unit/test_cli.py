@@ -1035,7 +1035,7 @@ def test_inspect_dumps_the_header_and_the_marks(tmp_path: Path) -> None:
     assert code == 0
     lines = said.splitlines()
     assert lines[0].startswith("printout ")
-    assert 'engine "sr 0.1.0"' in lines[1]
+    assert f'engine "{meta.engine()}"' in lines[1]
     assert any(one.strip().startswith("text  box ") for one in lines)
     assert any(one.strip() == '"ACADEMY DINOSAUR"' for one in lines)
 

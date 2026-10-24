@@ -183,7 +183,21 @@ up". Two implementations cannot both write that field truthfully *and* agree
 byte for byte.
 
 M6 settled it, in [doc/printout.md](../../doc/printout.md#the-engine-field):
-the field names the engine **this specification** describes, so both write
-`sr 0.1.0` and the comparison needs no exception. The cost is stated there
+the field names the engine **this specification** describes, so at a release
+both write the same string, `sr 0.1.0` at the first. The cost is stated there
 rather than hidden here: a printout does not record which implementation
 produced it, only which version of the format and engine did.
+
+Between releases the two strings need not agree.  Each tree raises
+its version when work on the next one starts, and the two trees do that
+on their own schedules. So the comparison holds the name and not the version.
+Before the reference's output is compared, its version is replaced
+with this engine's, in the two places the comparison reads bytes:
+the header's `engine`, and the line `version` prints. A PDF carries
+the version too, as `Creator` and `Producer`, but a PDF is compared
+by its pixels, for the reason [Renders](#renders) gives.
+Only the version the reference reports is replaced, and only by the one
+this engine reports, so a header that disagrees with its own
+engine's `version` still fails. A recorded answer writes the version
+as `<version>`, for the same reason and only where it is the version
+the reference reports.

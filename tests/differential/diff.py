@@ -14,6 +14,11 @@ A CBOR printout holds the same records, so it is decoded and reported
 the same way.  Where the records are equal and the bytes are not,
 the difference is in the encoding, and the bytes around it are shown.
 
+Each engine stamps the header with its own version, and the two trees
+raise theirs independently.  :func:`restamped` gives one engine's
+output the other's version before the bytes are compared,
+so that starting work on a version is not a difference.
+
 """
 
 from __future__ import annotations
@@ -23,9 +28,11 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from sr.printout.inspect import cbor_records
+import cbor2
 
-__all__ = ["Comparison", "compare_printouts", "first_difference"]
+from sr.printout.inspect import cbor_argument, cbor_item, cbor_records
+
+__all__ = ["Comparison", "compare_printouts", "first_difference", "restamped"]
 
 # How much of a systemic disagreement to show.  A difference in an early
 # coordinate moves everything after it, so the whole page differs and
@@ -42,6 +49,9 @@ MAX_VALUE_CHARS = 140
 MAX_MARK_DEPTH = 4
 
 HEX_CONTEXT = 32
+
+# The major type of a CBOR map, which is what a CBOR printout opens with.
+CBOR_MAP = 5
 
 
 @dataclass(frozen=True)
@@ -417,3 +427,74 @@ def compare_printouts(
         lines.append(f"  {right_name}:")
         lines.append("  " + hexdump_window(right, offset))
     return Comparison(False, "\n".join(lines))
+
+
+def restamped(output: bytes, theirs: str, ours: str) -> bytes:
+    """Return what one engine wrote, stamped with the other engine's version.
+
+    An engine writes its version in three places: the line its `version`
+    command prints, the `engine` field of a printout's header, which
+    doc/cli.md#sr-version makes the same string, and a PDF's `Creator`
+    and `Producer`, which doc/render.md copies from that field.  Each tree
+    raises its version when work on the next one starts, so for a while
+    the two write different strings there while agreeing on everything
+    else.  Putting ``ours`` where ``theirs`` was leaves the name
+    and every other byte to the comparison.  A PDF is compared by its
+    pixels and never by its bytes, for the reason test_render.py gives,
+    so it is returned as it was.
+
+    Only the other two places are touched, and only where they hold
+    ``theirs`` exactly.  A header that says anything else is left
+    as it is, and the comparison shows the field.
+
+    Args:
+        output: What an engine wrote: a printout in either encoding,
+            what its `version` command printed, or anything else,
+            which is returned as it was.
+        theirs: The version the engine that wrote ``output`` reports.
+        ours: The version to stamp in its place.
+
+    """
+    if output.rstrip(b"\r\n") == theirs.encode():
+        return ours.encode() + output[len(theirs.encode()) :]
+    if output.startswith(b"{"):
+        # A JSON string escapes its quotes, so in the header line the key
+        # and the value spelled out together can only be the field itself.
+        header, newline, rest = output.partition(b"\n")
+        old = b'"engine":' + json.dumps(theirs).encode()
+        new = b'"engine":' + json.dumps(ours).encode()
+        return header.replace(old, new, 1) + newline + rest
+    found = cbor_engine(output)
+    if found is None or found[0] != theirs:
+        return output
+    _, start, end = found
+    return output[:start] + cbor2.dumps(ours) + output[end:]
+
+
+def cbor_engine(printout: bytes) -> tuple[Any, int, int] | None:
+    """Return a CBOR header's `engine`, and where its value starts and ends.
+
+    The header's keys are walked rather than its bytes searched,
+    because CBOR writes a text string raw: a report whose name spells
+    the key and the value would match a search as well as the field does.
+
+    Args:
+        printout: The bytes, which need not be a CBOR printout.
+
+    Returns:
+        The value and its two offsets, or None when the bytes do not
+        open with a header that has an `engine`.
+
+    """
+    if not printout or printout[0] >> 5 != CBOR_MAP:
+        return None
+    try:
+        count, at = cbor_argument(printout, 0, printout[0] & 0x1F)
+        for _ in range(count):
+            key, start = cbor_item(printout, at, 1)
+            value, at = cbor_item(printout, start, 1)
+            if key == "engine":
+                return value, start, at
+    except ValueError:
+        return None
+    return None
