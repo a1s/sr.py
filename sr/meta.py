@@ -18,7 +18,7 @@ __all__ = ["DATE", "NAME", "VERSION", "engine"]
 NAME = "sr"
 
 # Kept in step with CHANGELOG.md.
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 DATE = date(2026, 10, 18)
 
 
