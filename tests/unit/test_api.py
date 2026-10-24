@@ -9,19 +9,28 @@ a caller has to ask for.
 
 from __future__ import annotations
 
+import decimal
+import io
+import json
+import sqlite3
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import pytest
 
 from sr import api, settle
-from sr.api import Options, build
+from sr.api import Options, build, build_records
 from sr.errors import BuildError
 from sr.fonts.hostenum import Catalog
 from sr.fonts.resolve import Resolver
+from sr.printout.model import Printout, Text
+from sr.printout.write import write_jsonl
 
 ROOT = Path(__file__).resolve().parents[2]
 REGULAR = (ROOT / "example" / "fonts" / "Go-Regular.ttf").as_posix()
+SAKILA = ROOT / "example" / "sakila"
 ONE_ROW = '{"n":1}\n'
 
 BODY = """
@@ -142,3 +151,128 @@ def test_the_host_diagnostics_are_asked_for_rather_than_produced(
     assert result(tmp_path, verbose=True).diagnostics == (
         "a face this machine skipped",
     )
+
+
+# -- records from the caller ------------------------------------------
+
+
+@dataclass(frozen=True)
+class Customer:
+    """The customer a payment row refers to, as an object."""
+
+    first_name: str
+    last_name: str
+
+
+class Payment(NamedTuple):
+    """One row of the sakila example, as a database driver fetches it.
+
+    SQLAlchemy's ``Row`` is a named tuple as far as a build is concerned,
+    and the values are what a driver hands back for the columns:
+    a ``decimal.Decimal`` for a ``NUMERIC`` and a ``datetime``
+    for a ``TIMESTAMP``.
+
+    """
+
+    customer_id: int
+    amount: decimal.Decimal
+    rental_date: datetime
+    return_date: datetime | None
+    customer: Customer
+    film: dict[str, str]
+
+
+def payments() -> list[Payment]:
+    """Return the sakila example's records as a query would fetch them."""
+    found = []
+    text = (SAKILA / "payments.jsonl").read_text(encoding="utf-8")
+    for line in text.splitlines():
+        row = json.loads(line)
+        returned = row["return_date"]
+        found.append(
+            Payment(
+                customer_id=row["customer_id"],
+                amount=decimal.Decimal(row["amount"]),
+                rental_date=datetime.fromisoformat(row["rental_date"]),
+                return_date=None
+                if returned is None
+                else datetime.fromisoformat(returned),
+                customer=Customer(**row["customer"]),
+                film=row["film"],
+            )
+        )
+    return found
+
+
+def serialized(printout: Printout) -> str:
+    """Return a printout as the bytes its NDJSON form holds."""
+    out = io.StringIO()
+    write_jsonl(printout, out, SAKILA)
+    return out.getvalue()
+
+
+def test_records_from_the_caller_print_as_their_json_does() -> None:
+    """A decimal, a time and an object lose nothing by skipping JSON.
+
+    The example's records each carry a decimal, two times, one of them
+    nullable, and two objects, which the template groups by, sums and
+    prints, so the two printouts agree only if every value does.
+
+    """
+    template = SAKILA / "sakila.kdl"
+    asked = Options(build_time="2026-08-04T09:12:44Z", strict_fonts=True)
+    from_json = build(template, SAKILA / "payments.jsonl", asked)
+    from_rows = build_records(template, payments(), asked)
+    assert serialized(from_rows.printout) == serialized(from_json.printout)
+
+
+FIELD = """
+report name="Rows" {
+  font "body" file="FACE" size=10
+  records {
+    member "name" type="string"
+  }
+  layout width=300 height=200 {
+    style font="body" color="black"
+    detail height=20 { field expr="name" left=0 top=0 width=250 height=12 }
+  }
+}
+"""
+
+
+def printed(tmp_path: Path, records: Any) -> list[str]:
+    """Build a template that prints each record's name, and return the text."""
+    path = tmp_path / "rows.kdl"
+    path.write_text(FIELD.replace("FACE", REGULAR), encoding="utf-8")
+    asked = Options(build_time="2026-08-04T09:12:44Z", strict_fonts=True)
+    printout = build_records(path, records, asked).printout
+    return [
+        line
+        for page in printout.pages
+        for mark in page.marks
+        if isinstance(mark, Text)
+        for line in mark.lines
+    ]
+
+
+def test_a_query_result_is_passed_as_it_is(tmp_path: Path) -> None:
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    try:
+        cursor = connection.execute(
+            "select 'ACADEMY DINOSAUR' as name union all select 'ACE GOLDFINGER'"
+        )
+        lines = printed(tmp_path, cursor)
+    finally:
+        connection.close()
+    assert lines == ["ACADEMY DINOSAUR", "ACE GOLDFINGER"]
+
+
+def test_no_records_is_an_empty_sequence(tmp_path: Path) -> None:
+    assert printed(tmp_path, []) == []
+
+
+def test_a_record_that_is_not_one_is_refused_by_its_index(tmp_path: Path) -> None:
+    with pytest.raises(BuildError) as refused:
+        printed(tmp_path, [{"name": "x"}, "y"])
+    assert str(refused.value) == "record 1: want a mapping or an object, got str"

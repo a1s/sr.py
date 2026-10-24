@@ -1,17 +1,23 @@
-"""Records: the two JSON shapes, and coercion by declared type."""
+"""Records: the two JSON shapes, coercion by declared type, and host rows."""
 
 from __future__ import annotations
 
 import codecs
+import decimal
 import io
+import sqlite3
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta, timezone
+from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
+from uuid import UUID
 
 import pytest
 
-from sr.data import as_text, coerce, read_records, records_from
+from sr.data import as_text, coerce, read_records, records_from, records_given
 from sr.errors import BadValue, BuildError, NodePath
-from sr.expr import Decimal, Record, Time
+from sr.expr import Decimal, Duration, FrozenList, Record, Time
 from sr.template.load import load_text
 from sr.template.model import Member, Records, parse_text
 
@@ -271,3 +277,223 @@ def test_a_scalar_is_read_through_the_text_that_spells_it(
     value: object, text: str
 ) -> None:
     assert as_text(value) == text
+
+
+# -- records from the host --------------------------------------------
+
+
+class Pair(NamedTuple):
+    """A row with names, by the protocol SQLAlchemy's ``Row`` keeps too."""
+
+    number: int
+    name: str
+
+
+@dataclass
+class Line:
+    """A row as a dataclass, with a field that is not public."""
+
+    number: int
+    _note: str = ""
+
+
+class Entity:
+    """A row as a plain object, with bookkeeping beside its columns."""
+
+    def __init__(self, number: int) -> None:
+        """Hold one column and the state an ORM would keep."""
+        self.number = number
+        self._state = "bookkeeping"
+
+
+class Colour(Enum):
+    """What an enumerated column holds."""
+
+    RED = "red"
+
+
+def records(**kinds: str) -> Records:
+    """Return a `records` node declaring each member by its type."""
+    members = (
+        Member(name, kind, False, None, NodePath()) for name, kind in kinds.items()
+    )
+    return Records(tuple(members), NodePath())
+
+
+def one(row: Any, declared: Records | None = None) -> Record:
+    """Return the record a single host row makes."""
+    (found,) = records_given([row], declared)
+    return found
+
+
+def test_a_mapping_is_a_record() -> None:
+    rows = records_given([{"a": 1}, {"a": 2}], None)
+    assert [row["a"] for row in rows] == [1, 2]
+
+
+def test_a_named_tuple_is_a_record_by_its_names() -> None:
+    assert list(one(Pair(1, "x")).items()) == [("number", 1), ("name", "x")]
+
+
+def test_a_cursor_of_database_rows_is_records_by_their_keys() -> None:
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    try:
+        cursor = connection.execute(
+            "select 1 as number, 'x' as name union all select 2, 'y'"
+        )
+        rows = records_given(cursor, None)
+    finally:
+        connection.close()
+    assert [dict(row) for row in rows] == [
+        {"number": 1, "name": "x"},
+        {"number": 2, "name": "y"},
+    ]
+
+
+def test_a_dataclass_is_a_record_by_its_public_fields() -> None:
+    assert dict(one(Line(3, "private"))) == {"number": 3}
+
+
+def test_an_object_is_a_record_by_its_public_attributes() -> None:
+    assert dict(one(Entity(4))) == {"number": 4}
+
+
+def test_a_generator_is_read_once_in_order() -> None:
+    rows = records_given(({"a": number} for number in range(3)), None)
+    assert [row["a"] for row in rows] == [0, 1, 2]
+
+
+@pytest.mark.parametrize("rows", ["text", {"a": 1}, 5])
+def test_what_is_not_a_sequence_of_records_is_refused(rows: Any) -> None:
+    with pytest.raises(BuildError) as refused:
+        records_given(rows, None)
+    assert str(refused.value).startswith("want a sequence of records, got ")
+
+
+def test_a_plain_tuple_is_refused_for_having_no_names() -> None:
+    # What a DB-API cursor fetches without a row factory.
+    with pytest.raises(BuildError) as refused:
+        records_given([{"a": 1}, (1, 2)], None)
+    want = (
+        "record 1: want a mapping or an object, got tuple, whose fields have no names"
+    )
+    assert str(refused.value) == want
+
+
+def test_a_host_decimal_stays_exact_declared_or_not() -> None:
+    row = one(
+        {"d": decimal.Decimal("1.50"), "extra": decimal.Decimal("0.10")},
+        records(d="decimal"),
+    )
+    assert isinstance(row["d"], Decimal)
+    assert str(row["d"]) == "1.50"
+    # JSON would have made a float of an undeclared number.
+    assert isinstance(row["extra"], Decimal)
+    assert str(row["extra"]) == "0.10"
+
+
+def test_a_decimal_that_is_not_finite_is_refused() -> None:
+    with pytest.raises(BuildError) as refused:
+        one({"d": decimal.Decimal("NaN")})
+    assert str(refused.value) == "record 0: member 'd': not a finite decimal: NaN"
+
+
+def test_a_datetime_with_no_zone_is_read_in_utc() -> None:
+    declared = records(t="datetime")
+    row = one({"t": datetime(2005, 5, 24, 22, 53, 30)}, declared)
+    from_json = records_from('{"t":"2005-05-24T22:53:30Z"}', declared)[0]["t"]
+    assert row["t"] == from_json
+
+
+def test_a_datetime_with_a_zone_keeps_its_instant_and_its_offset() -> None:
+    plus_three = timezone(timedelta(hours=3))
+    row = one({"t": datetime(2005, 5, 25, 1, 53, 30, 250000, tzinfo=plus_three)})
+    moment = row["t"]
+    assert isinstance(moment, Time)
+    assert moment.format("2006-01-02T15:04:05.000Z07:00") == (
+        "2005-05-25T01:53:30.250+03:00"
+    )
+    in_utc = datetime(2005, 5, 24, 22, 53, 30, 250000, tzinfo=UTC)
+    assert moment == Time.from_datetime(in_utc)
+
+
+def test_a_date_is_the_start_of_its_day_in_utc() -> None:
+    declared = records(day="date")
+    from_json = records_from('{"day":"2005-05-24"}', declared)[0]["day"]
+    assert one({"day": date(2005, 5, 24)}, declared)["day"] == from_json
+    assert one({"day": date(2005, 5, 24)})["day"] == from_json
+
+
+def test_a_timedelta_is_a_duration_to_the_microsecond() -> None:
+    lag = one({"lag": timedelta(days=1, microseconds=3)})["lag"]
+    assert isinstance(lag, Duration)
+    assert lag.nanos == 86_400_000_003_000
+
+
+def test_a_uuid_is_its_text_and_an_enum_member_its_value() -> None:
+    row = one({"id": UUID(int=255), "colour": Colour.RED}, records(id="string"))
+    assert row["id"] == "00000000-0000-0000-0000-0000000000ff"
+    assert row["colour"] == "red"
+
+
+def test_a_nested_object_is_a_record_and_a_list_of_them_a_list() -> None:
+    row = one({"lines": [Pair(1, "x"), Line(2)], "head": Entity(5)})
+    lines = row["lines"]
+    assert isinstance(lines, FrozenList)
+    assert [dict(line) for line in lines] == [{"number": 1, "name": "x"}, {"number": 2}]
+    assert isinstance(row["head"], Record)
+    assert row["head"]["number"] == 5
+
+
+def test_a_list_member_keeps_the_records_a_subreport_runs_over() -> None:
+    row = one({"lines": (Pair(1, "x"),)}, records(lines="list"))
+    assert isinstance(row["lines"], FrozenList)
+    assert isinstance(row["lines"][0], Record)
+
+
+def test_a_float_from_the_host_is_no_string() -> None:
+    # As for a subreport's elements: a float the host computed
+    # has no one spelling as text.
+    with pytest.raises(BuildError) as refused:
+        one({"s": 1.5}, records(s="string"))
+    assert "member 's': want text, got float" in str(refused.value)
+
+
+@pytest.mark.parametrize(
+    ("value", "kind"),
+    [
+        (b"\x89PNG", "bytes"),
+        (datetime(2005, 5, 24, 9, 30).time(), "datetime.time"),
+        ({1, 2}, "set"),
+    ],
+)
+def test_a_value_with_no_counterpart_is_refused_naming_its_type(
+    value: Any, kind: str
+) -> None:
+    with pytest.raises(BuildError) as refused:
+        records_given([{"a": 1}, {"v": value}], None)
+    want = f"record 1: member 'v': want a value a record can hold, got {kind}"
+    assert str(refused.value) == want
+
+
+def test_a_name_that_is_not_text_is_refused() -> None:
+    with pytest.raises(BuildError) as refused:
+        one({1: "one"})
+    assert str(refused.value) == (
+        "record 0: a name is int, and a record's names are strings"
+    )
+
+
+def test_a_value_that_contains_itself_is_refused() -> None:
+    # An ORM entity with both ends of a relationship loaded is one.
+    looped: dict[str, Any] = {"a": 1}
+    looped["self"] = looped
+    with pytest.raises(BuildError) as refused:
+        one({"v": looped})
+    assert str(refused.value) == "record 0: member 'v': dict contains itself"
+
+
+def test_a_lone_surrogate_from_the_host_reads_as_u_fffd() -> None:
+    row = one({"s\udfff": ["a\ud800b"]})
+    assert list(row["s�"]) == ["a�b"]

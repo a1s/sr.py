@@ -113,6 +113,24 @@ its font and image paths are made relative to. Every flag on the command line
 is a field of `Options`, because the command line
 [decides nothing](https://github.com/a1s/sr.py/blob/main/doc/cli.md).
 
+`build_records` takes the records as Python values instead of JSON:
+mappings, named tuples, dataclasses, or other objects, such as the rows
+a SQLAlchemy query returns. A `Decimal` stays exact and a `datetime` is
+a time, so no value goes through text on the way in.
+[doc/template.md](https://github.com/a1s/sr.py/blob/main/doc/template.md#records-from-the-library)
+says what each Python type becomes.
+
+```python
+from sqlalchemy import create_engine, text
+
+from sr.api import build_records
+
+engine = create_engine("sqlite:///sakila.db")
+with engine.connect() as connection:
+    rows = connection.execute(text("SELECT title FROM film ORDER BY title"))
+    result = build_records(Path("minimal.kdl"), rows)
+```
+
 Rendering is a separate step too, and takes the printout in memory
 or one read back from a file. Both give the same bytes:
 

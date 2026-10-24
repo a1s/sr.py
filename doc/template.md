@@ -22,6 +22,7 @@ and paginated are in [layout.md](layout.md). Expressions are specified in
   - [`parameter`](#parameter)
   - [`records`](#records)
   - [Data input](#data-input)
+  - [Records from the library](#records-from-the-library)
   - [`variable`](#variable)
   - [`font`](#font)
   - [`data`](#data)
@@ -729,7 +730,58 @@ dataset: `DATA_COUNT`, report-scoped aggregates, and
 [keep-together](layout.md#keeping-content-together) lookahead all
 require the full sequence.
 
-The library API takes a Go slice directly; JSON is the CLI's front end.
+JSON is the command line's front end. The library also takes the records
+as Python values, [without JSON](#records-from-the-library).
+
+### Records from the library
+
+`sr.api.build_records` takes the records from the program that calls it
+rather than from JSON. A record is a Python value whose fields have names:
+
+- a mapping, such as a `dict` or SQLAlchemy's `RowMapping`;
+- a named tuple, read by its `_asdict`, which SQLAlchemy's `Row` has too;
+- an object with `keys` and item access, such as `sqlite3.Row`;
+- a dataclass, read by its fields; or
+- any other object, read by its instance attributes,
+  which for an ORM entity are the columns it has loaded.
+
+The last two give only the names that do not start with an underscore,
+which is where an object keeps its bookkeeping. A plain tuple is not
+a record, since its fields have no names. The records themselves may come
+from any iterable, a query's result included, and it is read once.
+
+A field may hold what JSON can, and these Python types too,
+which become values the engine computes with:
+
+| Python | Becomes |
+|---|---|
+| `decimal.Decimal` | a decimal, exactly; a non-finite one is an error |
+| `datetime.datetime` | a time |
+| `datetime.date` | a time, the start of that day in UTC |
+| `datetime.timedelta` | a duration |
+| `uuid.UUID` | its text |
+| an `enum.Enum` member | its value, converted in turn |
+| a mapping, or an object as above | a record |
+| a list or a tuple | a list |
+
+A `datetime` with no zone is read in UTC, as text with no offset is,
+so that the zone of the machine that runs the build decides nothing.
+A `date` is the time that `"2005-05-24"` reads as in a `date` member.
+A record or a list nested in a field is converted the same way, so
+an object a row refers to is a record, and a list of them is what
+a [`subreport`](#subreport) runs over. Any other type is an error
+that names the record, the member, and the type: bytes, a time of day,
+and a set are three. So is a value that contains itself, which an
+ORM entity with both ends of a relationship loaded can be.
+
+A declared member is then coerced as the elements of a subreport's data
+are, since its value is one the program computed rather than text. A value
+is written as text and read by the declared type, except that a time in
+a `date` or `datetime` member is kept, a `date` taking the start of its day,
+and so are a record in an `object` member and a list in a `list` member.
+A `string` member refuses a float, which has no one spelling as text.
+An undeclared member keeps the type it arrived with, which JSON could not
+have given it: a decimal stays exact, and a time stays a time.
 
 ### `variable`
 

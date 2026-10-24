@@ -33,7 +33,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from sr.data import coerce
+from sr.data import typed
 from sr.errors import BadValue, BuildError, ExpressionError, Location
 from sr.expr import FrozenDict, Record, Time, type_name
 from sr.expr.builtins import iterate
@@ -43,7 +43,6 @@ from sr.template.model import (
     Arg,
     Embedded,
     Layout,
-    Member,
     Parameter,
     Records,
     Report,
@@ -209,26 +208,6 @@ def records_of(
                 ) from None
         found.append(Record(fields))
     return tuple(found)
-
-
-def typed(item: Any, member: Member) -> Any:
-    """Return one field of a subreport's element as its member declares.
-
-    The input file's coercion, and one refusal more: a `string` member
-    takes no float, since a float the host computed has no one spelling
-    as text.
-
-    Args:
-        item: The field's value.
-        member: Its declaration in the subreport's `records`.
-
-    Raises:
-        BadValue: The value is not of that type.
-
-    """
-    if member.kind == "string" and isinstance(item, float):
-        raise BadValue(f"want text, got {type_name(item)}")
-    return coerce(item, member)
 
 
 def arguments(

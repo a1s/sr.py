@@ -13,18 +13,24 @@ no value is an error here and not at `validate`, which is the one
 place the two commands differ about the same template: a check asks
 whether the document is well formed, and a build needs the values.
 
+The records come one of two ways, and the steps are the same for both.
+:func:`build` reads them as JSON, as the command line does, and
+:func:`build_records` takes them from the caller as Python values,
+such as the rows a database query fetched.
+
 """
 
 from __future__ import annotations
 
 import time
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TextIO
+from typing import Any, TextIO
 
-from sr.data import read_records
+from sr.data import read_records, records_given
 from sr.errors import BuildError, BuildWarning, Diagnostic
-from sr.expr import Time
+from sr.expr import Record, Time
 from sr.expr.builtins import parse_time
 from sr.expr.golayout import RFC3339
 from sr.layout.loop import Build, Builder
@@ -32,8 +38,9 @@ from sr.printout.model import Printout
 from sr.settle import blob_bytes, parameter_values, resolve_fonts
 from sr.template import load as load_template
 from sr.template.load import Options as LoadOptions
+from sr.template.model import Records
 
-__all__ = ["Options", "Result", "build", "build_time_of"]
+__all__ = ["Options", "Result", "build", "build_records", "build_time_of"]
 
 
 @dataclass(frozen=True)
@@ -105,6 +112,66 @@ def build(
             a record will not coerce, or a band will not fit.
 
     """
+
+    def read(declared: Records | None) -> tuple[Record, ...]:
+        return read_records(data, declared) if data is not None else ()
+
+    return applied(template, read, options)
+
+
+def build_records(
+    template: Path | str,
+    records: Iterable[Any],
+    options: Options | None = None,
+) -> Result:
+    """Apply a template to records the caller holds and return the printout.
+
+    Each record is a mapping, or an object whose fields have names:
+    a named tuple, a dataclass, an object with attributes, or a row
+    a database driver fetched, such as SQLAlchemy's ``Row``.
+    doc/template.md#records-from-the-library says which of the host's
+    types each value may have and what it becomes.
+
+    Args:
+        template: The template file.
+        records: The records, in order: a list, a query's result,
+            or any other iterable, which is read once.
+        options: What the run asks for; the defaults otherwise.
+
+    Raises:
+        TemplateError: The template did not load or did not validate.
+        BuildError: A font did not resolve, a parameter has no value,
+            a record is not one or will not coerce, or a band will not fit.
+
+    """
+
+    def read(declared: Records | None) -> tuple[Record, ...]:
+        return records_given(records, declared)
+
+    return applied(template, read, options)
+
+
+def applied(
+    template: Path | str,
+    read: Callable[[Records | None], tuple[Record, ...]],
+    options: Options | None,
+) -> Result:
+    """Apply a template to the records ``read`` returns.
+
+    The records are read after the fonts resolve, which is the order
+    doc/cli.md#sr-build gives, and by the template's `records` node.
+
+    Args:
+        template: The template file.
+        read: What returns the records, given the `records` node.
+        options: What the run asks for; the defaults otherwise.
+
+    Raises:
+        TemplateError: The template did not load or did not validate.
+        BuildError: A font did not resolve, a parameter has no value,
+            a record will not coerce, or a band will not fit.
+
+    """
     asked = options or Options()
     loaded = load_template(
         Path(template),
@@ -115,7 +182,7 @@ def build(
     parameters = parameter_values(report, asked.params, built)
     blobs = blob_bytes(report, parameters)
     (fonts, resolver) = resolve_fonts(report, blobs, strict=asked.strict_fonts)
-    records = read_records(data, report.records) if data is not None else ()
+    records = read(report.records)
     # A font's own warnings stay on its resolution: the builder carries
     # them only for the fonts the document turns out to use.
     warnings = tuple(carried(one) for one in loaded.warnings if one.kind is not None)

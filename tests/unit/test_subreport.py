@@ -17,7 +17,7 @@ from typing import Any
 import pytest
 
 from sr.api import Options, build
-from sr.data import coerce
+from sr.data import coerce, typed
 from sr.errors import BadValue, BuildError, NodePath
 from sr.expr import Decimal, FrozenList, Record, Time
 from sr.expr.builtins import parse_time
@@ -25,7 +25,6 @@ from sr.fonts.resolve import Resolver
 from sr.layout.blobs import DataTable
 from sr.layout.fonttable import FontTable
 from sr.layout.frame import Frame
-from sr.layout.subreport import typed
 from sr.printout.model import Page, Printout, Text
 from sr.settle import is_of_type
 from sr.template.model import Font, Member
