@@ -780,7 +780,9 @@ One whose instant in UTC falls outside the years 1 to 9999 is an error,
 as it is in JSON: `datetime.max` with an offset west of UTC is one.
 A `date` is the time that `"2005-05-24"` reads as in a `date` member.
 A subclass of `str`, `int`, or `float` is read as the type itself,
-and so is an integer of another type, such as numpy's `int64`.
+and so is an integer or a binary float of another type,
+such as numpy's `int64` and `float32`. A `Fraction` is an error,
+since no float holds one exactly.
 
 A record or a list nested in a field is converted the same way, so
 an object a row refers to is a record, and a list of them is what

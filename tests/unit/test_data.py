@@ -10,6 +10,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta, timezone
 from enum import Enum
+from fractions import Fraction
 from pathlib import Path
 from typing import Any, NamedTuple
 from uuid import UUID
@@ -18,7 +19,7 @@ import pytest
 
 from sr.data import as_text, coerce, read_records, records_from, records_given
 from sr.errors import BadValue, BuildError, NodePath
-from sr.expr import Decimal, Duration, FrozenList, Record, Time
+from sr.expr import Decimal, Duration, FrozenList, Namespace, Record, Set, Time
 from sr.template.load import load_text
 from sr.template.model import Member, Records, parse_text
 
@@ -422,7 +423,20 @@ class Count:
         return self._number
 
 
+class Single:
+    """A binary float that is not a float, as numpy's ``float32`` is not."""
+
+    def __init__(self, number: float) -> None:
+        """Hold the number."""
+        self._number = number
+
+    def __float__(self) -> float:
+        """Return the number."""
+        return self._number
+
+
 numbers.Integral.register(Count)
+numbers.Real.register(Single)
 
 
 def records(**kinds: str) -> Records:
@@ -662,6 +676,50 @@ def test_a_field_a_dataclass_has_not_set_is_absent() -> None:
     assert dict(one(Draft(1))) == {"number": 1}
 
 
+def test_a_dataclass_that_holds_no_field_is_refused() -> None:
+    # An entity mapped as a dataclass, which a commit has expired.
+    expired = Rental(1, "ACADEMY DINOSAUR")
+    vars(expired).clear()
+    with pytest.raises(BuildError) as refused:
+        records_given([expired], None)
+    want = "Rental, which holds no public attributes"
+    assert str(refused.value).endswith(want)
+
+
+def test_records_this_engine_made_pass_back_as_they_are() -> None:
+    # A program can read JSON with `records_from` and build from that:
+    # this engine's list stays a list, and its record a record.
+    declared = records(lines="list", head="object")
+    made = records_from('{"lines":[1,{"a":2}],"head":{"b":[3]}}', declared)
+    back = records_given(made, declared)
+    assert back == made
+    assert isinstance(back[0]["lines"], FrozenList)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [Set([1, 2]), Namespace("math", {"pi": 3.0})],
+)
+def test_a_set_or_a_module_of_this_engine_s_is_refused(value: Any) -> None:
+    with pytest.raises(BuildError) as refused:
+        one({"v": value})
+    kind = type(value).__name__
+    want = f"want a value a record can hold, got sr.expr.values.{kind}"
+    assert str(refused.value) == f"record 0: member 'v': {want}"
+
+
+@pytest.mark.parametrize("value", [b"\x89PNG", 1.5])
+def test_a_refusal_in_a_declared_member_points_at_its_declaration(
+    value: Any,
+) -> None:
+    # Bytes have no counterpart here, and a string member takes no float.
+    path = NodePath().child("records").child("member", "v")
+    declared = Records((Member("v", "string", False, None, path),), NodePath())
+    with pytest.raises(BuildError) as refused:
+        one({"v": value}, declared)
+    assert refused.value.diagnostic.location.path == path
+
+
 def test_an_object_with_slots_is_a_record_by_what_they_hold() -> None:
     assert dict(one(Slotted(3))) == {"number": 3}
     assert dict(one(Point(1, 2))) == {"x": 1, "y": 2}
@@ -706,10 +764,19 @@ def test_a_value_nests_a_hundred_deep_at_most() -> None:
         assert str(refused.value) == want
 
 
-def test_a_subclass_or_an_integer_of_another_type_is_the_type_itself() -> None:
-    row = one({"i": Cents(5), "f": Ratio(0.5), "s": Label("x"), "n": Count(7)})
-    assert [type(row[name]) for name in "ifsn"] == [int, float, str, int]
-    assert [row[name] for name in "ifsn"] == [5, 0.5, "x", 7]
+def test_a_subclass_or_a_number_of_another_type_is_the_type_itself() -> None:
+    given = {"i": Cents(5), "n": Count(7), "f": Ratio(0.5), "g": Single(0.25)}
+    row = one({**given, "s": Label("x")})
+    kinds = [type(row[name]) for name in "infgs"]
+    assert kinds == [int, int, float, float, str]
+    assert [row[name] for name in "infgs"] == [5, 7, 0.5, 0.25, "x"]
+
+
+def test_a_fraction_is_refused_as_no_float_holds_it() -> None:
+    with pytest.raises(BuildError) as refused:
+        one({"q": Fraction(1, 3)})
+    want = "want a value a record can hold, got fractions.Fraction"
+    assert str(refused.value) == f"record 0: member 'q': {want}"
 
 
 def test_a_duration_has_no_member_type_to_go_in() -> None:

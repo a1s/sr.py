@@ -53,7 +53,8 @@ import dataclasses
 import decimal
 import json
 import numbers
-from collections.abc import Iterable, Mapping, Set
+from collections.abc import Iterable, Mapping
+from collections.abc import Set as AbstractSet
 from datetime import UTC, date, datetime, timedelta
 from enum import Enum
 from pathlib import Path
@@ -68,7 +69,9 @@ from sr.expr.values import (
     Duration,
     FrozenDict,
     FrozenList,
+    Namespace,
     Record,
+    Set,
     Time,
     go_shortest,
     json_without_surrogates,
@@ -104,8 +107,9 @@ UTF16_MARKS = tuple(
 SCALARS = (bool, int, float, Decimal, Time, Duration)
 
 # How deep a host's value may nest, records and lists together:
-# deeper than a report's data is, and shallow enough that whatever
-# reads the value later stays well inside Python's limit on recursion.
+# deeper than any report's data are nested, and shallow enough that
+# whatever reads the value later stays well inside Python's limit
+# on recursion.
 DEEPEST = 100
 
 
@@ -333,14 +337,16 @@ def records_given(
             here or will not coerce.
 
     """
-    unordered = ", which has no order" if isinstance(rows, Set) else ""
+    unordered = ", which has no order" if isinstance(rows, AbstractSet) else ""
     refused = BuildError(
         f"want a sequence of records, got {host_type(rows)}{unordered}",
         Location(file=where),
     )
     # Text, bytes, and a mapping iterate, but over characters, numbers,
     # and names, and a set in no order that a report could keep.
-    if isinstance(rows, str | bytes | bytearray | memoryview | Mapping | Set):
+    if isinstance(rows, str | bytes | bytearray | memoryview | Mapping):
+        raise refused
+    if isinstance(rows, AbstractSet):
         raise refused
     try:
         given = iter(rows)
@@ -387,22 +393,28 @@ def record_given(
             here or will not coerce.
 
     """
-    try:
-        found = named(fields, frozenset())
-    except BadValue as refusal:
-        raise BuildError(
-            str(refusal), Location(file=where, record=index)
-        ) from refusal.__cause__
-    for name, member in members.items():
-        if name not in found:
-            continue
+    found: dict[str, Any] = {}
+    for key, value in fields.items():
         try:
-            found[name] = typed(found[name], member)
+            name = name_of(key)
+        except BadValue as refusal:
+            raise BuildError(
+                str(refusal),
+                Location(file=where, record=index),
+            ) from None
+        member = members.get(name)
+        try:
+            held = host_value(value)
+            found[name] = held if member is None else typed(held, member)
         except BadValue as refusal:
             raise BuildError(
                 f"member {name!r}: {refusal}",
-                Location(file=where, path=member.path, record=index),
-            ) from None
+                Location(
+                    file=where,
+                    path=None if member is None else member.path,
+                    record=index,
+                ),
+            ) from refusal.__cause__
     return Record(found)
 
 
@@ -450,7 +462,7 @@ def fields_of(row: Any) -> dict[Any, Any] | None:
             return None
         if dataclasses.is_dataclass(row):
             names = [one.name for one in dataclasses.fields(row)]
-            return {name: held[name] for name in names if name in held}
+            held = {name: held[name] for name in names if name in held}
         return held or None
     except Exception as raised:
         raise BadValue(
@@ -461,11 +473,17 @@ def fields_of(row: Any) -> dict[Any, Any] | None:
 def readable(value: Any) -> bool:
     """Return whether a value's attributes, if it has any, are its fields.
 
+    This engine's own containers keep their contents in slots,
+    and are not records either: its list stays a list, and its set
+    and its module are refused, as the host's own are.
+
     Args:
         value: The value.
 
     """
-    if isinstance(value, list | tuple | type | BaseException | ModuleType):
+    if isinstance(value, list | tuple | FrozenList | Set | Namespace):
+        return False
+    if isinstance(value, type | BaseException | ModuleType):
         return False
     return not callable(value)
 
@@ -544,8 +562,10 @@ def host_value(value: Any, within: frozenset[int] = frozenset()) -> Any:
     * an ``Enum`` member, its value, converted in turn.
 
     A subclass of ``str``, ``int``, or ``float`` becomes the type itself,
-    and so does an integer of another type, such as numpy's ``int64``:
-    ``type`` then names what a JSON value of that kind would have been.
+    and so does an integer or a binary float of another type, such as
+    numpy's ``int64`` and ``float32``: ``type`` then names what a JSON
+    value of that kind would have been.  A ``Fraction`` is refused,
+    since no float holds one exactly.
 
     A value with fields (:func:`fields_of`) becomes a record,
     and a list or a tuple becomes a list, their contents converted
@@ -574,7 +594,9 @@ def host_value(value: Any, within: frozenset[int] = frozenset()) -> Any:
         return without_surrogates(str.__str__(value))
     if isinstance(value, numbers.Integral):
         return int(value)
-    if isinstance(value, float):
+    # Every float is real and none rational; a `Fraction` is both.
+    real = isinstance(value, numbers.Real)
+    if real and not isinstance(value, numbers.Rational):
         return float(value)
     if isinstance(value, decimal.Decimal):
         if not value.is_finite():
@@ -611,11 +633,10 @@ def host_value(value: Any, within: frozenset[int] = frozenset()) -> Any:
 
 
 def named(fields: Mapping[Any, Any], within: frozenset[int]) -> dict[str, Any]:
-    """Return the fields of a host's value as a record's, converted.
+    """Return the fields of a value a row holds as a record's, converted.
 
-    A value that is refused is named by its member when the fields are
-    a row's, which nothing contains.  Within a row, the row's member
-    that holds it is the one name a diagnostic needs.
+    A refusal names no field here: :func:`record_given` names the row's
+    member that holds the value, which is the name a diagnostic needs.
 
     Args:
         fields: The fields, by name.
@@ -628,19 +649,24 @@ def named(fields: Mapping[Any, Any], within: frozenset[int]) -> dict[str, Any]:
     """
     found: dict[str, Any] = {}
     for key, value in fields.items():
-        if not isinstance(key, str):
-            raise BadValue(
-                f"a name is {host_type(key)}, and a record's names are strings"
-            )
-        name = without_surrogates(key)
-        try:
-            found[name] = host_value(value, within)
-        except BadValue as refusal:
-            if within:
-                raise
-            cause = refusal.__cause__
-            raise BadValue(f"member {name!r}: {refusal}") from cause
+        found[name_of(key)] = host_value(value, within)
     return found
+
+
+def name_of(key: Any) -> str:
+    """Return the name a host gave a field, as a record's name.
+
+    Args:
+        key: The name, as the host gave it.
+
+    Raises:
+        BadValue: The name is not a string.
+
+    """
+    if not isinstance(key, str):
+        kind = host_type(key)
+        raise BadValue(f"a name is {kind}, and a record's names are strings")
+    return without_surrogates(str.__str__(key))
 
 
 def host_type(value: Any) -> str:
