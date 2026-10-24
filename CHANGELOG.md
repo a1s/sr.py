@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- Support for building reports from a sequence of records.
+
 ## [0.1.0] - 2026-10-18
 
 First release. A second implementation of the
