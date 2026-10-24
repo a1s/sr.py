@@ -52,10 +52,12 @@ import codecs
 import dataclasses
 import decimal
 import json
-from collections.abc import Iterable, Mapping
+import numbers
+from collections.abc import Iterable, Mapping, Set
 from datetime import UTC, date, datetime, timedelta
 from enum import Enum
 from pathlib import Path
+from types import ModuleType
 from typing import Any, TextIO
 from uuid import UUID
 
@@ -96,9 +98,15 @@ UTF16_MARKS = tuple(
     for mark in (codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)
 )
 
-# What a host's record holds as it was given: JSON's numbers and booleans,
-# and this engine's own values.  Text is not one, as it may hold a surrogate.
+# What a host's record holds as it was given, by exact type: JSON's numbers
+# and booleans, and this engine's own values.  Text is not one, as it may
+# hold a surrogate, and a subclass is not one, as ``type`` would name it.
 SCALARS = (bool, int, float, Decimal, Time, Duration)
+
+# How deep a host's value may nest, records and lists together:
+# deeper than a report's data is, and shallow enough that whatever
+# reads the value later stays well inside Python's limit on recursion.
+DEEPEST = 100
 
 
 def read_records(
@@ -321,15 +329,18 @@ def records_given(
 
     Raises:
         BuildError: The rows are not a sequence, a row has no named
-            fields, or a value has no counterpart here or will not coerce.
+            fields or will not give them, or a value has no counterpart
+            here or will not coerce.
 
     """
+    unordered = ", which has no order" if isinstance(rows, Set) else ""
     refused = BuildError(
-        f"want a sequence of records, got {host_type(rows)}",
+        f"want a sequence of records, got {host_type(rows)}{unordered}",
         Location(file=where),
     )
-    # Text and a mapping iterate, but over characters and over names.
-    if isinstance(rows, str | bytes | Mapping):
+    # Text, bytes, and a mapping iterate, but over characters, numbers,
+    # and names, and a set in no order that a report could keep.
+    if isinstance(rows, str | bytes | bytearray | memoryview | Mapping | Set):
         raise refused
     try:
         given = iter(rows)
@@ -338,11 +349,16 @@ def records_given(
     members = {} if declared is None else {one.name: one for one in declared.members}
     found = []
     for index, row in enumerate(given):
-        fields = fields_of(row)
-        if fields is None:
-            unnamed = ", whose fields have no names" if isinstance(row, tuple) else ""
+        try:
+            fields = fields_of(row)
+        except BadValue as refusal:
             raise BuildError(
-                f"want a mapping or an object, got {host_type(row)}{unnamed}",
+                str(refusal), Location(file=where, record=index)
+            ) from refusal.__cause__
+        if fields is None:
+            got = host_type(row) + unread(row)
+            raise BuildError(
+                f"want a mapping or an object, got {got}",
                 Location(file=where, record=index),
             )
         found.append(record_given(fields, members, index, where))
@@ -371,31 +387,26 @@ def record_given(
             here or will not coerce.
 
     """
-    found: dict[str, Any] = {}
-    for key, value in fields.items():
-        if not isinstance(key, str):
-            raise BuildError(
-                f"a name is {host_type(key)}, and a record's names are strings",
-                Location(file=where, record=index),
-            )
-        name = without_surrogates(key)
-        member = members.get(name)
+    try:
+        found = named(fields, frozenset())
+    except BadValue as refusal:
+        raise BuildError(
+            str(refusal), Location(file=where, record=index)
+        ) from refusal.__cause__
+    for name, member in members.items():
+        if name not in found:
+            continue
         try:
-            held = host_value(value)
-            found[name] = held if member is None else typed(held, member)
+            found[name] = typed(found[name], member)
         except BadValue as refusal:
             raise BuildError(
                 f"member {name!r}: {refusal}",
-                Location(
-                    file=where,
-                    path=None if member is None else member.path,
-                    record=index,
-                ),
+                Location(file=where, path=member.path, record=index),
             ) from None
     return Record(found)
 
 
-def fields_of(row: Any) -> Mapping[Any, Any] | None:
+def fields_of(row: Any) -> dict[Any, Any] | None:
     """Return a host value's fields by name, or ``None`` if it has none.
 
     Five shapes have them, tried in this order:
@@ -405,56 +416,143 @@ def fields_of(row: Any) -> Mapping[Any, Any] | None:
     * anything with ``keys`` and item access, which is what ``dict``
       itself takes, such as ``sqlite3.Row``;
     * a dataclass instance, by its fields; and
-    * any other object, by its instance attributes:
-      for an ORM entity, the columns it has loaded.
+    * any other object, by its attributes.
 
-    The last two give only the public names, those that do not start
-    with an underscore, which is where an object keeps its bookkeeping:
-    SQLAlchemy's ``_sa_instance_state`` is one.  A plain tuple
-    has no names and a list has none either, so neither is a row.
+    The last two read what :func:`attributes` gives: the public
+    attributes the object holds, so an ORM entity loads nothing.
+    An object that holds no public attribute has no fields,
+    and neither has a function, a method, a class, a module,
+    or an exception: each is more likely a value the program
+    forgot to call or to load than a record with nothing in it.
+    A plain tuple has no names and a list has none either,
+    so neither is a row.
 
     Args:
         row: The value.
 
+    Raises:
+        BadValue: Reading the fields raised, as the host's own code can:
+            a driver's or an ORM's runs here.
+
     """
-    if isinstance(row, type):
-        return None
-    if isinstance(row, Mapping):
-        return row
-    if callable(getattr(row, "_asdict", None)):
-        return dict(row._asdict())
-    if callable(getattr(row, "keys", None)) and hasattr(row, "__getitem__"):
-        return {key: row[key] for key in row.keys()}
-    if dataclasses.is_dataclass(row):
-        names = [one.name for one in dataclasses.fields(row)]
-        return {name: getattr(row, name) for name in names if not name.startswith("_")}
-    if isinstance(row, list | tuple) or not hasattr(row, "__dict__"):
-        return None
-    return {
-        name: value for name, value in vars(row).items() if not name.startswith("_")
-    }
+    try:
+        if isinstance(row, type):
+            return None
+        if isinstance(row, Mapping):
+            return dict(row)
+        if callable(getattr(row, "_asdict", None)):
+            return dict(row._asdict())
+        keys = getattr(row, "keys", None)
+        if callable(keys) and hasattr(row, "__getitem__"):
+            return {key: row[key] for key in keys()}
+        held = attributes(row) if readable(row) else None
+        if held is None:
+            return None
+        if dataclasses.is_dataclass(row):
+            names = [one.name for one in dataclasses.fields(row)]
+            return {name: held[name] for name in names if name in held}
+        return held or None
+    except Exception as raised:
+        raise BadValue(
+            f"reading its fields raised {host_type(raised)}: {raised}"
+        ) from raised
+
+
+def readable(value: Any) -> bool:
+    """Return whether a value's attributes, if it has any, are its fields.
+
+    Args:
+        value: The value.
+
+    """
+    if isinstance(value, list | tuple | type | BaseException | ModuleType):
+        return False
+    return not callable(value)
+
+
+def attributes(value: Any) -> dict[str, Any] | None:
+    """Return the public attributes an object holds, by name.
+
+    They are read where the object keeps them, its slots and its
+    ``__dict__``, rather than looked up by name, so no property runs
+    and an ORM entity loads nothing: a relationship that is not loaded
+    is left out, and so is every column of an entity a commit expired.
+    A name that starts with an underscore is where an object keeps its
+    bookkeeping, such as SQLAlchemy's ``_sa_instance_state``.
+
+    Args:
+        value: The object.
+
+    Returns:
+        The attributes, or ``None`` for a value with nowhere to keep
+        a public one, such as ``bytes`` or a ``Fraction``.
+
+    """
+    found: dict[str, Any] = {}
+    kept = False
+    for kind in reversed(type(value).__mro__):
+        slots = vars(kind).get("__slots__") or ()
+        for name in (slots,) if isinstance(slots, str) else slots:
+            if name.startswith("_"):
+                continue
+            kept = True
+            try:
+                found[name] = object.__getattribute__(value, name)
+            except AttributeError:
+                continue  # A slot that holds nothing.
+    try:
+        held = object.__getattribute__(value, "__dict__")
+    except AttributeError:
+        return found if kept else None
+    found.update(
+        (name, item) for name, item in held.items() if not name.startswith("_")
+    )
+    return found
+
+
+def unread(value: Any) -> str:
+    """Return why a value has no fields, as a clause to end a refusal with.
+
+    The clause is empty where the type says enough.
+
+    Args:
+        value: The value.
+
+    """
+    if isinstance(value, tuple):
+        return ", whose fields have no names"
+    if readable(value) and attributes(value) == {}:
+        return ", which holds no public attributes"
+    return ""
 
 
 def host_value(value: Any, within: frozenset[int] = frozenset()) -> Any:
     """Return a value a host program gave as this engine holds it.
 
     JSON's scalars are this engine's already, and so are its decimal,
-    time and duration.  Six of the host's own types become one of those:
+    time, and duration.  Six of the host's own types become one of those:
 
     * a ``decimal.Decimal``, an exact decimal, where it is finite;
     * a ``datetime``, a time.  One with no zone is read in UTC, as text
-      with no offset is, so that the machine's zone decides nothing;
+      with no offset is, so that the machine's zone decides nothing.
+      One whose instant in UTC is outside the years 1 to 9999 is refused,
+      as it is in JSON;
     * a ``date``, the start of that day in UTC, which is the time
       a `date` member reads ``"2005-05-24"`` as;
     * a ``timedelta``, a duration;
     * a ``UUID``, its text, which is its one spelling; and
     * an ``Enum`` member, its value, converted in turn.
 
+    A subclass of ``str``, ``int``, or ``float`` becomes the type itself,
+    and so does an integer of another type, such as numpy's ``int64``:
+    ``type`` then names what a JSON value of that kind would have been.
+
     A value with fields (:func:`fields_of`) becomes a record,
     and a list or a tuple becomes a list, their contents converted
     in turn: an object a row refers to is then a record, and a list
-    of them is what a subreport runs over.  Anything else is refused
-    rather than guessed at: bytes, a time of day, a set.
+    of them is what a subreport runs over.  They nest :data:`DEEPEST`
+    deep at most.  Anything else is refused rather than guessed at:
+    bytes, a time of day, a set.
 
     Args:
         value: What the host gave.
@@ -463,23 +561,34 @@ def host_value(value: Any, within: frozenset[int] = frozenset()) -> Any:
             rather than followed for ever.
 
     Raises:
-        BadValue: The value has no counterpart here,
-            a name in it is not a string, or it contains itself.
+        BadValue: The value has no counterpart here, a name in it
+            is not a string, it contains itself or nests too deep,
+            or reading its fields raised.
 
     """
     if isinstance(value, Enum):
         return host_value(value.value, within)
-    if value is None or isinstance(value, SCALARS):
+    if value is None or type(value) in SCALARS:
         return value
     if isinstance(value, str):
-        return without_surrogates(value)
+        return without_surrogates(str.__str__(value))
+    if isinstance(value, numbers.Integral):
+        return int(value)
+    if isinstance(value, float):
+        return float(value)
     if isinstance(value, decimal.Decimal):
         if not value.is_finite():
             raise BadValue(f"not a finite decimal: {value}")
         return Decimal(value)
     if isinstance(value, datetime):
         zoned = value if value.utcoffset() is not None else value.replace(tzinfo=UTC)
-        return Time.from_datetime(zoned)
+        try:
+            return Time.from_datetime(zoned)
+        except OverflowError:
+            raise BadValue(
+                f"out of range: {value.isoformat()}"
+                " is outside the years 1 to 9999 in UTC"
+            ) from None
     if isinstance(value, date):
         midnight = datetime(value.year, value.month, value.day, tzinfo=UTC)
         return Time.from_datetime(midnight)
@@ -489,25 +598,32 @@ def host_value(value: Any, within: frozenset[int] = frozenset()) -> Any:
         return str(value)
     if id(value) in within:
         raise BadValue(f"{host_type(value)} contains itself")
+    if len(within) >= DEEPEST:
+        raise BadValue(f"nested more than {DEEPEST} deep")
     inside = within | {id(value)}
     fields = fields_of(value)
     if fields is not None:
         return Record(named(fields, inside))
     if isinstance(value, list | tuple | FrozenList):
         return FrozenList(host_value(item, inside) for item in value)
-    raise BadValue(f"want a value a record can hold, got {host_type(value)}")
+    got = host_type(value) + unread(value)
+    raise BadValue(f"want a value a record can hold, got {got}")
 
 
 def named(fields: Mapping[Any, Any], within: frozenset[int]) -> dict[str, Any]:
     """Return the fields of a host's value as a record's, converted.
+
+    A value that is refused is named by its member when the fields are
+    a row's, which nothing contains.  Within a row, the row's member
+    that holds it is the one name a diagnostic needs.
 
     Args:
         fields: The fields, by name.
         within: The containers they sit in, by identity.
 
     Raises:
-        BadValue: A name is not a string, or a value has
-            no counterpart here or contains itself.
+        BadValue: A name is not a string, or a value is refused,
+            as :func:`host_value` refuses it.
 
     """
     found: dict[str, Any] = {}
@@ -516,7 +632,14 @@ def named(fields: Mapping[Any, Any], within: frozenset[int]) -> dict[str, Any]:
             raise BadValue(
                 f"a name is {host_type(key)}, and a record's names are strings"
             )
-        found[without_surrogates(key)] = host_value(value, within)
+        name = without_surrogates(key)
+        try:
+            found[name] = host_value(value, within)
+        except BadValue as refusal:
+            if within:
+                raise
+            cause = refusal.__cause__
+            raise BadValue(f"member {name!r}: {refusal}") from cause
     return found
 
 
@@ -572,10 +695,12 @@ def coerce(value: Any, member: Member) -> Any:
 def typed(value: Any, member: Member) -> Any:
     """Return a value the host computed as the type its `member` declares.
 
-    The input file's coercion, and one refusal more: a `string`
+    The input file's coercion, and two refusals more: a `string`
     member takes no float, since a float the host computed has
-    no one spelling as text.  A subreport's elements are such values,
-    and so are the rows a host program hands :func:`records_given`.
+    no one spelling as text, and no member takes a duration,
+    since no member type is one.  A subreport's elements are
+    such values, and so are the rows a host program hands
+    :func:`records_given`.
 
     Args:
         value: The field's value.
@@ -587,6 +712,8 @@ def typed(value: Any, member: Member) -> Any:
     """
     if member.kind == "string" and isinstance(value, float):
         raise BadValue(f"want text, got {type_name(value)}")
+    if isinstance(value, Duration):
+        raise BadValue("no member type holds a duration; leave it undeclared")
     return coerce(value, member)
 
 

@@ -212,7 +212,7 @@ def serialized(printout: Printout) -> str:
 
 
 def test_records_from_the_caller_print_as_their_json_does() -> None:
-    """A decimal, a time and an object lose nothing by skipping JSON.
+    """A decimal, a time, and an object lose nothing by skipping JSON.
 
     The example's records each carry a decimal, two times, one of them
     nullable, and two objects, which the template groups by, sums and

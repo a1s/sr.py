@@ -115,10 +115,12 @@ is a field of `Options`, because the command line
 
 `build_records` takes the records as Python values instead of JSON:
 mappings, named tuples, dataclasses, or other objects, such as the rows
-a SQLAlchemy query returns. A `Decimal` stays exact and a `datetime` is
-a time, so no value goes through text on the way in.
+a SQLAlchemy query returns. A `Decimal` arrives as an exact decimal and
+a `datetime` as a time, rather than as text. A member the template declares
+is still coerced to its type, which for some types means writing the value
+as text and reading it back.
 [doc/template.md](https://github.com/a1s/sr.py/blob/main/doc/template.md#records-from-the-library)
-says what each Python type becomes.
+says what each Python type becomes, and how a declared member coerces it.
 
 ```python
 from sqlalchemy import create_engine, text

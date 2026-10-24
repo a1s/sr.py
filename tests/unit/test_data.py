@@ -5,8 +5,9 @@ from __future__ import annotations
 import codecs
 import decimal
 import io
+import numbers
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
@@ -312,6 +313,118 @@ class Colour(Enum):
     RED = "red"
 
 
+class Expired:
+    """An ORM entity a commit has expired: bookkeeping, and no column."""
+
+    def __init__(self) -> None:
+        """Hold the state an ORM keeps, and nothing else."""
+        self._state = "expired"
+
+
+class Order:
+    """A row whose total is a method, which a program can forget to call."""
+
+    def total(self) -> int:
+        """Return the order's total."""
+        return 5
+
+
+class Loading:
+    """An attribute an ORM loads when it is read, as a relationship is."""
+
+    def __set_name__(self, owner: type, name: str) -> None:
+        """Remember the attribute's name."""
+        self.name = name
+
+    def __get__(self, row: Any, owner: type | None = None) -> Any:
+        """Return what the row holds, or fail as a load would."""
+        if row is None:
+            return self
+        if self.name not in vars(row):
+            raise AssertionError(f"the build loaded {self.name}")
+        return vars(row)[self.name]
+
+    def __set__(self, row: Any, value: Any) -> None:
+        """Hold a value, as a load does."""
+        vars(row)[self.name] = value
+
+
+@dataclass
+class Rental:
+    """A mapped dataclass, as SQLAlchemy's ``MappedAsDataclass`` makes one."""
+
+    number: int
+    film: Any = Loading()
+
+
+@dataclass
+class Draft:
+    """A dataclass with a field its constructor does not set."""
+
+    number: int
+    total: int = field(init=False)
+
+
+class Slotted:
+    """A row that keeps its columns in slots, as an ``attrs`` class does."""
+
+    __slots__ = ("_cache", "name", "number")
+
+    def __init__(self, number: int) -> None:
+        """Hold one column, and leave the other empty."""
+        self.number = number
+        self._cache = None
+
+
+@dataclass(slots=True)
+class Point:
+    """A dataclass that keeps its fields in slots."""
+
+    x: int
+    y: int
+
+
+class Detached:
+    """A row whose driver fails to read it, as a closed session's does."""
+
+    def keys(self) -> list[str]:
+        """Return the row's names."""
+        return ["number"]
+
+    def __getitem__(self, name: str) -> Any:
+        """Fail, as reading a column of a detached row does."""
+        raise RuntimeError("detached")
+
+
+class Cents(int):
+    """An int of a type of its own."""
+
+
+class Ratio(float):
+    """A float of a type of its own, as numpy's ``float64`` is."""
+
+
+class Label(str):
+    """A str of a type of its own."""
+
+    __slots__ = ()
+
+
+class Count:
+    """An integer that is not an int, as numpy's ``int64`` is not."""
+
+    def __init__(self, number: int) -> None:
+        """Hold the number."""
+        self._number = number
+
+    def __int__(self) -> int:
+        """Return the number."""
+        return self._number
+
+
+numbers.Integral.register(Count)
+
+
 def records(**kinds: str) -> Records:
     """Return a `records` node declaring each member by its type."""
     members = (
@@ -364,7 +477,10 @@ def test_a_generator_is_read_once_in_order() -> None:
     assert [row["a"] for row in rows] == [0, 1, 2]
 
 
-@pytest.mark.parametrize("rows", ["text", {"a": 1}, 5])
+@pytest.mark.parametrize(
+    "rows",
+    ["text", {"a": 1}, 5, bytearray(b"[]"), memoryview(b"[]"), frozenset()],
+)
 def test_what_is_not_a_sequence_of_records_is_refused(rows: Any) -> None:
     with pytest.raises(BuildError) as refused:
         records_given(rows, None)
@@ -494,6 +610,115 @@ def test_a_value_that_contains_itself_is_refused() -> None:
     assert str(refused.value) == "record 0: member 'v': dict contains itself"
 
 
+def test_a_set_of_rows_is_refused_for_having_no_order() -> None:
+    with pytest.raises(BuildError) as refused:
+        records_given({Pair(1, "x")}, None)
+    assert str(refused.value) == (
+        "want a sequence of records, got set, which has no order"
+    )
+
+
+@pytest.mark.parametrize(
+    ("row", "want"),
+    [
+        (len, "builtin_function_or_method"),
+        (Order().total, "method"),
+        (ValueError("x"), "ValueError"),
+        (Expired(), "Expired, which holds no public attributes"),
+    ],
+)
+def test_what_has_no_fields_is_refused_rather_than_an_empty_record(
+    row: Any, want: str
+) -> None:
+    with pytest.raises(BuildError) as refused:
+        records_given([row], None)
+    message = str(refused.value)
+    assert message.startswith("record 0: want a mapping or an object, got ")
+    assert message.endswith(want)
+
+
+def test_a_method_the_program_forgot_to_call_is_refused() -> None:
+    with pytest.raises(BuildError) as refused:
+        one({"total": Order().total})
+    assert str(refused.value) == (
+        "record 0: member 'total': want a value a record can hold, got method"
+    )
+
+
+def test_a_dataclass_gives_what_it_holds_and_loads_nothing() -> None:
+    # A relationship that is not loaded is not in the entity's `__dict__`,
+    # and reading it by name would load it.
+    loaded = Rental(1, "ACADEMY DINOSAUR")
+    unloaded = Rental(2, "ACE GOLDFINGER")
+    del vars(unloaded)["film"]
+    rows = records_given([loaded, unloaded], None)
+    assert [dict(row) for row in rows] == [
+        {"number": 1, "film": "ACADEMY DINOSAUR"},
+        {"number": 2},
+    ]
+
+
+def test_a_field_a_dataclass_has_not_set_is_absent() -> None:
+    assert dict(one(Draft(1))) == {"number": 1}
+
+
+def test_an_object_with_slots_is_a_record_by_what_they_hold() -> None:
+    assert dict(one(Slotted(3))) == {"number": 3}
+    assert dict(one(Point(1, 2))) == {"x": 1, "y": 2}
+
+
+def test_an_error_reading_a_row_names_the_record() -> None:
+    with pytest.raises(BuildError) as refused:
+        records_given([{"number": 1}, Detached()], None)
+    want = "reading its fields raised RuntimeError: detached"
+    assert str(refused.value) == f"record 1: {want}"
+    assert isinstance(refused.value.__cause__, RuntimeError)
+    with pytest.raises(BuildError) as nested:
+        one({"film": Detached()})
+    assert str(nested.value) == f"record 0: member 'film': {want}"
+
+
+def test_a_datetime_outside_the_years_in_utc_is_refused() -> None:
+    # A sentinel that ends a validity range, in a zone west of UTC.
+    west = timezone(timedelta(hours=-5))
+    with pytest.raises(BuildError) as refused:
+        one({"valid_to": datetime(9999, 12, 31, 23, 59, tzinfo=west)})
+    assert str(refused.value) == (
+        "record 0: member 'valid_to': out of range: 9999-12-31T23:59:00-05:00"
+        " is outside the years 1 to 9999 in UTC"
+    )
+
+
+def nested(depth: int) -> list[Any]:
+    """Return lists nested `depth` deep."""
+    value: list[Any] = []
+    for _ in range(depth - 1):
+        value = [value]
+    return value
+
+
+def test_a_value_nests_a_hundred_deep_at_most() -> None:
+    assert isinstance(one({"v": nested(100)})["v"], FrozenList)
+    want = "record 0: member 'v': nested more than 100 deep"
+    for depth in (101, 3000):
+        with pytest.raises(BuildError) as refused:
+            one({"v": nested(depth)})
+        assert str(refused.value) == want
+
+
+def test_a_subclass_or_an_integer_of_another_type_is_the_type_itself() -> None:
+    row = one({"i": Cents(5), "f": Ratio(0.5), "s": Label("x"), "n": Count(7)})
+    assert [type(row[name]) for name in "ifsn"] == [int, float, str, int]
+    assert [row[name] for name in "ifsn"] == [5, 0.5, "x", 7]
+
+
+def test_a_duration_has_no_member_type_to_go_in() -> None:
+    with pytest.raises(BuildError) as refused:
+        one({"lag": timedelta(hours=1)}, records(lag="string"))
+    want = "no member type holds a duration; leave it undeclared"
+    assert str(refused.value) == f"record 0: member 'lag': {want}"
+
+
 def test_a_lone_surrogate_from_the_host_reads_as_u_fffd() -> None:
     row = one({"s\udfff": ["a\ud800b"]})
-    assert list(row["s�"]) == ["a�b"]
+    assert list(row["s\ufffd"]) == ["a\ufffdb"]
