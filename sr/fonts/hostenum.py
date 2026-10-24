@@ -68,12 +68,26 @@ A stock macOS has three files that can never be parsed and cannot be
 removed, which is the reason these are reported by `s-reports validate`
 and by the library's diagnostic hook rather than attached to every printout.
 
+**The table is kept for the life of the process.**  Building it parses
+every face the machine has, which is about three seconds on a stock
+Windows and nearly all of it character maps, and a library caller
+building one report after another would pay that on every one.
+:func:`host_catalog` keeps the last table it built, and before handing
+it out again checks a stamp: every file the sources offer, in the order
+they offer it, with its modification time and size.  That is a walk and
+a `stat` per file, about a hundredth of a second, and it changes when
+a font is installed, removed, renamed or rewritten.  A changed stamp is
+enumerated again from the start, so the table handed out is the one
+:func:`enumerate_faces` would build; caching it changes when the work is
+done and not what it finds.
+
 """
 
 from __future__ import annotations
 
 import os
 import sys
+import threading
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -96,6 +110,8 @@ __all__ = [
     "Source",
     "enumerate_faces",
     "fontconfig_monospace",
+    "forget_host_catalog",
+    "host_catalog",
     "host_sources",
     "relaxations",
     "substitute_candidates",
@@ -171,6 +187,11 @@ HEAD_BYTES = 12
 
 # A key in the table: the family lowercased, then the two style flags.
 Key = tuple[str, bool, bool]
+
+# What a kept table was built from, as :func:`stamp_of` spells it:
+# the working directory, then each file offered with its modification
+# time and size, or -1 for both where it would not stat.
+Stamp = tuple[str, tuple[tuple[str, int, int], ...]]
 
 
 @dataclass(frozen=True)
@@ -263,6 +284,18 @@ class Catalog:
     def families(self) -> tuple[str, ...]:
         """Return every family in the table, once each, in Unicode order."""
         return tuple(sorted({one.family for one in self.entries.values()}))
+
+    def copy(self) -> Catalog:
+        """Return a table that can be added to without changing this one.
+
+        The entries are frozen and are shared; the three containers are not.
+
+        """
+        return Catalog(
+            dict(self.entries),
+            list(self.diagnostics),
+            dict(self.files),
+        )
 
     def admit(self, entry: Entry) -> None:
         """Add a face to the table, or record that it lost its key.
@@ -735,3 +768,85 @@ def peek(path: Path, count: int) -> bytes | None:
         raise FontError(
             f"cannot read {near(path).as_posix()}: {refused.strerror or refused}"
         ) from None
+
+
+# -- keeping the table ------------------------------------------------
+
+# The last table :func:`host_catalog` built, under the sources it was
+# built from, with the stamp they had.  One entry at most: a process
+# has one host, and only a test asks for another platform's sources.
+HELD: dict[tuple[Source, ...], tuple[Stamp, Catalog]] = {}
+
+# Taken around enumerating, so that builds starting together on two
+# threads enumerate once between them rather than once each.
+HOLDING = threading.Lock()
+
+
+def host_catalog(sources: tuple[Source, ...]) -> Catalog:
+    """Return the table the sources hold, enumerating only what changed.
+
+    The answer is :func:`enumerate_faces`'s for the same sources, and
+    is computed by it whenever the sources' stamp differs from the one
+    the kept table was built under.  What comes back is a copy, so a
+    caller that adds a diagnostic to it adds it to its own build only.
+
+    Args:
+        sources: Where to look, in the order that decides which
+            of two faces claiming one key is used.
+
+    """
+    # Stamped before enumerating rather than after, so that a font
+    # installed while the table is being built leaves a stamp the
+    # next call does not match, and is read then rather than never.
+    stamp = stamp_of(sources)
+    with HOLDING:
+        held = HELD.get(sources)
+        if held is None or held[0] != stamp:
+            HELD.clear()
+            held = (stamp, enumerate_faces(sources))
+            HELD[sources] = held
+    return held[1].copy()
+
+
+def forget_host_catalog() -> None:
+    """Drop the kept table, so that the next lookup enumerates the host.
+
+    The stamp misses one change: a file rewritten in place
+    with its size kept and its modification time set back.
+    This is what a caller that does that asks for instead.
+
+    """
+    with HOLDING:
+        HELD.clear()
+
+
+def stamp_of(sources: tuple[Source, ...]) -> Stamp:
+    """Return what enumerating the sources would read, short of reading it.
+
+    Every file :func:`enumerate_faces` would be offered, in the order
+    it would be offered them, so the stamp is walked by the same code
+    and differs whenever the walk does.  A link is stamped as what it
+    points at, which is what is read through it.
+
+    The working directory is part of it, because an enumeration
+    diagnostic names a file relative to it: a table kept from another
+    directory would find the same faces and describe them wrongly.
+
+    Args:
+        sources: Where to look.
+
+    """
+    try:
+        here = os.getcwd()
+    except OSError:
+        here = ""
+    files: list[tuple[str, int, int]] = []
+    for source in sources:
+        for path in files_of(source):
+            try:
+                found = path.stat()
+            except OSError:
+                files.append((str(path), -1, -1))
+                continue
+            files.append((str(path), found.st_mtime_ns, found.st_size))
+    return (here, tuple(files))

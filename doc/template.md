@@ -1966,6 +1966,18 @@ Neither is decided from the filename extension. Filtering on `.ttf`/`.ttc`/`.otf
 would satisfy this rule by accident while hiding real faces, which is the defect
 it exists to prevent.
 
+**The table may be kept between builds.** Building it parses every face
+the machine has, which takes seconds, and its answer changes only when
+a font does. A process that builds one report after another may keep
+the table and enumerate once, provided what it hands out is the table
+enumeration would build now. This engine checks that before every build
+that needs the table: every file the sources offer, in the order they
+offer it, by name, modification time and size. Any difference, including
+a font installed or removed, and the table is enumerated again from the start.
+The one change the check cannot see is a file rewritten in place with its size
+kept and its modification time set back; a library caller that does that asks
+for the kept table to be forgotten.
+
 **Enumeration diagnostics are not report warnings.** They describe the machine,
 not the document, so they do not enter the [printout's warning
 list](printout.md#header-line) and are surfaced by `s-reports validate`

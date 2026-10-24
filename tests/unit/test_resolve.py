@@ -243,6 +243,24 @@ def test_the_host_is_enumerated_once_a_typeface_needs_it(
     assert resolver.catalog is not None
 
 
+def test_two_builds_enumerate_the_host_once_between_them(
+    font_directory: Path,
+    enumerations: list[tuple[Source, ...]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # One resolver per build, as `sr.api.build` makes them.  The second
+    # is handed the table the first one's enumeration built, and resolves
+    # to the same face from it.
+    monkeypatch.setattr(
+        "sr.fonts.resolve.host_sources",
+        lambda platform: (Source(directory=font_directory),),
+    )
+    first = Resolver().resolve(font(typeface="Go", bold=True))
+    again = Resolver().resolve(font(typeface="Go", bold=True))
+    assert len(enumerations) == 1
+    assert (again.step, again.origin) == (first.step, first.origin)
+
+
 # -- step 3, the aliases ----------------------------------------------
 
 

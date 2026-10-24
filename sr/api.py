@@ -83,7 +83,10 @@ class Result:
             the document that was written rather than about
             the one that was read, and belongs on standard error.
         diagnostics: What enumerating the host's fonts had to say,
-            under ``verbose`` and only where enumeration happened at all.
+            under ``verbose`` and only where the build looked a typeface
+            up on the host at all.  They are the same on every build
+            the process runs until a font on the machine changes,
+            since the table they come with is kept between builds.
 
     """
 
