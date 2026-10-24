@@ -200,4 +200,4 @@ Only the version the reference reports is replaced, and only by the one
 this engine reports, so a header that disagrees with its own
 engine's `version` still fails. A recorded answer writes the version
 as `<version>`, for the same reason and only where it is the version
-the reference reports..
+the reference reports.
