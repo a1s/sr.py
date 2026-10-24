@@ -14,6 +14,11 @@ A CBOR printout holds the same records, so it is decoded and reported
 the same way.  Where the records are equal and the bytes are not,
 the difference is in the encoding, and the bytes around it are shown.
 
+Each engine stamps the header with its own version, and the two trees
+raise theirs independently.  :func:`restamped` gives one engine's
+output the other's version before the bytes are compared,
+so that starting work on a version is not a difference.
+
 """
 
 from __future__ import annotations
@@ -23,9 +28,11 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from sr.printout.inspect import cbor_records
+import cbor2
 
-__all__ = ["Comparison", "compare_printouts", "first_difference"]
+from sr.printout.inspect import cbor_item, cbor_records
+
+__all__ = ["Comparison", "compare_printouts", "first_difference", "restamped"]
 
 # How much of a systemic disagreement to show.  A difference in an early
 # coordinate moves everything after it, so the whole page differs and
@@ -42,6 +49,9 @@ MAX_VALUE_CHARS = 140
 MAX_MARK_DEPTH = 4
 
 HEX_CONTEXT = 32
+
+# The major type of a CBOR map, which is what a CBOR printout opens with.
+CBOR_MAP = 5
 
 
 @dataclass(frozen=True)
@@ -417,3 +427,46 @@ def compare_printouts(
         lines.append(f"  {right_name}:")
         lines.append("  " + hexdump_window(right, offset))
     return Comparison(False, "\n".join(lines))
+
+
+def restamped(output: bytes, theirs: str, ours: str) -> bytes:
+    """Return what one engine wrote, stamped with the other engine's version.
+
+    An engine writes its version in two places: the line its `version`
+    command prints, and the `engine` field of a printout's header,
+    which doc/cli.md#sr-version makes the same string.  Each tree
+    raises its version when work on the next one starts, so for a while
+    the two write different strings there while agreeing on everything
+    else.  Putting ``ours`` where ``theirs`` was leaves the name
+    and every other byte to the comparison.
+
+    Only those two places are touched, and only where they hold
+    ``theirs`` exactly.  A header that says anything else is left
+    as it is, and the comparison shows the field.
+
+    Args:
+        output: What an engine wrote: a printout in either encoding,
+            what its `version` command printed, or anything else,
+            which is returned as it was.
+        theirs: The version the engine that wrote ``output`` reports.
+        ours: The version to stamp in its place.
+
+    """
+    if output.rstrip(b"\r\n") == theirs.encode():
+        return ours.encode() + output[len(theirs.encode()) :]
+    if output.startswith(b"{"):
+        header, newline, rest = output.partition(b"\n")
+        rest = newline + rest
+        old = b'"engine":' + json.dumps(theirs).encode()
+        new = b'"engine":' + json.dumps(ours).encode()
+    elif output and output[0] >> 5 == CBOR_MAP:
+        try:
+            _, end = cbor_item(output, 0, 0)
+        except ValueError:
+            return output
+        header, rest = output[:end], output[end:]
+        old = cbor2.dumps("engine") + cbor2.dumps(theirs)
+        new = cbor2.dumps("engine") + cbor2.dumps(ours)
+    else:
+        return output
+    return header.replace(old, new, 1) + rest

@@ -19,6 +19,9 @@ RELEASE = re.compile(
     r"^## \[([^\]]+)\](?: - (\d{4}-\d{2}-\d{2}))?[ \t]*$", flags=re.MULTILINE
 )
 
+# A release number, which `## [Unreleased]` is not.
+NUMBER = re.compile(r"\d+\.\d+\.\d+")
+
 
 def released() -> dict[str, str]:
     """Return the date of each release CHANGELOG.md records, by version."""
@@ -26,14 +29,33 @@ def released() -> dict[str, str]:
     return dict(RELEASE.findall(changelog))
 
 
+def numbered(version: str) -> tuple[int, ...]:
+    """Return a release number as its parts, which order as releases do."""
+    return tuple(int(part) for part in version.split("."))
+
+
 def test_the_version_is_a_release_number() -> None:
-    assert re.fullmatch(r"\d+\.\d+\.\d+", meta.VERSION)
+    assert NUMBER.fullmatch(meta.VERSION)
 
 
 def test_the_version_matches_the_changelog() -> None:
-    releases = released()
+    """The version is one the changelog records, or one after all of them.
+
+    Work on a version starts by raising sr.meta.VERSION
+    past the last release, and the changelog records it
+    only once it is released.  A version that is neither
+    is one the changelog has never heard of.
+
+    """
+    releases = [one for one in released() if NUMBER.fullmatch(one)]
     assert releases, "CHANGELOG.md records no release"
-    assert meta.VERSION in releases
+    if meta.VERSION in releases:
+        return
+    latest = max(releases, key=numbered)
+    assert numbered(meta.VERSION) > numbered(latest), (
+        f"sr.meta.VERSION is {meta.VERSION}, which CHANGELOG.md does not "
+        f"record, and which does not follow its latest release, {latest}"
+    )
 
 
 def test_the_date_matches_the_changelog() -> None:
@@ -42,9 +64,14 @@ def test_the_date_matches_the_changelog() -> None:
     The release workflow refuses a tag whose two dates differ.
     Checked here too, so that a mismatch fails the pull request
     rather than the tag, which would then have to be cut again.
+    A version still in development has no date in the changelog,
+    so there is nothing to hold it to until it is released.
 
     """
-    assert released().get(meta.VERSION) == meta.DATE.isoformat()
+    releases = released()
+    if meta.VERSION not in releases:
+        pytest.skip(f"{meta.VERSION} is not released yet")
+    assert releases[meta.VERSION] == meta.DATE.isoformat()
 
 
 def test_the_distribution_takes_its_version_from_here() -> None:

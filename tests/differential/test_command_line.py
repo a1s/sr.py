@@ -10,6 +10,10 @@ Standard error is otherwise not compared, because it carries the
 engine's own diagnostics, worded as each engine words them.  The
 summary line is the exception, since doc/cli.md#sr-build spells it.
 
+What the reference writes is stamped with this engine's version
+in place of its own before it is compared, for the reason
+:func:`~tests.differential.diff.restamped` gives.
+
 A line the divergence register names is expected to differ,
 and fails once it does not, as a probe does.
 
@@ -24,6 +28,7 @@ import pytest
 
 from tests.differential.cases import BUILD_TIME
 from tests.differential.command_lines import CommandLine, command_lines
+from tests.differential.diff import restamped
 from tests.differential.engines import Engine
 from tests.differential.register import Register
 from tests.differential.runs import Outcome, run_local, run_reference
@@ -84,6 +89,7 @@ def renumbered(source: Path, target: Path) -> Path:
 def test_command_lines_agree(
     command: CommandLine,
     oracle: Engine,
+    local: Engine,
     printouts: dict[str, Path],
     tmp_path: Path,
     register: Register,
@@ -96,7 +102,12 @@ def test_command_lines_agree(
     ours_out.mkdir()
     theirs = run_reference(oracle, command.arguments(theirs_out, printouts), stdin)
     ours = run_local(command.arguments(ours_out, printouts), stdin)
-    found = differences(command, (theirs, theirs_out), (ours, ours_out))
+    found = differences(
+        command,
+        (theirs, theirs_out),
+        (ours, ours_out),
+        (oracle.version, local.version),
+    )
     judged(command.ident, found, register, pending)
 
 
@@ -104,6 +115,7 @@ def differences(
     command: CommandLine,
     theirs: tuple[Outcome, Path],
     ours: tuple[Outcome, Path],
+    versions: tuple[str, str],
 ) -> list[str]:
     """Return how two runs of one command line differ, one line each.
 
@@ -111,6 +123,8 @@ def differences(
         command: The command line.
         theirs: What the reference did, and the directory it wrote into.
         ours: What this engine did, and the directory it wrote into.
+        versions: The version each engine reports,
+            the reference's and then this engine's.
 
     """
     (left, left_out), (right, right_out) = theirs, ours
@@ -120,14 +134,16 @@ def differences(
         found.extend(f"  reference: {one}" for one in left.stderr.splitlines())
         found.extend(f"  here: {one}" for one in right.stderr.splitlines())
     if command.output:
-        found.extend(output_differences(left.stdout, right.stdout))
+        stdout = restamped(left.stdout, *versions)
+        found.extend(output_differences(stdout, right.stdout))
     left_files = sorted(one.name for one in left_out.iterdir())
     right_files = sorted(one.name for one in right_out.iterdir())
     if left_files != right_files:
         found.append(f"  files written: {left_files} there, {right_files} here")
     elif command.files:
         for name in left_files:
-            if (left_out / name).read_bytes() != (right_out / name).read_bytes():
+            written = restamped((left_out / name).read_bytes(), *versions)
+            if written != (right_out / name).read_bytes():
                 found.append(f"  {name} differs")
     if left.code == right.code == 0 and command.argv[0] in SUMMARIZED:
         said = summary_line(left, left_out), summary_line(right, right_out)

@@ -18,6 +18,7 @@ from tests.differential.diff import (
     MAX_RECORDS_SHOWN,
     compare_printouts,
     first_difference,
+    restamped,
 )
 
 
@@ -260,3 +261,37 @@ def test_the_engine_names_reach_the_report() -> None:
     report = compare_printouts(left, right, "go", "python").report
     assert "go: " in report
     assert "python: " in report
+
+
+def test_a_header_is_restamped_and_a_page_is_not() -> None:
+    """A page that prints the version keeps it: it is content there."""
+    printed = page(text_mark("sr 0.1.0"))
+    printout = ndjson(HEADER, printed)
+    assert restamped(printout, "sr 0.1.0", "sr 0.1.1") == ndjson(
+        dict(HEADER, engine="sr 0.1.1"), printed
+    )
+
+
+def test_a_cbor_header_is_restamped_with_its_length() -> None:
+    """A version one character longer is a text string one byte longer."""
+    printed = cbor2.dumps(page(text_mark("one")))
+    printout = cbor2.dumps(dict(HEADER, engine="sr 0.1.9")) + printed
+    assert restamped(printout, "sr 0.1.9", "sr 0.1.10") == (
+        cbor2.dumps(dict(HEADER, engine="sr 0.1.10")) + printed
+    )
+
+
+def test_the_version_line_is_restamped_with_its_line_ending() -> None:
+    assert restamped(b"sr 0.1.0\n", "sr 0.1.0", "sr 0.1.1") == b"sr 0.1.1\n"
+    assert restamped(b"sr 0.1.0\r\n", "sr 0.1.0", "sr 0.1.1") == b"sr 0.1.1\r\n"
+
+
+def test_a_header_with_another_version_is_left_as_it_is() -> None:
+    """Only what the engine reports is replaced, so a stray stamp shows."""
+    printout = ndjson(dict(HEADER, engine="sr 0.0.9"), page())
+    assert restamped(printout, "sr 0.1.0", "sr 0.1.1") == printout
+
+
+def test_what_is_not_a_printout_is_left_as_it_is() -> None:
+    for output in (b"", b"%PDF-1.7\n", b'printout 1 engine "sr 0.1.0"\n'):
+        assert restamped(output, "sr 0.1.0", "sr 0.1.1") == output

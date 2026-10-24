@@ -5,6 +5,8 @@ into one directory, and the two printouts are compared.  A case the
 divergence register covers is allowed to differ, and is required to.
 One field of the reference's is dropped before the comparison, the `type`
 of an image mark, for the reason :func:`without_image_types` gives.
+Its header is stamped with this engine's version in place of its own,
+for the reason :func:`~tests.differential.diff.restamped` gives.
 
 This engine's printout is also read back from the file it wrote and
 held to the twelve [invariants](doc/printout.md#invariants), which is
@@ -26,7 +28,7 @@ from sr.printout.inspect import read_printout
 from sr.printout.verify import violations
 from tests.differential.answers import answer_path, distil
 from tests.differential.cases import ROOT, Case, corpus, probe_cases
-from tests.differential.diff import compare_printouts
+from tests.differential.diff import compare_printouts, restamped
 from tests.differential.engines import Build, BuildFailed, Engine, run
 from tests.differential.register import Divergence, Register
 
@@ -153,8 +155,9 @@ def judge(
     broken = violations(read_printout(local_build.path))
     assert not broken, f"{case.ident}: the printout breaks " + "; ".join(broken)
 
+    theirs = restamped(reference_build.printout, oracle.version, local.version)
     comparison = compare_printouts(
-        strip(reference_build.printout),
+        strip(theirs),
         local_build.printout,
         left_name=oracle.name,
         right_name=local.name,
