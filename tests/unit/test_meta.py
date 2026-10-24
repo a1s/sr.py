@@ -2,36 +2,24 @@
 
 from __future__ import annotations
 
-import re
 from importlib.metadata import PackageNotFoundError, distribution, version
-from pathlib import Path
 
 import pytest
 
 from sr import cli, meta
+from tests.changelog import NUMBER, headings, latest, numbered
 
-ROOT = Path(__file__).resolve().parents[2]
 DISTRIBUTION = "s-reports"
 
-# `## [0.1.0] - 2026-10-18`, or `## [Unreleased]` with no date,
-# as .github/scripts/changelog.py reads a release heading.
-RELEASE = re.compile(
-    r"^## \[([^\]]+)\](?: - (\d{4}-\d{2}-\d{2}))?[ \t]*$", flags=re.MULTILINE
-)
 
-# A release number, which `## [Unreleased]` is not.
-NUMBER = re.compile(r"\d+\.\d+\.\d+")
-
-
-def released() -> dict[str, str]:
-    """Return the date of each release CHANGELOG.md records, by version."""
-    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    return dict(RELEASE.findall(changelog))
-
-
-def numbered(version: str) -> tuple[int, ...]:
-    """Return a release number as its parts, which order as releases do."""
-    return tuple(int(part) for part in version.split("."))
+def following(release: str) -> list[str]:
+    """Return the versions that can come next: a patch, a minor, a major."""
+    major, minor, patch = numbered(release)
+    return [
+        f"{major}.{minor}.{patch + 1}",
+        f"{major}.{minor + 1}.0",
+        f"{major + 1}.0.0",
+    ]
 
 
 def test_the_version_is_a_release_number() -> None:
@@ -39,22 +27,20 @@ def test_the_version_is_a_release_number() -> None:
 
 
 def test_the_version_matches_the_changelog() -> None:
-    """The version is one the changelog records, or one after all of them.
+    """The version is the latest release, or the one that follows it.
 
     Work on a version starts by raising sr.meta.VERSION
-    past the last release, and the changelog records it
-    only once it is released.  A version that is neither
-    is one the changelog has never heard of.
+    one step past the latest release, and the changelog dates it
+    only once it is released.  A larger step skips a version,
+    which is more likely a typing slip than a decision.
 
     """
-    releases = [one for one in released() if NUMBER.fullmatch(one)]
-    assert releases, "CHANGELOG.md records no release"
-    if meta.VERSION in releases:
-        return
-    latest = max(releases, key=numbered)
-    assert numbered(meta.VERSION) > numbered(latest), (
-        f"sr.meta.VERSION is {meta.VERSION}, which CHANGELOG.md does not "
-        f"record, and which does not follow its latest release, {latest}"
+    release = latest()
+    allowed = [release, *following(release)]
+    choices = ", ".join(allowed)
+    assert meta.VERSION in allowed, (
+        f"sr.meta.VERSION is {meta.VERSION}, and the latest release "
+        f"CHANGELOG.md dates is {release}, so it should be one of {choices}"
     )
 
 
@@ -64,14 +50,26 @@ def test_the_date_matches_the_changelog() -> None:
     The release workflow refuses a tag whose two dates differ.
     Checked here too, so that a mismatch fails the pull request
     rather than the tag, which would then have to be cut again.
-    A version still in development has no date in the changelog,
-    so there is nothing to hold it to until it is released.
+
+    A version in development has no date in the changelog yet,
+    and sr.meta.DATE still names the latest release.  A release
+    sets the two dates together, so a new date with no date
+    in the changelog is a release that left its section out.
 
     """
-    releases = released()
-    if meta.VERSION not in releases:
-        pytest.skip(f"{meta.VERSION} is not released yet")
-    assert releases[meta.VERSION] == meta.DATE.isoformat()
+    dated = headings().get(meta.VERSION)
+    if dated:
+        assert dated == meta.DATE.isoformat(), (
+            f"CHANGELOG.md dates {meta.VERSION} {dated}, "
+            f"and sr.meta.DATE says {meta.DATE}"
+        )
+        return
+    release = latest()
+    assert headings()[release] == meta.DATE.isoformat(), (
+        f"sr.meta.DATE is {meta.DATE}, and CHANGELOG.md dates no "
+        f"{meta.VERSION}: until it does, the date stays that of "
+        f"{release}, {headings()[release]}"
+    )
 
 
 def test_the_distribution_takes_its_version_from_here() -> None:

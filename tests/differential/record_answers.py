@@ -46,7 +46,11 @@ def main() -> int:
                 refused += 1
                 continue
             destination.write_text(
-                distil(build.printout.decode("utf-8"), case.host_fonts),
+                distil(
+                    build.printout.decode("utf-8"),
+                    oracle.version,
+                    case.host_fonts,
+                ),
                 encoding="utf-8",
                 newline="\n",
             )

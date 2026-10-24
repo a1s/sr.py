@@ -192,8 +192,12 @@ Between releases the two strings need not agree.  Each tree raises
 its version when work on the next one starts, and the two trees do that
 on their own schedules. So the comparison holds the name and not the version.
 Before the reference's output is compared, its version is replaced
-with this engine's, in the two places an engine writes it: the header's
-`engine`, and the line `version` prints. Only the version the reference
-reports is replaced, and only by the one this engine reports,
-so a header that disagrees with its own engine's `version` still fails.
-A recorded answer writes the version as `<version>`, for the same reason.
+with this engine's, in the two places the comparison reads bytes:
+the header's `engine`, and the line `version` prints. A PDF carries
+the version too, as `Creator` and `Producer`, but a PDF is compared
+by its pixels, for the reason [Renders](#renders) gives.
+Only the version the reference reports is replaced, and only by the one
+this engine reports, so a header that disagrees with its own
+engine's `version` still fails. A recorded answer writes the version
+as `<version>`, for the same reason and only where it is the version
+the reference reports..

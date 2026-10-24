@@ -26,6 +26,7 @@ from pathlib import Path
 
 import pytest
 
+from sr import meta
 from tests.differential.cases import BUILD_TIME
 from tests.differential.command_lines import CommandLine, command_lines
 from tests.differential.diff import restamped
@@ -89,7 +90,6 @@ def renumbered(source: Path, target: Path) -> Path:
 def test_command_lines_agree(
     command: CommandLine,
     oracle: Engine,
-    local: Engine,
     printouts: dict[str, Path],
     tmp_path: Path,
     register: Register,
@@ -102,11 +102,12 @@ def test_command_lines_agree(
     ours_out.mkdir()
     theirs = run_reference(oracle, command.arguments(theirs_out, printouts), stdin)
     ours = run_local(command.arguments(ours_out, printouts), stdin)
+    # This engine runs in this process, so its version is the one imported.
     found = differences(
         command,
         (theirs, theirs_out),
         (ours, ours_out),
-        (oracle.version, local.version),
+        (oracle.version, meta.engine()),
     )
     judged(command.ident, found, register, pending)
 

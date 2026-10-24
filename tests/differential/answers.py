@@ -14,11 +14,14 @@ which is a temporary directory.  The first is replaced outright;
 the second keeps its base name, since a probe that reads several images
 is read by which file went where.  The version in the header's `engine`
 is the reference's own, which it raises when work on its next version
-starts.  It is written ``<version>``, and the name before it is kept.
-Everything else is kept verbatim, including the spelling of every number --
-``0`` against ``0.0``, and an exponent against a written-out fraction,
-are exactly the kind of difference a probe is here to catch, and
-parsing the JSON would throw them away.
+starts.  It is written ``<version>``, and the name before it is kept,
+but only where it is the version the reference reports: a header
+that disagrees with the reference's `version` keeps what it says,
+and differs from the answer.  Everything else is kept verbatim,
+including the spelling of every number -- ``0`` against ``0.0``,
+and an exponent against a written-out fraction, are exactly the
+kind of difference a probe is here to catch, and parsing the JSON
+would throw them away.
 
 A probe built with ``!host-fonts`` has one more part that is a property
 of the machine rather than of the build: which face the host offered as
@@ -36,6 +39,8 @@ import json
 import re
 from pathlib import Path
 
+from tests.differential.diff import restamped
+
 __all__ = ["ANSWER_SUFFIX", "answer_path", "distil"]
 
 # Beside ``NAME.kdl``, its recorded answer.
@@ -49,9 +54,6 @@ RESOLVED_FILE = re.compile(r'("resolvedFile":)"(?:[^"\\]|\\.)*"')
 # a key spelled exactly so; its base name, after the last ``/``, is kept.
 IMAGE_FILE = re.compile(r'("file":)"(?:[^"\\]|\\.)*?((?:[^"\\/]|\\.)*)"')
 
-# The version after the engine's name, the header's first `engine` key.
-ENGINE_VERSION = re.compile(r'("engine":"[^" ]*) [^"]*"')
-
 # What the version is written as in a recorded answer.
 VERSION = "<version>"
 
@@ -62,7 +64,7 @@ RESOLVED_INDEX = re.compile(r'"resolvedIndex":[0-9]+,')
 SUBSTITUTE = "<substitute>"
 
 
-def distil(printout: str, host_fonts: bool = False) -> str:
+def distil(printout: str, version: str, host_fonts: bool = False) -> str:
     """Return the comparable part of a printout, as text.
 
     The substitution is deliberately textual.  Reading the JSON
@@ -72,14 +74,17 @@ def distil(printout: str, host_fonts: bool = False) -> str:
 
     Args:
         printout: The printout, as written.
+        version: What the engine that wrote it reports as its version,
+            a name and a number, which is what its header should say.
         host_fonts: Whether the probe resolved fonts on the host,
             so that the substitute face's name is the machine's
             rather than the build's.
 
     """
-    normalised = RESOLVED_FILE.sub(r'\1"<resolved>"', printout)
+    name = version.rpartition(" ")[0]
+    stamped = restamped(printout.encode("utf-8"), version, f"{name} {VERSION}")
+    normalised = RESOLVED_FILE.sub(r'\1"<resolved>"', stamped.decode("utf-8"))
     normalised = IMAGE_FILE.sub(r'\1"<resolved>/\2"', normalised)
-    normalised = ENGINE_VERSION.sub(rf'\1 {VERSION}"', normalised, count=1)
     if host_fonts:
         normalised = anonymised(normalised)
     return normalised.replace("\r\n", "\n").rstrip("\n") + "\n"

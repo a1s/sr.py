@@ -258,11 +258,17 @@ already say, and would put them out of step with the rest.
 
 ### The `engine` field
 
-Two implementations of this specification write the **same** string, because
-the field names the engine the specification describes rather than the program
-that ran. That is what lets the goal be stated as it is: the same template
-over the same data with `--build-time` fixed and `--strict-fonts` set gives
-byte-identical printouts, from any implementation and on any machine.
+Two implementations of one release of this specification write the **same**
+string, because the field names the engine the specification describes
+rather than the program that ran. That is what lets the goal be stated
+as it is: the same template over the same data with `--build-time` fixed and
+`--strict-fonts` set gives byte-identical printouts, from any implementation
+of that release and on any machine.
+
+Between releases the version is the one being worked on.
+An implementation raises it when work on the next release starts,
+and each does that on its own schedule, so for a while two implementations
+can write different versions after the same name.
 
 The cost is real and is worth stating: a printout does not record which
 implementation produced it. What it records is which *version of the format
