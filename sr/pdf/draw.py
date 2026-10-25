@@ -32,6 +32,7 @@ it paints with, and a clip or a matrix is undone before it ends.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 
 from sr.fonts.text import BREAK, Metrics, chunks
 from sr.pdf.images import Picture
@@ -70,6 +71,10 @@ DASHES = {
 # for the curve to approximate a quarter circle of unit radius.
 KAPPA = 0.5522847498307936
 
+# How many colours :func:`colour` keeps written.  A document uses
+# a handful, and every mark it draws asks for one of them again.
+COLOURS_KEPT = 256
+
 
 @dataclass(frozen=True)
 class Setting:
@@ -104,6 +109,7 @@ class Setting:
         return Box(start, base + down, width, thick)
 
 
+@lru_cache(maxsize=COLOURS_KEPT)
 def colour(text: str) -> str:
     """Return a ``#RRGGBB`` colour as the three operands of `rg` or `RG`.
 

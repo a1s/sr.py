@@ -12,6 +12,8 @@ writes one does not build.
 from __future__ import annotations
 
 import math
+import random
+import sys
 
 import pytest
 
@@ -72,6 +74,32 @@ def test_a_coordinate_on_the_half_goes_away_from_zero() -> None:
 def test_rounding_never_produces_a_negative_zero() -> None:
     """-0 and 0 compare equal, so only one of them may reach a printout."""
     assert not math.copysign(1, round_points(-0.0004)) < 0
+
+
+def written_out(value: float) -> float:
+    """Return a value rounded as the rule writes it, with no shortcut."""
+    return round_half_away(value * 1000.0) / 1000.0 + 0.0
+
+
+def test_the_shortcut_rounds_as_the_rule_does() -> None:
+    """`round_points` skips `modf` in the common case, and must not differ.
+
+    Random lengths, random exact halves, the cases above, and the edges
+    of the shortcut: either side of where it hands over, the infinities,
+    and the largest doubles.  The sign of a zero is compared too.
+
+    """
+    chosen = random.Random(1)
+    values = [chosen.uniform(-1e6, 1e6) for _ in range(20000)]
+    values += [chosen.randrange(-(10**9), 10**9) / 2000 for _ in range(20000)]
+    values += [0.0, -0.0, -0.0004, 0.0005, -0.0005, 0.1235, 0.49999999999999994]
+    values += [1e12 - 0.0005, -1e12 + 0.0005, 1e12, -1e12, 999999999999.9995]
+    values += [1e300, -1e300, math.inf, -math.inf, sys.float_info.max]
+    for value in values:
+        found, wanted = round_points(value), written_out(value)
+        assert found == wanted, value
+        assert math.copysign(1, found) == math.copysign(1, wanted), value
+    assert math.isnan(round_points(math.nan))
 
 
 def test_a_band_that_matches_the_space_exactly_fits() -> None:

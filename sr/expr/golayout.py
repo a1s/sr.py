@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timedelta, timezone, tzinfo
+from functools import lru_cache
 
 from sr.errors import ExpressionError
 
@@ -164,7 +165,12 @@ UTC_NAMES = frozenset({"UTC", "GMT", "UT", "Z"})
 
 LETTERS = re.compile(r"[A-Za-z]+")
 
+# How many layouts :func:`split_layout` keeps split.  A report uses
+# a handful, and reads or writes a time with one of them per value.
+LAYOUTS_KEPT = 256
 
+
+@lru_cache(maxsize=LAYOUTS_KEPT)
 def split_layout(layout: str) -> tuple[tuple[str, str], ...]:
     """Return a layout as a run of chunks, each a token or literal text.
 

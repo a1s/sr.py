@@ -19,7 +19,7 @@ import pytest
 from sr.api import Options, build
 from sr.errors import BuildError
 from sr.layout.frame import Frame
-from sr.layout.loop import Keys
+from sr.layout.loop import Builder, Keys
 from sr.layout.measure import Extent, Measurement, Measurer
 from sr.layout.place import choose, is_cut, is_legal, split
 from sr.printout.model import Box, Page, Printout, Rectangle, Text
@@ -1297,6 +1297,168 @@ def test_mintailrows_measures_only_the_tail(
         members=GROUP,
     )
     assert measured < 50
+
+
+def lookaheads(monkeypatch: pytest.MonkeyPatch) -> list[bool]:
+    """Return what each lookahead the build runs says of its measuring."""
+    seen: list[bool] = []
+    original = Builder.lookahead
+
+    def watched(
+        self: Builder, cap: float, rows: int | None, *, measuring: bool = True
+    ) -> Any:
+        seen.append(measuring)
+        return original(self, cap, rows, measuring=measuring)
+
+    monkeypatch.setattr(Builder, "lookahead", watched)
+    return seen
+
+
+def tails(tail: int, shape: str) -> tuple[str, list[dict[str, Any]], str]:
+    """Return the bands, the records, and the members of a tail test.
+
+    Args:
+        tail: The group's ``mintailrows``.
+        shape: ``flat`` for long runs of one group, ``short`` for runs
+            shorter than the tail, ``nested`` for runs of a group inside.
+
+    """
+    if shape == "nested":
+        rows = [{"a": 1, "b": 1}] * 4 + [{"a": 1, "b": 2}, {"a": 2, "b": 1}]
+        rows += [{"a": 3, "b": 1}] * 3 + [{"a": 3, "b": 2}] * 4
+        return title(30) + two_levels(f"mintailrows={tail}"), rows, NESTED
+    keys: tuple[int, ...] = (1,) * 9 + (2,) * 2 + (3,) + (4,) * 6
+    if shape == "short":
+        keys = (1, 2, 2, 3, 4, 4, 5, 5, 5, 6)
+    bands = group(
+        band("summary", shown("S"), "height=10"),
+        band("detail", said("'r%d' % ITEM_NUMBER"), "height=10"),
+        props=f"mintailrows={tail}",
+    )
+    return bands, keyed(*keys), GROUP
+
+
+@pytest.mark.parametrize("tail", [1, 2, 3])
+@pytest.mark.parametrize("shape", ["flat", "short", "nested"])
+def test_the_rows_left_are_counted_from_the_keys_as_a_lookahead_counts_them(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tail: int, shape: str
+) -> None:
+    """A group keyed on its record alone counts its tail with no lookahead.
+
+    The same build, with every key taken as one the report could move,
+    counts the rows with a lookahead instead, and places every band
+    where the first build did.
+
+    """
+    bands, rows, members = tails(tail, shape)
+    seen = lookaheads(monkeypatch)
+    counted = built(tmp_path, bands, rows, members=members)
+    assert False not in seen
+    seen.clear()
+    monkeypatch.setattr(Builder, "fixed", lambda self, run, variables: False)
+    looked = built(tmp_path, bands, rows, members=members)
+    assert False in seen
+    assert looked == counted
+
+
+def keyed_on(expr: str, printwhen: str | None = None) -> str:
+    """Return group "A", keyed on an expression, with a detail and a summary.
+
+    Args:
+        expr: The group's key, with no double quotes in it.
+        printwhen: The detail's ``printwhen``, where it has one.
+
+    """
+    detail = band(
+        "detail",
+        shown("d"),
+        "height=10" + (f' printwhen="{printwhen}"' if printwhen else ""),
+    )
+    inner = "".join("  " + one for one in (band("summary", shown("S")), detail))
+    return f'    group "A" expr="{expr}" {{\n{inner}    }}\n'
+
+
+def test_no_key_is_kept_past_its_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The record loop drops each record's keys once it has passed it."""
+    behind: list[int] = []
+    original = Builder.row
+
+    def watched(self: Builder, index: int, record: Any, keyed: Any = None) -> None:
+        if self.ahead is None:
+            assert self.keyed is not None
+            behind.extend(one for one in self.keyed if one < index)
+        original(self, index, record, keyed)
+
+    monkeypatch.setattr(Builder, "row", watched)
+    bands, rows, members = tails(2, "flat")
+    built(tmp_path, bands, rows, members=members)
+    assert behind == []
+
+
+@pytest.mark.parametrize(
+    ("expr", "printwhen"),
+    [("a", "a > 0"), ("(a, total != 0)", None), ("a + 0 * PAGE_NUMBER", None)],
+    ids=["detail-printwhen", "variable", "counter"],
+)
+def test_the_rows_left_are_counted_by_a_lookahead_where_keys_cannot_tell(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    expr: str,
+    printwhen: str | None,
+) -> None:
+    """A detail that may not print, or a key the report moves, needs one."""
+    seen = lookaheads(monkeypatch)
+    built(tmp_path, keyed_on(expr, printwhen), keyed(1, 1, 2), members=GROUP)
+    assert False in seen
+
+
+# The group's records with a field `total`, which the variable shadows.
+FIELDED = GROUP.replace(
+    '    member "a" type="int"\n',
+    '    member "a" type="int"\n    member "total" type="int"\n',
+)
+
+# The group's records, and a parameter that shadows the variable `total`.
+PARAMETER = GROUP + '  parameter "total" type="int" default="0"\n'
+
+
+@pytest.mark.parametrize(
+    ("expr", "members", "counted"),
+    [
+        ("a + 0 * A_COUNT", GROUP, False),
+        ("a + 0 * A_PAGE_NUMBER", GROUP, False),
+        ("(a, total)", FIELDED, False),
+        ("(a, total)", PARAMETER, True),
+        ("(a, ITEM_NUMBER > 0)", GROUP, True),
+    ],
+    ids=[
+        "own-count",
+        "own-page-number",
+        "field-under-variable",
+        "parameter-over-variable",
+        "item-number",
+    ],
+)
+def test_the_rows_left_are_counted_from_the_keys_where_every_name_stays(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    expr: str,
+    members: str,
+    counted: bool,
+) -> None:
+    """A key is counted from the keys where no name it reads can move.
+
+    doc/expressions.md#names-in-scope: a group's own counters move
+    as the report is built, and so does a variable, which shadows
+    a field of its name.  A parameter shadows a variable, and stays.
+
+    """
+    rows = [{"a": key, "total": key} for key in (1, 1, 2)]
+    seen = lookaheads(monkeypatch)
+    built(tmp_path, keyed_on(expr), rows, members=members)
+    assert (False not in seen) is counted
 
 
 def spans(*extents: Extent) -> Measurement:

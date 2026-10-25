@@ -16,9 +16,15 @@ and three parties hold a printout to them:
 The check reads **records** -- the objects both encodings write
 and both readers return -- rather than :mod:`sr.printout.model`.
 `inspect` reads printouts another engine wrote, and records are
-what it has; the engine turns its model into records with
-:func:`sr.printout.write.records`, the same objects it writes,
-so what is checked is what a reader sees.
+what it has.  The engine checks its own printout in memory instead,
+with :func:`check`, which says what :func:`violations` says about
+the records :func:`sr.printout.write.records` makes of the printout,
+sentence for sentence and in the same order, without making them:
+making them is most of what checking them costs.  The two differ
+only in how they read.  Each rule is written once, against the
+plain values both read off what they are given, so the two cannot
+judge or word a mark differently, and the test suite holds them
+to the same answers.
 
 Records are read defensively.  A field that is missing or of
 the wrong type is itself a violation where an invariant needs it,
@@ -37,12 +43,28 @@ disagree about where a margin is.
 from __future__ import annotations
 
 import math
-from collections.abc import Collection, Iterable, Iterator
+from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
 from dataclasses import dataclass
-from typing import Any, TypeGuard
+from typing import Any, TypeGuard, TypeVar
 
-from sr.printout.model import VERSION, Printout
-from sr.printout.write import number, records
+from sr.printout.model import (
+    VERSION,
+    Barcode,
+    Box,
+    Image,
+    Mark,
+    Outline,
+    Printout,
+    Text,
+    Xref,
+)
+from sr.printout.write import (
+    length,
+    mark_object,
+    number,
+    page_geometry,
+    paper_object,
+)
 from sr.units import fits, round_points
 
 __all__ = [
@@ -76,6 +98,13 @@ CALLED = {
     "outline": "outline entry",
     "xref": "xref",
 }
+
+# A mark's box as a check reads it: x, y, width, and height.
+# An outline entry's point is one with no extent.
+Bounds = tuple[float, float, float, float]
+
+# A mark as a check walks it: a record, or the model's.
+Walked = TypeVar("Walked")
 
 
 @dataclass(frozen=True)
@@ -191,16 +220,87 @@ def described(kind: str, found: Crossing) -> str:
 def check(printout: Printout) -> list[str]:
     """Return every invariant a printout in memory breaks.
 
-    The records are made one at a time and read as they come,
-    so no more than one page of them is held at once.  The `data`
-    table's contents are left out of them: no invariant reads
-    the bytes of a blob, only its name.
+    What :func:`violations` says about the printout's records,
+    read off the model.  The header's format version and its page
+    count are the model's own, so neither can be wrong.  An image and
+    a barcode carry the most fields a record could get wrong, and are
+    the rarest marks, so each is made into its record and read as one.
 
     Args:
         printout: The document, as the engine built it.
 
     """
-    return violations(records(printout, None, contents=False))
+    data = printout.data
+    entries = sorted(printout.fonts, key=lambda one: one.name)
+    font_names, said = fonts_of(((one.name, one.data) for one in entries), data)
+    paper, wrong = paper_of(paper_object(printout.paper))
+    said.extend(wrong)
+    overflowed = any(one.kind == "overflow" for one in printout.warnings)
+    outlines = Outlines()
+    for page in printout.pages:
+        label = f"page {plain(page.number)}"
+        area, wrong = area_of(page_geometry(page, printout.paper), paper)
+        said.extend(f"{label}: {one}" for one in wrong)
+        for where, mark in walk(page.marks, f"{label}, mark ", inside):
+            if isinstance(mark, Outline):
+                broken = outlines.entry(where, mark.name, mark.level)
+                if broken is not None:
+                    said.append(broken)
+                bounds = finite(mark.box, point=True)
+            else:
+                if isinstance(mark, Xref) and mark.link == "outline":
+                    outlines.targets.append((where, mark.target))
+                bounds = finite(mark.box)
+                if isinstance(mark, Image | Barcode):
+                    record = mark_object(mark)
+                    said.extend(mark_violations(where, record, font_names, data))
+                else:
+                    said.extend(box_violations(where, mark.kind, bounds))
+                if isinstance(mark, Text):
+                    leading = length(mark.leading)
+                    said.extend(
+                        text_violations(
+                            where,
+                            mark.font,
+                            len(mark.lines),
+                            leading if math.isfinite(leading) else None,
+                            bounds,
+                            font_names,
+                        )
+                    )
+            if not overflowed and area is not None:
+                broken = placement_violation(where, mark.kind, bounds, area)
+                if broken is not None:
+                    said.append(broken)
+    said.extend(outlines.unheld())
+    return said
+
+
+def inside(mark: Mark) -> Sequence[Mark]:
+    """Return the marks an xref holds, and none for any other mark.
+
+    Args:
+        mark: The mark.
+
+    """
+    return mark.marks if isinstance(mark, Xref) else ()
+
+
+def finite(box: Box, point: bool = False) -> Bounds | None:
+    """Return a box as its record holds it, or ``None`` where it has no reading.
+
+    Args:
+        box: The mark's box.
+        point: Whether the mark is an outline entry, whose record holds
+            the box's corner as its point, with no extent.
+
+    """
+    x, y = length(box.x), length(box.y)
+    width, height = (0.0, 0.0) if point else (length(box.width), length(box.height))
+    for value in (x, y, width, height):
+        if not math.isfinite(value):
+            return None
+    return x, y, width, height
 
 
 def violations(found: Iterable[Any]) -> list[str]:
@@ -221,7 +321,6 @@ def violations(found: Iterable[Any]) -> list[str]:
     if not isinstance(header, dict):
         return ["the first record is not a header"]
     opening: list[str] = []
-    said: list[str] = []
     version = header.get("sr")
     if version != VERSION or isinstance(version, bool):
         opening.append(
@@ -229,27 +328,19 @@ def violations(found: Iterable[Any]) -> list[str]:
             f"and this reader understands {VERSION}"
         )
     data = mapped(header.get("data"))
-    font_names: set[str] = set()
-    for one in listed(header.get("fonts")):
-        if not isinstance(one, dict):
-            continue
-        if isinstance(one.get("name"), str):
-            font_names.add(one["name"])
-        blob = one.get("resolvedData")
-        if blob is not None and not held(blob, data):
-            said.append(
-                f"font {plain(one.get('name'))}: its data {plain(blob)} "
-                "is not in the header's data table"
-            )
+    fonts = (
+        (one.get("name"), one.get("resolvedData"))
+        for one in listed(header.get("fonts"))
+        if isinstance(one, dict)
+    )
+    font_names, said = fonts_of(fonts, data)
     paper, wrong = paper_of(header.get("page"))
     said.extend(wrong)
     warnings = header.get("warnings")
     overflowed = isinstance(warnings, list) and any(
         isinstance(one, dict) and one.get("kind") == "overflow" for one in warnings
     )
-    names: set[str] = set()
-    targets: list[tuple[str, Any]] = []
-    previous = 0
+    outlines = Outlines()
     followed = 0
     for ordinal, page in enumerate(lines, start=1):
         followed = ordinal
@@ -263,37 +354,23 @@ def violations(found: Iterable[Any]) -> list[str]:
         if not isinstance(marks, list):
             said.append(f"{label}: it has no marks array")
             continue
-        for where, mark in walk(marks, f"{label}, mark "):
+        for where, mark in walk(marks, f"{label}, mark ", inside_record):
             if not isinstance(mark, dict):
                 said.append(f"{where}: it is not an object")
                 continue
-            kind = mark.get("kind")
+            kind = str(mark.get("kind"))
             if kind == "outline":
-                if isinstance(mark.get("name"), str):
-                    names.add(mark["name"])
-                level = mark.get("level")
-                if not isinstance(level, int) or isinstance(level, bool):
-                    said.append(f"{where}: the outline entry has no level")
-                else:
-                    if level > previous + 1 or level < 1:
-                        said.append(
-                            f"{where}: the outline entry is at level {level}, "
-                            f"and the one before it at level {previous}"
-                        )
-                    previous = level
+                broken = outlines.entry(where, mark.get("name"), mark.get("level"))
+                if broken is not None:
+                    said.append(broken)
             elif kind == "xref" and mark.get("type") == "outline":
-                targets.append((where, mark.get("target")))
+                outlines.targets.append((where, mark.get("target")))
             said.extend(mark_violations(where, mark, font_names, data))
             if not overflowed and area is not None:
-                said.extend(placement_violations(where, mark, area))
-    for where, target in targets:
-        if target is None:
-            said.append(f"{where}: the xref to an outline entry has no target")
-        elif not held(target, names):
-            said.append(
-                f"{where}: the xref targets the outline entry {plain(target)}, "
-                "and no entry is named so"
-            )
+                broken = placement_violation(where, kind, bounds_of(mark), area)
+                if broken is not None:
+                    said.append(broken)
+    said.extend(outlines.unheld())
     counted = header.get("pages")
     if counted != followed or isinstance(counted, bool):
         opening.append(
@@ -303,23 +380,120 @@ def violations(found: Iterable[Any]) -> list[str]:
     return opening + said
 
 
-def walk(marks: list[Any], prefix: str) -> Iterator[tuple[str, Any]]:
+def inside_record(mark: Any) -> Sequence[Any]:
+    """Return the marks a mark record holds, where it holds an array of them.
+
+    Args:
+        mark: The mark record, as read.
+
+    """
+    nested = mark.get("marks") if isinstance(mark, dict) else None
+    return nested if isinstance(nested, list) else ()
+
+
+def walk(
+    marks: Sequence[Walked], prefix: str, inner: Callable[[Walked], Sequence[Walked]]
+) -> Iterator[tuple[str, Walked]]:
     """Yield every mark with where it is, an xref's nested marks after it.
 
     A mark is numbered from 1 in paint order, and one inside an xref
     after the xref's number, so ``page 2, mark 5.1`` is the first mark
-    inside the fifth.
+    inside the fifth.  Records and the model are numbered alike.
 
     Args:
         marks: A page's marks, or an xref's.
         prefix: What goes before each mark's number.
+        inner: What returns the marks a mark holds.
 
     """
     for index, mark in enumerate(marks, start=1):
         where = f"{prefix}{index}"
         yield where, mark
-        if isinstance(mark, dict) and isinstance(mark.get("marks"), list):
-            yield from walk(mark["marks"], f"{where}.")
+        nested = inner(mark)
+        if nested:
+            yield from walk(nested, f"{where}.", inner)
+
+
+def fonts_of(
+    fonts: Iterable[tuple[Any, Any]], data: Collection[str]
+) -> tuple[set[str], list[str]]:
+    """Return the names of the header's fonts, and what is wrong with them.
+
+    The fourth invariant, for a font: the data entry it names,
+    where it names one, is in the header's data table.
+
+    Args:
+        fonts: Each font's name and the data entry that holds it,
+            as read, in the header's order.
+        data: The header's data table.
+
+    """
+    names: set[str] = set()
+    wrong: list[str] = []
+    for name, blob in fonts:
+        if isinstance(name, str):
+            names.add(name)
+        if blob is not None and not held(blob, data):
+            wrong.append(
+                f"font {plain(name)}: its data {plain(blob)} "
+                "is not in the header's data table"
+            )
+    return names, wrong
+
+
+class Outlines:
+    """The outline entries and the xrefs to them, as a check meets them.
+
+    The tenth invariant is about each entry and the one before it,
+    and the fifth about each xref to an entry and every entry,
+    before it or after: so the names are gathered as the marks
+    are read, and the targets are judged once all have been.
+
+    Attributes:
+        names: The names of the entries met so far.
+        targets: Each xref to an entry met so far, with where it is,
+            and its target as read.
+        previous: The level of the last entry met, 0 before the first.
+
+    """
+
+    def __init__(self) -> None:
+        """Start with no entry met."""
+        self.names: set[str] = set()
+        self.targets: list[tuple[str, Any]] = []
+        self.previous = 0
+
+    def entry(self, where: str, name: Any, level: Any) -> str | None:
+        """Note an outline entry, and return what it breaks, if anything.
+
+        Args:
+            where: The entry, as a reader would find it.
+            name: Its name, as read.
+            level: Its level, as read.
+
+        """
+        if isinstance(name, str):
+            self.names.add(name)
+        if not isinstance(level, int) or isinstance(level, bool):
+            return f"{where}: the outline entry has no level"
+        before, self.previous = self.previous, level
+        if level > before + 1 or level < 1:
+            return (
+                f"{where}: the outline entry is at level {level}, "
+                f"and the one before it at level {before}"
+            )
+        return None
+
+    def unheld(self) -> Iterator[str]:
+        """Yield a violation for each xref whose target names no entry."""
+        for where, target in self.targets:
+            if target is None:
+                yield f"{where}: the xref to an outline entry has no target"
+            elif not held(target, self.names):
+                yield (
+                    f"{where}: the xref targets the outline entry {plain(target)}, "
+                    "and no entry is named so"
+                )
 
 
 def paper_of(page: Any) -> tuple[dict[str, float], list[str]]:
@@ -384,7 +558,7 @@ def area_of(
 def mark_violations(
     where: str, mark: dict[str, Any], fonts: set[str], data: dict[str, Any]
 ) -> Iterator[str]:
-    """Yield what one mark breaks of the invariants about a mark alone.
+    """Yield what one mark record breaks of the invariants about a mark alone.
 
     Those are the third, fourth, sixth, eighth, ninth, eleventh,
     and twelfth.  Where a mark sits on the page is the seventh,
@@ -398,25 +572,20 @@ def mark_violations(
 
     """
     kind = str(mark.get("kind"))
-    called = CALLED.get(kind, kind)
-    box = box_of(mark)
+    bounds = box_of(mark)
     if kind != "outline":
-        if box is None:
-            yield f"{where}: the {called} has no box"
-        else:
-            for key in ("width", "height"):
-                if box[key] < 0:
-                    yield (
-                        f"{where}: the {called}'s box has a "
-                        f"negative {key}, {number(box[key])}"
-                    )
+        yield from box_violations(where, kind, bounds)
     if kind == "text":
-        if not held(mark.get("font"), fonts):
-            yield (
-                f"{where}: its font {plain(mark.get('font'))} "
-                "is not in the header's font table"
-            )
-        yield from text_violations(where, mark, box)
+        lines = mark.get("lines")
+        leading = mark.get("leading")
+        yield from text_violations(
+            where,
+            mark.get("font"),
+            len(lines) if isinstance(lines, list) else 0,
+            leading if is_number(leading) else None,
+            bounds,
+            fonts,
+        )
     elif kind == "image":
         has_data = mark.get("data") is not None
         has_file = mark.get("file") is not None
@@ -432,42 +601,71 @@ def mark_violations(
         ink = mark.get("ink")
         if not isinstance(ink, str) or not ink:
             yield f"{where}: the barcode carries no ink"
-        if box is not None:
-            yield from barcode_violations(where, mark, box)
+        if bounds is not None:
+            yield from barcode_violations(where, mark, bounds)
 
 
-def text_violations(
-    where: str, mark: dict[str, Any], box: dict[str, float] | None
-) -> Iterator[str]:
-    """Yield what a text mark breaks of the eighth invariant.
+def box_violations(where: str, kind: str, bounds: Bounds | None) -> Iterator[str]:
+    """Yield what a mark's box breaks of the sixth invariant.
+
+    Every mark but an outline entry has a box, which is read here.
 
     Args:
         where: The mark, as a reader would find it.
-        mark: The mark record.
-        box: Its box, where it has a readable one.
+        kind: The mark's `kind`.
+        bounds: Its box, or ``None`` where it has no readable one.
 
     """
-    lines = mark.get("lines")
-    if not isinstance(lines, list) or not lines:
+    called = CALLED.get(kind, kind)
+    if bounds is None:
+        yield f"{where}: the {called} has no box"
+        return
+    for key, value in (("width", bounds[2]), ("height", bounds[3])):
+        if value < 0:
+            yield (f"{where}: the {called}'s box has a negative {key}, {number(value)}")
+
+
+def text_violations(
+    where: str,
+    font: Any,
+    lines: int,
+    leading: float | None,
+    bounds: Bounds | None,
+    fonts: set[str],
+) -> Iterator[str]:
+    """Yield what a text mark breaks of the third and eighth invariants.
+
+    Args:
+        where: The mark, as a reader would find it.
+        font: The name of its font, as read.
+        lines: How many lines it holds, where it holds an array of them.
+        leading: Its leading, or ``None`` where it has no readable one.
+        bounds: Its box, or ``None`` where it has no readable one.
+        fonts: The names of the header's fonts.
+
+    """
+    if not held(font, fonts):
+        yield (f"{where}: its font {plain(font)} is not in the header's font table")
+    if not lines:
         yield f"{where}: the text has no lines"
         return
-    leading = mark.get("leading")
-    if not is_number(leading):
+    if leading is None:
         yield f"{where}: the text has no leading"
         return
-    if box is None:
+    if bounds is None:
         return
-    needed = len(lines) * leading
-    if not fits(needed, box["height"]):
+    height = bounds[3]
+    needed = lines * leading
+    if not fits(needed, height):
         yield (
-            f"{where}: {len(lines)} lines of {number(leading)} pt "
+            f"{where}: {lines} lines of {number(leading)} pt "
             f"need {number(round_points(needed))} pt, "
-            f"in a box {number(box['height'])} pt tall"
+            f"in a box {number(height)} pt tall"
         )
 
 
 def barcode_violations(
-    where: str, mark: dict[str, Any], box: dict[str, float]
+    where: str, mark: dict[str, Any], bounds: Bounds
 ) -> Iterator[str]:
     """Yield what a barcode mark breaks of the ninth invariant.
 
@@ -479,7 +677,7 @@ def barcode_violations(
     Args:
         where: The mark, as a reader would find it.
         mark: The mark record.
-        box: Its box.
+        bounds: Its box.
 
     """
     module = mark.get("module")
@@ -487,9 +685,8 @@ def barcode_violations(
         yield f"{where}: the barcode has no module"
         return
     vertical = mark.get("vertical") is True
-    along, across = (
-        (box["height"], box["width"]) if vertical else (box["width"], box["height"])
-    )
+    width, height = bounds[2], bounds[3]
+    along, across = (height, width) if vertical else (width, height)
     stripes = mark.get("stripes")
     rows = mark.get("rows")
     if stripes is not None and rows is not None:
@@ -539,12 +736,10 @@ def matched(
     )
 
 
-def placement_violations(
-    where: str,
-    mark: dict[str, Any],
-    area: Area,
-) -> Iterator[str]:
-    """Yield a violation where a mark lies outside its page's printable area.
+def placement_violation(
+    where: str, kind: str, bounds: Bounds | None, area: Area
+) -> str | None:
+    """Return a violation where a mark lies outside its page's printable area.
 
     The seventh invariant.  An outline entry is a point,
     and every other mark is its box; an xref's nested marks
@@ -552,27 +747,41 @@ def placement_violations(
 
     Args:
         where: The mark, as a reader would find it.
-        mark: The mark record.
+        kind: The mark's `kind`.
+        bounds: Its box, or an outline entry's point with no extent;
+            ``None`` where it has no readable one.
         area: Its page's printable area.
 
     """
-    kind = str(mark.get("kind"))
-    if kind == "outline":
-        x, y = mark.get("x"), mark.get("y")
-        if not (is_number(x) and is_number(y)):
-            yield f"{where}: the outline entry has no point"
-            return
-        found = crossing(area, x, y)
-    else:
-        box = box_of(mark)
-        if box is None:
-            return
-        found = crossing(area, box["x"], box["y"], box["width"], box["height"])
-    if found is not None:
-        yield f"{where}: {described(kind, found)}"
+    if bounds is None:
+        if kind == "outline":
+            return f"{where}: the outline entry has no point"
+        return None
+    found = crossing(area, *bounds)
+    if found is None:
+        return None
+    return f"{where}: {described(kind, found)}"
 
 
-def box_of(mark: dict[str, Any]) -> dict[str, float] | None:
+def bounds_of(mark: dict[str, Any]) -> Bounds | None:
+    """Return what of a mark record the seventh invariant places.
+
+    That is an outline entry's point, with no extent, and any other
+    mark's box; ``None`` where the record has no readable one.
+
+    Args:
+        mark: The mark record.
+
+    """
+    if mark.get("kind") != "outline":
+        return box_of(mark)
+    x, y = mark.get("x"), mark.get("y")
+    if not (is_number(x) and is_number(y)):
+        return None
+    return x, y, 0.0, 0.0
+
+
+def box_of(mark: dict[str, Any]) -> Bounds | None:
     """Return a mark's box, or ``None`` where it has no readable one.
 
     Args:
@@ -582,13 +791,11 @@ def box_of(mark: dict[str, Any]) -> dict[str, float] | None:
     box = mark.get("box")
     if not isinstance(box, dict):
         return None
-    found: dict[str, float] = {}
-    for key in ("x", "y", "width", "height"):
-        value = box.get(key)
-        if not is_number(value):
-            return None
-        found[key] = value
-    return found
+    x, y = box.get("x"), box.get("y")
+    width, height = box.get("width"), box.get("height")
+    if not (is_number(x) and is_number(y) and is_number(width) and is_number(height)):
+        return None
+    return x, y, width, height
 
 
 def listed(value: Any) -> list[Any]:

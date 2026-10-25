@@ -14,10 +14,12 @@ from pathlib import Path
 
 import pytest
 
+from sr.fonts import text
 from sr.fonts.face import open_face
 from sr.fonts.text import (
     BREAK,
     LEADING,
+    LONGEST_KEPT,
     Metrics,
     chunks,
     missing_glyph,
@@ -51,7 +53,7 @@ def lines(text: str, width: float, metrics: Metrics) -> list[str]:
         metrics: The face and size.
 
     """
-    return wrap(text, width, metrics).lines
+    return list(wrap(text, width, metrics).lines)
 
 
 # -- measurement ------------------------------------------------------
@@ -75,6 +77,24 @@ def test_a_width_is_the_sum_of_the_advances_rounded_once(
 ) -> None:
     assert metrics.width("xxxx xxxx") == 42.778
     assert metrics.width("") == 0.0
+
+
+def test_a_width_is_kept_unless_the_string_is_long() -> None:
+    metrics = Metrics(open_face(REGULAR), 10)
+    kept, longer = "x" * LONGEST_KEPT, "x" * (LONGEST_KEPT + 1)
+    assert metrics.width(kept) == metrics.width(kept) == LONGEST_KEPT * 5.0
+    assert metrics.width(longer) == (LONGEST_KEPT + 1) * 5.0
+    assert list(metrics.widths) == [kept]
+
+
+def test_the_widths_kept_are_forgotten_once_there_are_too_many(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(text, "WIDTHS_KEPT", 2)
+    metrics = Metrics(open_face(REGULAR), 10)
+    for one in ("x", "xx", "xxx"):
+        metrics.width(one)
+    assert list(metrics.widths) == ["xxx"]
 
 
 def test_nothing_is_kerned(metrics: Metrics) -> None:

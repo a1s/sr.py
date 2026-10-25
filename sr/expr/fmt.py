@@ -27,6 +27,8 @@ from __future__ import annotations
 import decimal
 import math
 import re
+from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any, Final
 
 from sr.errors import ExpressionError
@@ -62,6 +64,10 @@ ENGINE_VERBS: Final = "sqdioxXbeEfgGc%"
 # Starlark's own, which has `%r` where the engine has `%q`, and no `%b`.
 STARLARK_VERBS: Final = "srdioxXeEfgGc%"
 
+# How many format strings :func:`format_value` keeps parsed.  A report
+# uses a handful, and formats a value with one of them on every row.
+FORMATS_KEPT: Final = 256
+
 # The base and prefix each integer conversion writes in.
 BASES: Final = {
     "d": (10, ""),
@@ -73,8 +79,12 @@ BASES: Final = {
 }
 
 
+@dataclass(frozen=True, slots=True)
 class Spec:
     """One conversion out of a format string.
+
+    It is frozen, since :func:`parsed` shares one among every use
+    of the same format string.
 
     Attributes:
         flags: The flag characters, in the order they were written.
@@ -84,24 +94,10 @@ class Spec:
 
     """
 
-    __slots__ = ("flags", "precision", "verb", "width")
-
-    def __init__(
-        self, flags: str, width: int | None, precision: int | None, verb: str
-    ) -> None:
-        """Hold the parts of one conversion.
-
-        Args:
-            flags: The flag characters.
-            width: The minimum field width.
-            precision: The precision.
-            verb: The conversion letter.
-
-        """
-        self.flags = flags
-        self.width = width
-        self.precision = precision
-        self.verb = verb
+    flags: str
+    width: int | None
+    precision: int | None
+    verb: str
 
     @property
     def left(self) -> bool:
@@ -170,6 +166,26 @@ def parse_spec(match: re.Match[str]) -> Spec:
         None if precision is None else int(precision or 0),
         verb,
     )
+
+
+@lru_cache(maxsize=FORMATS_KEPT)
+def parsed(spec: str) -> tuple[tuple[tuple[str, Spec], ...], str]:
+    """Return a format string's conversions, each with the text before it.
+
+    The text after the last conversion comes back as well.  Nothing is
+    refused here: what a conversion is checked for depends on the values
+    it is given, and :func:`format_value` checks it as it reaches it.
+
+    Args:
+        spec: The format string.
+
+    """
+    pieces: list[tuple[str, Spec]] = []
+    position = 0
+    for match in CONVERSION.finditer(spec):
+        pieces.append((spec[position : match.start()], parse_spec(match)))
+        position = match.end()
+    return tuple(pieces), spec[position:]
 
 
 def as_integer(value: Any, verb: str) -> int:
@@ -443,13 +459,11 @@ def format_value(spec: str, *args: Any) -> str:
             is not the number of conversions.
 
     """
+    pieces, tail = parsed(spec)
     written: list[str] = []
-    position = 0
     taken = 0
-    for match in CONVERSION.finditer(spec):
-        written.append(spec[position : match.start()])
-        position = match.end()
-        conversion = parse_spec(match)
+    for before, conversion in pieces:
+        written.append(before)
         if conversion.verb == "%":
             written.append("%")
             continue
@@ -463,8 +477,8 @@ def format_value(spec: str, *args: Any) -> str:
             )
         written.append(convert(args[taken], conversion))
         taken += 1
-    check_tail(spec, spec[position:])
-    written.append(spec[position:])
+    check_tail(spec, tail)
+    written.append(tail)
     if taken != len(args):
         raise ExpressionError(
             f"format {spec!r} takes {taken} values, {len(args)} given"

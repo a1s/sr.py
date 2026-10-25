@@ -84,6 +84,17 @@ NEWLINE = "\n"
 # separate its words with spaces does not wrap at its own boundaries.
 BREAK = " \t"
 
+# How many strings one :class:`Metrics` keeps the width of.  Past this
+# it forgets them all and starts again, which bounds what a long run
+# of distinct strings holds on to without making the common case pay.
+WIDTHS_KEPT = 16384
+
+# The longest string a cache of measured or wrapped text keeps.
+# A long string is rarely set twice and costs the most to keep,
+# so it is measured afresh each time, and with the count this
+# bounds a cache to a few MB.
+LONGEST_KEPT = 256
+
 
 @dataclass(frozen=True)
 class Metrics:
@@ -92,14 +103,23 @@ class Metrics:
     The size is an integer because a `font` node's is,
     and points are what everything above this works in.
 
+    What a string measures is kept once asked, since a report sets
+    a good many of the same strings over and over.  It is kept as it
+    was first computed, so a kept answer is the same float a fresh
+    one would be.
+
     Attributes:
         face: The resolved face.
         size: The font size, in points.
+        widths: Each string's width, in points, once asked.
 
     """
 
     face: Face
     size: int
+    widths: dict[str, float] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
 
     @property
     def leading(self) -> float:
@@ -128,7 +148,14 @@ class Metrics:
             text: The string, which may be empty.
 
         """
-        return round_points(sum(self.advance(one) for one in text))
+        found = self.widths.get(text)
+        if found is None:
+            found = round_points(sum(map(self.advance, text)))
+            if len(text) <= LONGEST_KEPT:
+                if len(self.widths) >= WIDTHS_KEPT:
+                    self.widths.clear()
+                self.widths[text] = found
+        return found
 
     def missing(self, text: str) -> tuple[str, ...]:
         """Return the characters the face has no glyph for, first use first.
@@ -148,9 +175,12 @@ class Metrics:
         return tuple(found)
 
 
-@dataclass
+@dataclass(frozen=True)
 class Wrapped:
     """What wrapping a string produced.
+
+    It is frozen, since a measurer shares one among every element
+    that sets the same string in the same box.
 
     Attributes:
         lines: The lines, in order.  Never empty: text that is empty
@@ -160,7 +190,7 @@ class Wrapped:
 
     """
 
-    lines: list[str] = field(default_factory=list)
+    lines: tuple[str, ...] = ()
     missing: tuple[str, ...] = ()
 
 
@@ -184,7 +214,7 @@ def wrap(text: str, width: float, metrics: Metrics) -> Wrapped:
     # the lines.  A mandatory break is consumed before anything is
     # measured, so U+000A is never looked for in the face; everything
     # else in the string is, whether or not trimming later removes it.
-    return Wrapped(lines, metrics.missing("".join(paragraphs)))
+    return Wrapped(tuple(lines), metrics.missing("".join(paragraphs)))
 
 
 def paragraph_lines(text: str, width: float, metrics: Metrics) -> list[str]:

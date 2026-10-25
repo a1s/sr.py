@@ -66,6 +66,11 @@ SUFFIXES = tuple(sorted(POINTS_PER_UNIT, key=len, reverse=True))
 # since that is how the rounding is written down.
 SCALE = 1000.0
 
+# Below this, a value's whole part goes to an integer and back to a double
+# without loss, so the fraction left over is exact.  2**53 would do;
+# a round number well under it is easier to check by eye.
+EXACT_INTEGERS = 1e15
+
 # Comparisons against frame boundaries carry this, so a band whose
 # height matches the space exactly fits rather than ejecting.
 # Both sides are already rounded, so it absorbs one unit
@@ -104,8 +109,25 @@ def round_points(value: float) -> float:
     A negative zero comes back as zero: the two compare equal everywhere
     in the engine, and only one of them may reach a printout.
 
+    Every coordinate goes through here, so the common case is written
+    out rather than calling :func:`round_half_away`.  Within
+    :data:`EXACT_INTEGERS` an integer holds the whole part exactly,
+    and the fraction it leaves is the one ``modf`` would split off,
+    so the answer is the same float.  An integer whole of zero divides
+    to a positive zero, which is the negative zero's case.  Anything
+    larger, an infinity, or a NaN goes the long way.
+
     """
-    return round_half_away(value * SCALE) / SCALE + 0.0
+    scaled = value * SCALE
+    if -EXACT_INTEGERS < scaled < EXACT_INTEGERS:
+        whole = int(scaled)
+        fraction = scaled - whole
+        if fraction >= 0.5:
+            whole += 1
+        elif fraction <= -0.5:
+            whole -= 1
+        return whole / SCALE
+    return round_half_away(scaled) / SCALE + 0.0
 
 
 def fill_points(extent: float, count: int) -> float:
