@@ -18,6 +18,12 @@ The records come one of two ways, and the steps are the same for both.
 :func:`build_records` takes them from the caller as Python values,
 such as the rows a database query fetched.
 
+A build that looks a `typeface` up on the host enumerates the machine's
+fonts the first time, and later builds in the process reuse that table
+while the font files are unchanged.  :func:`forget_host_catalog` is
+re-exported here for the changes that check cannot see, which
+doc/template.md#host-enumeration lists.
+
 """
 
 from __future__ import annotations
@@ -33,6 +39,7 @@ from sr.errors import BuildError, BuildWarning, Diagnostic
 from sr.expr import Record, Time
 from sr.expr.builtins import parse_time
 from sr.expr.golayout import RFC3339
+from sr.fonts.hostenum import forget_host_catalog
 from sr.layout.loop import Build, Builder
 from sr.printout.model import Printout
 from sr.settle import blob_bytes, parameter_values, resolve_fonts
@@ -40,7 +47,14 @@ from sr.template import load as load_template
 from sr.template.load import Options as LoadOptions
 from sr.template.model import Records
 
-__all__ = ["Options", "Result", "build", "build_records", "build_time_of"]
+__all__ = [
+    "Options",
+    "Result",
+    "build",
+    "build_records",
+    "build_time_of",
+    "forget_host_catalog",
+]
 
 
 @dataclass(frozen=True)
@@ -83,7 +97,11 @@ class Result:
             the document that was written rather than about
             the one that was read, and belongs on standard error.
         diagnostics: What enumerating the host's fonts had to say,
-            under ``verbose`` and only where enumeration happened at all.
+            under ``verbose`` and only where the build looked a typeface
+            up on the host at all.  The table is kept between builds,
+            so these are the lines of the enumeration that built it,
+            which may have been an earlier build's, followed by any face
+            this build looked up and could not open.
 
     """
 

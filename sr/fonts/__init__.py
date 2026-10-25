@@ -32,7 +32,15 @@ from sr.fonts.face import (
     read_faces,
     sniff,
 )
-from sr.fonts.hostenum import Catalog, Entry, Source, enumerate_faces, host_sources
+from sr.fonts.hostenum import (
+    Catalog,
+    Entry,
+    Source,
+    enumerate_faces,
+    forget_host_catalog,
+    host_catalog,
+    host_sources,
+)
 from sr.fonts.resolve import ALIASES, Resolution, Resolver, aliases_for
 from sr.fonts.text import (
     LEADING,
@@ -59,6 +67,8 @@ __all__ = [
     "aliases_for",
     "enumerate_faces",
     "faces_in",
+    "forget_host_catalog",
+    "host_catalog",
     "host_sources",
     "missing_glyph",
     "open_bytes",

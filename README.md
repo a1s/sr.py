@@ -133,6 +133,13 @@ with engine.connect() as connection:
     result = build_records(Path("minimal.kdl"), rows)
 ```
 
+A template that names a `typeface` rather than a font file makes the first
+build enumerate the machine's fonts, which takes a few seconds. Later builds
+in the same process reuse that table while the font files are unchanged.
+For the changes that check cannot see, listed under
+[host enumeration](https://github.com/a1s/sr.py/blob/main/doc/template.md#host-enumeration),
+`sr.api.forget_host_catalog()` drops the kept table.
+
 Rendering is a separate step too, and takes the printout in memory
 or one read back from a file. Both give the same bytes:
 

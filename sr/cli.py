@@ -994,7 +994,10 @@ class Fonts:
         warnings: What the printout header would carry: a substituted
             typeface, and a declared style the face does not have.
         diagnostics: What enumerating the host had to say,
-            under ``--verbose`` and only when enumeration happened at all.
+            under ``--verbose`` and only when a `font` needed the host.
+            The table may have been enumerated by an earlier check
+            in the same process, and is reported as it was then,
+            followed by any face this check could not open.
 
     """
 

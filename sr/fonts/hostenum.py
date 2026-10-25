@@ -68,12 +68,33 @@ A stock macOS has three files that can never be parsed and cannot be
 removed, which is the reason these are reported by `s-reports validate`
 and by the library's diagnostic hook rather than attached to every printout.
 
+**The table is kept for the life of the process.**  Building it parses
+every face the machine has, which is about three seconds on a stock
+Windows and nearly all of it character maps, and a library caller
+building one report after another would pay that on every one.
+:func:`host_catalog` keeps the last table it built.  Before handing it
+out again it compares two stamps: the one the enumeration took of each
+file just before reading it, and one taken now.  A stamp is every file
+the sources offer, in the order they offer it, with four numbers `stat`
+gives and the spelling a diagnostic would give its name.  A file that
+was there and would not read is opened again as well, since nothing
+in a stamp moves when a lock is released or a permission granted.
+Any difference, and the sources are enumerated again from the start.
+
+That is a walk and a `stat` per file, about two hundredths of a second
+here, and it is not a proof.  What it misses is listed under
+doc/template.md#host-enumeration, and comes to a file whose contents
+change while every number `stat` gives stays put.  The one such change
+that would alter a resolution, read access taken away on Windows,
+is caught by the resolver when the face will not open.
+
 """
 
 from __future__ import annotations
 
 import os
 import sys
+import threading
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -96,6 +117,8 @@ __all__ = [
     "Source",
     "enumerate_faces",
     "fontconfig_monospace",
+    "forget_host_catalog",
+    "host_catalog",
     "host_sources",
     "relaxations",
     "substitute_candidates",
@@ -171,6 +194,14 @@ HEAD_BYTES = 12
 
 # A key in the table: the family lowercased, then the two style flags.
 Key = tuple[str, bool, bool]
+
+# One file as a stamp records it, per :func:`stamp_file`: its path,
+# how a diagnostic spells it, then its modification time, change time,
+# size, and inode, or -1 for all four where it would not stat.
+Row = tuple[str, str, int, int, int, int]
+
+# What a kept table was built from: a row per file offered, in order.
+Stamp = tuple[Row, ...]
 
 
 @dataclass(frozen=True)
@@ -521,16 +552,37 @@ def enumerate_faces(sources: tuple[Source, ...]) -> Catalog:
             of two faces claiming one key is used.
 
     """
+    return enumerated(sources).catalog
+
+
+def enumerated(sources: tuple[Source, ...]) -> Held:
+    """Return the table the sources hold, with what it was built from.
+
+    Each file is stamped just before it is read, by this walk rather than
+    a second one.  A file that changes while the table is being built
+    leaves a stamp the next look does not match, and so does a directory
+    this walk could not list and a later one can.
+
+    Args:
+        sources: Where to look, in the order that decides which
+            of two faces claiming one key is used.
+
+    """
+    here = working_directory()
     catalog = Catalog()
+    rows: list[Row] = []
+    unread: list[Path] = []
     seen: set[Path] = set()
     for source in sources:
         for path in files_of(source):
+            rows.append(stamp_file(path, here))
             resolved = resolve_once(path)
             if resolved in seen:
                 continue
             seen.add(resolved)
-            read_file(catalog, path)
-    return catalog
+            if not read_file(catalog, path):
+                unread.append(path)
+    return Held(sources, tuple(rows), tuple(unread), catalog)
 
 
 def files_of(source: Source) -> Iterator[Path]:
@@ -602,30 +654,35 @@ def resolve_once(path: Path) -> Path:
         return path
 
 
-def read_file(catalog: Catalog, path: Path) -> None:
+def read_file(catalog: Catalog, path: Path) -> bool:
     """Add every face in one file to the table, or say why it was not.
 
     Args:
         catalog: The table being built.
         path: The file to read.
 
+    Returns:
+        ``False`` for a file that is there and would not open or read,
+        which is a state of the machine that may pass; ``True`` otherwise,
+        including for a file whose contents are what was refused.
+
     """
     try:
         head = peek(path, HEAD_BYTES)
     except FontError as refused:
         catalog.diagnostics.append(str(refused))
-        return
+        return False
     if head is None:
-        return
+        return True
     kind, description = sniff(head)
     if kind is None:
         catalog.diagnostics.append(f"{near(path).as_posix()}: {description}; skipped")
-        return
+        return True
     try:
         data = read_bytes(path)
     except FontError as refused:
         catalog.diagnostics.append(str(refused))
-        return
+        return False
     origin = Origin(path=path)
     try:
         count = faces_in(data)
@@ -636,16 +693,17 @@ def read_file(catalog: Catalog, path: Path) -> None:
         # otherwise be the one line of an enumeration report that does
         # not say which file it is about.
         catalog.diagnostics.append(f"{origin}: {refused}")
-        return
+        return True
     if count == 0:
         # A `ttcf` may say it holds nothing, and then the loop below
         # runs no times and the file leaves no trace.  Nothing is dropped
         # silently, so it says so here instead.
         catalog.diagnostics.append(f"{origin}: the font collection holds no faces")
-        return
+        return True
     catalog.files.setdefault(path.name.casefold(), path)
     for index in range(count):
         add_face(catalog, data, Origin(path=path, index=index))
+    return True
 
 
 def add_face(catalog: Catalog, data: bytes, origin: Origin) -> None:
@@ -735,3 +793,224 @@ def peek(path: Path, count: int) -> bytes | None:
         raise FontError(
             f"cannot read {near(path).as_posix()}: {refused.strerror or refused}"
         ) from None
+
+
+# -- keeping the table ------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Held:
+    """A table enumeration built, and what it was built from.
+
+    Attributes:
+        sources: Where it looked.
+        stamp: Every file offered, as :func:`stamp_file` described it
+            just before it was read.
+        unread: The files that were there and would not open or read.
+            Nothing in a stamp moves when a lock is released or read
+            access granted, so each of these is tried again instead.
+        catalog: The table.
+
+    """
+
+    sources: tuple[Source, ...]
+    stamp: Stamp
+    unread: tuple[Path, ...]
+    catalog: Catalog
+
+    def fits(self, sources: tuple[Source, ...], stamp: Stamp) -> bool:
+        """Report whether enumerating now would build this table again.
+
+        Args:
+            sources: Where the caller would look.
+            stamp: What they offer now, per :func:`stamp_of`.
+
+        """
+        if sources != self.sources or stamp != self.stamp:
+            return False
+        return not any(readable(one) for one in self.unread)
+
+
+class Keeper:
+    """The host table, kept for the life of the process.
+
+    One table at most: a process has one host, and only a test asks
+    for another platform's sources.
+
+    Attributes:
+        lock: Held while the table is checked or built, so that builds
+            starting together on two threads enumerate once between them.
+        held: The last table built, or ``None`` before the first.
+
+    """
+
+    def __init__(self) -> None:
+        """Keep nothing yet."""
+        self.lock = threading.Lock()
+        self.held: Held | None = None
+
+    def take(self, sources: tuple[Source, ...], stamp: Stamp) -> Catalog:
+        """Return the kept table where it still fits, and build it where not.
+
+        Args:
+            sources: Where to look.
+            stamp: What they offer, taken before the lock was.
+
+        """
+        with self.lock:
+            held = self.held
+            if held is None or not held.fits(sources, stamp):
+                # The stamp was taken before the lock, and a build that
+                # held the lock meanwhile may have enumerated a change this
+                # stamp predates.  Stamped again, it is compared with that
+                # build's table rather than replacing it with another three
+                # seconds' work that would find the same.
+                if held is None or not held.fits(sources, stamp_of(sources)):
+                    held = self.held = enumerated(sources)
+            return held.catalog
+
+    def forget(self) -> None:
+        """Drop the kept table, so that the next lookup enumerates."""
+        with self.lock:
+            self.held = None
+
+    def forked(self) -> None:
+        """Give a forked child a lock of its own.
+
+        A child has only the thread that forked it.  Had another been
+        enumerating at the time, the child would inherit the lock held
+        and nothing in it would ever release it.  The table it inherits
+        is the machine's as much as the parent's, and is kept.
+
+        """
+        self.lock = threading.Lock()
+
+
+KEEPER = Keeper()
+
+# Windows has no fork, and no `register_at_fork` either.
+if sys.platform != "win32":
+    os.register_at_fork(after_in_child=KEEPER.forked)
+
+
+def host_catalog(sources: tuple[Source, ...]) -> Catalog:
+    """Return the table the sources hold, enumerating only when they changed.
+
+    The table is :func:`enumerate_faces`'s for the same sources, built
+    by it whenever a stamp of the sources differs from the one taken while
+    the kept table was built, or a file that would not read then reads now.
+
+    What comes back is the kept table itself, shared with every build
+    that takes it, and is not to be changed.  A build with something
+    of its own to say about the machine keeps it beside the table:
+    :class:`sr.fonts.resolve.Resolver` does.
+
+    Args:
+        sources: Where to look, in the order that decides which
+            of two faces claiming one key is used.
+
+    """
+    return KEEPER.take(sources, stamp_of(sources))
+
+
+def forget_host_catalog() -> None:
+    """Drop the kept table, so that the next lookup enumerates the host.
+
+    For a change the stamp cannot see, which doc/template.md#host-enumeration
+    lists: a file whose contents changed while every number `stat` gives
+    for it stayed put.
+
+    """
+    KEEPER.forget()
+
+
+def stamp_of(sources: tuple[Source, ...]) -> Stamp:
+    """Return what enumerating the sources would read, short of reading it.
+
+    Every file :func:`enumerated` would be offered, in the order
+    it would be offered them, by the same walk, so the stamp differs
+    whenever the walk does.
+
+    Args:
+        sources: Where to look.
+
+    """
+    here = working_directory()
+    offered = (path for source in sources for path in files_of(source))
+    return tuple(stamp_file(path, here) for path in offered)
+
+
+def stamp_file(path: Path, here: Path | None) -> Row:
+    """Return one file as a stamp records it.
+
+    Four numbers from `stat` say whether its contents may have changed.
+    The modification time and size move when it is rewritten, and the
+    inode when another file is put in its place.  The change time is
+    the one that cannot be set back: on POSIX it moves for every write,
+    `chmod`, `chown`, and ACL change.  On Windows Python reports the
+    creation time there instead, which moves only for a file put in place.
+
+    A link is described by what it points at,
+    which is what is read through it.
+
+    Args:
+        path: The file, as its source offered it.
+        here: The working directory, or ``None`` where it has gone.
+
+    """
+    spelled = spelling(path, here)
+    try:
+        found = path.stat()
+    except OSError:
+        return (str(path), spelled, -1, -1, -1, -1)
+    return (
+        str(path),
+        spelled,
+        found.st_mtime_ns,
+        found.st_ctime_ns,
+        found.st_size,
+        found.st_ino,
+    )
+
+
+def spelling(path: Path, here: Path | None) -> str:
+    """Return how a diagnostic names a file from the working directory.
+
+    :func:`sr.fonts.face.near` names a file under the working directory
+    relative to it, and any other by its own path.  The second does not
+    depend on where the process is, so it comes back as an empty string,
+    and a table kept from one directory serves another whenever neither
+    holds a font.
+
+    Args:
+        path: The file.
+        here: The working directory, or ``None`` where it has gone.
+
+    """
+    if here is None:
+        return ""
+    try:
+        return path.relative_to(here).as_posix()
+    except ValueError:
+        return ""
+
+
+def working_directory() -> Path | None:
+    """Return the working directory, or ``None`` where it has gone."""
+    try:
+        return Path.cwd()
+    except OSError:
+        return None
+
+
+def readable(path: Path) -> bool:
+    """Report whether a file opens and gives up its first bytes.
+
+    Args:
+        path: The file.
+
+    """
+    try:
+        return peek(path, HEAD_BYTES) is not None
+    except FontError:
+        return False
