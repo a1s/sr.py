@@ -122,12 +122,21 @@ class Mark:
     def moved(self, across: float, down: float) -> Mark:
         """Return this mark with its box translated.
 
+        Every mark a band places is moved onto its page, so this
+        copies the mark's fields as they are rather than going through
+        :func:`dataclasses.replace`, which costs five times as much.
+        Nothing is skipped by not calling ``__init__``: no mark has
+        a ``__post_init__``, and every field but the box is kept.
+
         Args:
             across: What to add to the box's ``x``.
             down: What to add to the box's ``y``.
 
         """
-        return replace(self, box=self.box.moved(across, down))
+        moved = object.__new__(type(self))
+        moved.__dict__.update(self.__dict__)
+        object.__setattr__(moved, "box", self.box.moved(across, down))
+        return moved
 
 
 @dataclass(frozen=True)

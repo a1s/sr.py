@@ -84,6 +84,11 @@ NEWLINE = "\n"
 # separate its words with spaces does not wrap at its own boundaries.
 BREAK = " \t"
 
+# How many strings one :class:`Metrics` keeps the width of.  Past this
+# it forgets them all and starts again, which bounds what a long run
+# of distinct strings holds on to without making the common case pay.
+WIDTHS_KEPT = 65536
+
 
 @dataclass(frozen=True)
 class Metrics:
@@ -92,14 +97,28 @@ class Metrics:
     The size is an integer because a `font` node's is,
     and points are what everything above this works in.
 
+    What a codepoint advances and what a string measures are kept
+    once asked, since a report sets the same few dozen codepoints
+    and a good many of the same strings over and over.  Each is kept
+    as it was first computed, so a kept answer is the same float
+    a fresh one would be.
+
     Attributes:
         face: The resolved face.
         size: The font size, in points.
+        advances: Each codepoint's advance, in points, once asked.
+        widths: Each string's width, in points, once asked.
 
     """
 
     face: Face
     size: int
+    advances: dict[str, float] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
+    widths: dict[str, float] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
 
     @property
     def leading(self) -> float:
@@ -116,7 +135,12 @@ class Metrics:
             character: One codepoint.
 
         """
-        return self.face.advance(ord(character)) * self.size / self.face.units_per_em
+        found = self.advances.get(character)
+        if found is None:
+            face = self.face
+            found = face.advance(ord(character)) * self.size / face.units_per_em
+            self.advances[character] = found
+        return found
 
     def width(self, text: str) -> float:
         """Return what a string measures, rounded once.
@@ -128,7 +152,13 @@ class Metrics:
             text: The string, which may be empty.
 
         """
-        return round_points(sum(self.advance(one) for one in text))
+        found = self.widths.get(text)
+        if found is None:
+            if len(self.widths) >= WIDTHS_KEPT:
+                self.widths.clear()
+            found = round_points(sum(map(self.advance, text)))
+            self.widths[text] = found
+        return found
 
     def missing(self, text: str) -> tuple[str, ...]:
         """Return the characters the face has no glyph for, first use first.

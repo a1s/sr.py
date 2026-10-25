@@ -1211,6 +1211,32 @@ def sr_dict(entries: Any = (), **named: Any) -> dict[Any, Any]:
     return dict(entries, **named)
 
 
+# What each `strftime` directive writes, from the time and its moment.
+# Each is computed only where a spec asks for it: a report may format
+# a date on every row, and a spec asks for a few of the seventeen.
+STRFTIME: Final[dict[str, Callable[[datetime, Time], str]]] = {
+    "Y": lambda when, moment: f"{when.year:04d}",
+    "y": lambda when, moment: f"{when.year % 100:02d}",
+    "m": lambda when, moment: f"{when.month:02d}",
+    "d": lambda when, moment: f"{when.day:02d}",
+    "H": lambda when, moment: f"{when.hour:02d}",
+    "M": lambda when, moment: f"{when.minute:02d}",
+    "S": lambda when, moment: f"{when.second:02d}",
+    "j": lambda when, moment: f"{when.timetuple().tm_yday:03d}",
+    "B": lambda when, moment: golayout.LONG_MONTHS[when.month - 1],
+    "b": lambda when, moment: golayout.SHORT_MONTHS[when.month - 1],
+    "A": lambda when, moment: golayout.LONG_WEEKDAYS[when.weekday()],
+    "a": lambda when, moment: golayout.SHORT_WEEKDAYS[when.weekday()],
+    "p": lambda when, moment: "PM" if when.hour >= 12 else "AM",
+    "I": lambda when, moment: f"{when.hour % 12 or 12:02d}",
+    "Z": lambda when, moment: golayout.zone_name(when, moment.offset_seconds()),
+    "z": lambda when, moment: golayout.offset_text(
+        moment.offset_seconds(), parts=2, colon=False, iso=False
+    ),
+    "%": lambda when, moment: "%",
+}
+
+
 def sr_strftime(moment: Time, spec: str) -> str:
     """Return a time formatted by the familiar directives.
 
@@ -1230,26 +1256,6 @@ def sr_strftime(moment: Time, spec: str) -> str:
     if not isinstance(moment, Time):
         raise ExpressionError(f"strftime() wants a time, got {type_name(moment)}")
     when = moment.moment
-    offset = moment.offset_seconds()
-    directives = {
-        "Y": f"{when.year:04d}",
-        "y": f"{when.year % 100:02d}",
-        "m": f"{when.month:02d}",
-        "d": f"{when.day:02d}",
-        "H": f"{when.hour:02d}",
-        "M": f"{when.minute:02d}",
-        "S": f"{when.second:02d}",
-        "j": f"{when.timetuple().tm_yday:03d}",
-        "B": golayout.LONG_MONTHS[when.month - 1],
-        "b": golayout.SHORT_MONTHS[when.month - 1],
-        "A": golayout.LONG_WEEKDAYS[when.weekday()],
-        "a": golayout.SHORT_WEEKDAYS[when.weekday()],
-        "p": "PM" if when.hour >= 12 else "AM",
-        "I": f"{when.hour % 12 or 12:02d}",
-        "Z": golayout.zone_name(when, offset),
-        "z": golayout.offset_text(offset, parts=2, colon=False, iso=False),
-        "%": "%",
-    }
     written: list[str] = []
     index = 0
     while index < len(spec):
@@ -1261,9 +1267,10 @@ def sr_strftime(moment: Time, spec: str) -> str:
         if index + 1 >= len(spec):
             raise ExpressionError(f"strftime: a trailing % in {spec!r}")
         directive = spec[index + 1]
-        if directive not in directives:
+        write = STRFTIME.get(directive)
+        if write is None:
             raise ExpressionError(f"strftime: unknown directive %{directive}")
-        written.append(directives[directive])
+        written.append(write(when, moment))
         index += 2
     return "".join(written)
 

@@ -68,8 +68,11 @@ __all__ = [
     "dumps",
     "header_object",
     "length",
+    "mark_object",
     "number",
+    "page_geometry",
     "page_object",
+    "paper_object",
     "quoted",
     "records",
     "relative_to",
@@ -496,6 +499,21 @@ def outline_object(mark: Outline) -> dict[str, Any]:
 def page_object(page: Page, default: Paper, base: Path | None = None) -> dict[str, Any]:
     """Return one page line's object.
 
+    Args:
+        page: The page.
+        default: The document's own geometry, to compare against.
+        base: The directory the printout is being written to.
+
+    """
+    found: dict[str, Any] = {"kind": "page", "number": page.number}
+    found.update(page_geometry(page, default))
+    found["marks"] = [mark_object(mark, base) for mark in page.marks]
+    return found
+
+
+def page_geometry(page: Page, default: Paper) -> dict[str, float]:
+    """Return the fields of a page line that state its own geometry.
+
     The size and the four margins are written only where they differ
     from the document's, and independently so: a page flush to the
     paper edge under a header that insets is an override, so a zero
@@ -504,10 +522,9 @@ def page_object(page: Page, default: Paper, base: Path | None = None) -> dict[st
     Args:
         page: The page.
         default: The document's own geometry, to compare against.
-        base: The directory the printout is being written to.
 
     """
-    found: dict[str, Any] = {"kind": "page", "number": page.number}
+    found: dict[str, float] = {}
     paper = page.paper
     if paper is not None:
         for key, value, standard in (
@@ -520,7 +537,6 @@ def page_object(page: Page, default: Paper, base: Path | None = None) -> dict[st
         ):
             if value != standard:
                 found[key] = length(value)
-    found["marks"] = [mark_object(mark, base) for mark in page.marks]
     return found
 
 

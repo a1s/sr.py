@@ -91,7 +91,7 @@ from sr.errors import (
 from sr.expr import Namespace, apply_format
 from sr.expr.values import quote
 from sr.fonts.resolve import Resolution
-from sr.fonts.text import Metrics, missing_glyph, wrap
+from sr.fonts.text import Metrics, Wrapped, missing_glyph, wrap
 from sr.layout.context import Context, condition, evaluate, evaluate_at
 from sr.layout.defer import Deferral, scope_of, snapshot
 from sr.layout.fonttable import FontTable
@@ -146,6 +146,11 @@ HALIGN = {"left": 0.0, "center": 0.5, "right": 1.0}
 # direction, or a quarter of an inch where that is more.
 BAR_SHARE = 0.15
 BAR_MINIMUM = 18.0
+
+# How many wrapped strings one measurer keeps.  Past this it forgets
+# them all and starts again, which bounds what a long run of distinct
+# strings holds on to without making the common case pay.
+WRAPS_KEPT = 65536
 
 
 @dataclass
@@ -464,6 +469,8 @@ class Measurer:
             by the name its template gave it.
         faces: The metrics of each used font, by published name,
             which is the name a text mark carries.
+        wrapped: What wrapping each string produced,
+            by the string, the width, and the metrics.
 
     """
 
@@ -499,11 +506,37 @@ class Measurer:
         self.used: set[str] = set()
         self.published: dict[str, str] = {}
         self.faces: dict[str, Metrics] = {}
+        self.wrapped: dict[tuple[str, float, Metrics], Wrapped] = {}
 
     @property
     def warnings(self) -> list[BuildWarning]:
         """Return what measuring has had to say, every document's."""
         return self.shared.warnings
+
+    def wrap(self, text: str, width: float, metrics: Metrics) -> Wrapped:
+        """Return the lines a string breaks into, wrapping it only once.
+
+        doc/layout.md#cost: what a band measures is cached against
+        what its content resolved to and the width it is given, and
+        wrapping is the part of measuring that costs.  A report sets
+        the same strings over and over, and wrapping one is a function
+        of the string, the width, and the metrics alone.  The answer
+        is shared, so a caller reads it and does not change it.
+
+        Args:
+            text: What the element finally holds.
+            width: The box's width in points, already rounded.
+            metrics: The face and size to measure with.
+
+        """
+        key = (text, width, metrics)
+        found = self.wrapped.get(key)
+        if found is None:
+            if len(self.wrapped) >= WRAPS_KEPT:
+                self.wrapped.clear()
+            found = wrap(text, width, metrics)
+            self.wrapped[key] = found
+        return found
 
     def prints(self, section: Section, frame: Window, context: Context) -> bool:
         """Report whether a band's ``printwhen`` lets it print.
@@ -1103,7 +1136,7 @@ class Measurer:
                 snapshot(field.expr, names),
                 context.record_index,
             )
-        wrapped = wrap(text, placed.width, metrics)
+        wrapped = self.wrap(text, placed.width, metrics)
         if placed.deferral is None:
             for character in wrapped.missing:
                 self.missing(self.font_name(placed.style.font), character, field.path)
@@ -1447,7 +1480,7 @@ class Measurer:
         record = deferral.record
         text = self.resolved(deferral, final)
         metrics = self.faces[mark.font]
-        wrapped = wrap(text, mark.box.width, metrics)
+        wrapped = self.wrap(text, mark.box.width, metrics)
         for character in wrapped.missing:
             self.missing(mark.font, character, field.path)
         lines = tuple(wrapped.lines)

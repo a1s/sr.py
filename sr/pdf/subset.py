@@ -26,6 +26,8 @@ four of its rules are the shape of this module.
   programs where the face has them.  `fontTools` does the subsetting
   and the closure over composite glyphs, renumbering what it keeps;
   the codes reach the renumbered glyphs through a `CIDToGIDMap`.
+  The layout tables are dropped before subsetting, since nothing is
+  closed over them and reading them is most of what subsetting costs.
   Every other table is deleted after subsetting and not before,
   since the subsetter reads a few of them on the way.
 
@@ -53,6 +55,7 @@ from sr.units import round_points
 __all__ = [
     "CODE_LIMIT",
     "KEPT_TABLES",
+    "LAYOUT_TABLES",
     "Embedded",
     "postscript_name",
     "subset_tag",
@@ -71,6 +74,24 @@ KEPT_TABLES = (
     "cvt ",
     "fpgm",
     "prep",
+)
+
+# The tables the subsetter is told to drop before it starts.
+# These are the glyph substitution, positioning, and kerning tables,
+# and none of them reaches the program.  The subsetter would otherwise
+# read each of them whole to prune it, and a large face's GSUB and GPOS
+# take longer to read than everything else in a render.
+LAYOUT_TABLES = (
+    "GSUB",
+    "GPOS",
+    "GDEF",
+    "BASE",
+    "JSTF",
+    "MATH",
+    "kern",
+    "kerx",
+    "morx",
+    "mort",
 )
 
 # A code is two bytes under Identity-H, and code 0 is the empty glyph's.
@@ -130,6 +151,8 @@ class Embedded:
         resource: The name pages show it under: ``F1``, ``F2``.
         characters: What the document sets in it, under any entry.
         codes: Each character's code, once frozen.
+        operands: Each character's code as the four hexadecimal digits
+            a string operand spells it with, once frozen.
 
     """
 
@@ -139,6 +162,7 @@ class Embedded:
     resource: str
     characters: set[str] = field(default_factory=set)
     codes: dict[str, int] = field(default_factory=dict)
+    operands: dict[str, str] = field(default_factory=dict)
 
     def take(self, text: str) -> None:
         """Note the characters a line sets in this face.
@@ -164,6 +188,9 @@ class Embedded:
             )
         numbered = enumerate(ordered, start=1)
         self.codes = {character: code for code, character in numbered}
+        self.operands = {
+            character: f"{code:04X}" for character, code in self.codes.items()
+        }
 
     def encode(self, text: str) -> str:
         """Return a string of codes, as a hexadecimal string operand.
@@ -172,7 +199,7 @@ class Embedded:
             text: Characters this face was given, after it was frozen.
 
         """
-        return "<" + "".join(f"{self.codes[one]:04X}" for one in text) + ">"
+        return "<" + "".join(map(self.operands.__getitem__, text)) + ">"
 
     def ascender(self, size: float) -> float:
         """Return `hhea`'s ascender at a size, above the baseline.
@@ -392,12 +419,13 @@ def subset_options() -> subset.Options:
 
     Glyphs are named rather than reached through a character map,
     so no layout table is consulted and nothing is closed over
-    but composite glyphs.  Hinting is kept, and the timestamp
-    is left as the face has it, which keeps the program a
-    function of the face and the glyphs.
+    but composite glyphs, and the layout tables are dropped unread.
+    Hinting is kept, and the timestamp is left as the face has it,
+    which keeps the program a function of the face and the glyphs.
 
     """
     options = subset.Options()
+    options.drop_tables += list(LAYOUT_TABLES)
     options.layout_features = []
     options.layout_closure = False
     options.name_IDs = []

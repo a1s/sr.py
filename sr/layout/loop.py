@@ -102,7 +102,8 @@ from typing import Any
 
 from sr import meta
 from sr.errors import BuildError, BuildWarning, Location, NodePath
-from sr.expr import Record, Time
+from sr.expr import Expression, Record, Time
+from sr.expr.builtins import GROUP_SUFFIXES, PREDEFINED
 from sr.expr.golayout import RFC3339
 from sr.fonts.resolve import Resolution, Resolver
 from sr.fonts.text import Metrics
@@ -146,6 +147,11 @@ from sr.template.model import Paper as Geometry
 from sr.units import fits, round_points
 
 __all__ = ["Build", "Builder"]
+
+# The predefined names whose values do not move while a report is built:
+# each is fixed by the record it is asked about, or by the run.
+# A group key that reads nothing else is a function of its record alone.
+FIXED_NAMES = frozenset({"THIS", "ITEM_NUMBER", "DATA_COUNT", "BUILD_TIME"})
 
 
 @dataclass(frozen=True)
@@ -650,6 +656,12 @@ class Builder:
             which is grafted onto ``base`` while it runs.
         pending: The fold of a band whose negative-seq subreports are
             running, which rolls back around an eject one of them causes.
+        keyed: Each record's group keys, by its 0-based position, where
+            every key is a function of its record alone; ``None`` where
+            one is not, and each is evaluated wherever it is asked for.
+        counted: Whether the rows left in a group can be counted from
+            the keys alone, with no lookahead: the keys are kept, and
+            every record prints its detail.
 
     """
 
@@ -729,6 +741,11 @@ class Builder:
             name = self.name(run)
             self.context.group_counts[name] = 0
             self.context.group_pages[name] = 1
+        variables = frozenset(one.name for one in declared)
+        fixed = all(self.fixed(run, variables) for run in self.runs)
+        self.keyed: dict[int, list[Any]] | None = {} if fixed else None
+        detail = self.levels[-1].nesting.detail
+        self.counted = fixed and detail is not None and detail.printwhen is None
         self.deferred = Register()
         self.previous: tuple[Record, int] | None = None
         self.ahead: Ahead | None = None
@@ -836,6 +853,37 @@ class Builder:
         group = run.level.group
         assert group is not None
         return group.name
+
+    def fixed(self, run: Run, variables: frozenset[str]) -> bool:
+        """Report whether a group's key is a function of its record alone.
+
+        It is where every name its ``expr`` reads is a record field,
+        a parameter, or one of :data:`FIXED_NAMES`, as the order of
+        doc/expressions.md#names-in-scope resolves it: a field shadowed
+        by a variable is the variable, and a variable or a counter
+        moves as the report is built, in a lookahead as well.
+
+        Args:
+            run: The group.
+            variables: The names of the report's variables.
+
+        """
+        group = run.level.group
+        assert group is not None and group.expr is not None
+        expression: Expression = group.expr
+        counters = {
+            f"{name}{suffix}"
+            for name in self.context.group_counts
+            for suffix in GROUP_SUFFIXES
+        }
+        for name in expression.names:
+            if name in FIXED_NAMES:
+                continue
+            if name in PREDEFINED or name in counters:
+                return False
+            if name not in self.context.parameters and name in variables:
+                return False
+        return True
 
     def walk_of(self, frame: Frame) -> Walk:
         """Return the `style` walk of a header or footer of this frame.
@@ -1045,12 +1093,13 @@ class Builder:
     def breaks(self, index: int, record: Record) -> tuple[int | None, list[Any]]:
         """Return the outermost group the record breaks, and every group's key.
 
-        Every group's key is evaluated against the new record, outermost
-        first, and the outermost that changed breaks every group inside it.
-        The first record breaks them all, and ``None`` is no break at all.
-        Nothing is kept: :meth:`row` keeps every key for the next
-        comparison, since a group nested in one that broke has its key
-        taken all the same, and a lookahead asks first where a run ends.
+        Every group's key is taken for the new record, outermost first,
+        by :meth:`keys`, and the outermost that changed breaks every group
+        inside it.  The first record breaks them all, and ``None`` is
+        no break at all.  No group's key changes here:
+        :meth:`row` keeps every key for the next comparison, since a group
+        nested in one that broke has its key taken all the same, and
+        a lookahead asks first where a run ends.
 
         Args:
             index: The record's 0-based position.
@@ -1059,21 +1108,43 @@ class Builder:
         """
         if not self.runs:
             return None, []
+        keys = self.keys(index, record)
+        for position, (run, key) in enumerate(zip(self.runs, keys, strict=True)):
+            if self.previous is None or key != run.key:
+                return position, keys
+        return None, keys
+
+    def keys(self, index: int, record: Record) -> list[Any]:
+        """Return every group's key for a record, outermost first.
+
+        Each is evaluated against the record, and where :attr:`keyed`
+        keeps them, only the first time the record is asked about:
+        the record loop asks once, and each lookahead that reaches
+        the record asks again.  Nothing else changes, since a kept
+        key is one no state of the report could have changed.
+
+        Args:
+            index: The record's 0-based position.
+            record: The record.
+
+        """
+        if self.keyed is not None:
+            found = self.keyed.get(index)
+            if found is not None:
+                return found
         kept = (self.context.record, self.context.item_number)
         self.context.record = record
         self.context.item_number = index + 1
         names = self.context.environment(0.0, 0.0)
-        breaking: int | None = None
         keys: list[Any] = []
-        for position, run in enumerate(self.runs):
+        for run in self.runs:
             group = run.level.group
             assert group is not None and group.expr is not None
-            key = evaluate(group.expr, names, group.path, self.context, "expr")
-            if breaking is None and (self.previous is None or key != run.key):
-                breaking = position
-            keys.append(key)
+            keys.append(evaluate(group.expr, names, group.path, self.context, "expr"))
         self.context.record, self.context.item_number = kept
-        return breaking, keys
+        if self.keyed is not None:
+            self.keyed[index] = keys
+        return keys
 
     def close(self, level: int) -> None:
         """Place the summaries of the groups from ``level`` in, innermost first.
@@ -1358,14 +1429,9 @@ class Builder:
             if run.tailed or group.mintailrows < 1:
                 continue
             frame = self.levels[-1].inner
-            # Uncapped: what decides whether the test applies is how many rows
-            # are left, and the row count bounds how far it looks.
-            with self.lookahead(
-                math.inf, group.mintailrows + 1, measuring=False
-            ) as ahead:
-                self.detail(index)
-                self.run_ahead(index, position)
-            if ahead.rows > group.mintailrows:
+            if self.rows_left(index, position, group.mintailrows + 1) > (
+                group.mintailrows
+            ):
                 continue
             run.tailed = True
             with self.lookahead(frame.height, None) as ahead:
@@ -1375,6 +1441,41 @@ class Builder:
             if not frame.empty and not fits(wanted, frame.available):
                 self.eject(frame, "column", None, deliberate=True)
                 return
+
+    def rows_left(self, index: int, position: int, most: int) -> int:
+        """Count the printed rows left in a group's run, up to ``most``.
+
+        The current record's row is the first.  Where :attr:`counted`
+        allows, the rows are the records up to the next break of this
+        group or of one around it, found from the kept keys, compared
+        as :meth:`breaks` compares them.  Otherwise a lookahead runs
+        the record loop on, counting the rows that print.
+
+        Args:
+            index: The current record's 0-based position.
+            position: The group's position among the groups.
+            most: The count at which to stop counting.
+
+        """
+        if not self.counted:
+            # Uncapped: what decides whether the test applies is how many rows
+            # are left, and the row count bounds how far it looks.
+            with self.lookahead(math.inf, most, measuring=False) as ahead:
+                self.detail(index)
+                self.run_ahead(index, position)
+            return ahead.rows
+        records = self.records
+        before = self.keys(index, records[index])
+        rows = 1
+        for later in range(index + 1, len(records)):
+            if rows >= most:
+                break
+            keys = self.keys(later, records[later])
+            if any(keys[outer] != before[outer] for outer in range(position + 1)):
+                break
+            before = keys
+            rows += 1
+        return rows
 
     def run_ahead(self, index: int, position: int, summary: bool = True) -> None:
         """Carry a lookahead on to the end of a group's run.

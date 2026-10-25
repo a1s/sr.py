@@ -16,9 +16,14 @@ and three parties hold a printout to them:
 The check reads **records** -- the objects both encodings write
 and both readers return -- rather than :mod:`sr.printout.model`.
 `inspect` reads printouts another engine wrote, and records are
-what it has; the engine turns its model into records with
-:func:`sr.printout.write.records`, the same objects it writes,
-so what is checked is what a reader sees.
+what it has.  The engine checks its own printout in memory instead,
+with :func:`check`, which says what :func:`violations` says about
+the records :func:`sr.printout.write.records` makes of the printout,
+sentence for sentence and in the same order, without making them:
+making them is most of what checking them costs.  What the model's
+types already hold, a record is not needed to show, and what they do
+not, a length that is not finite say, is checked as a record shows it.
+The test suite holds the two to the same answers.
 
 Records are read defensively.  A field that is missing or of
 the wrong type is itself a violation where an invariant needs it,
@@ -41,8 +46,24 @@ from collections.abc import Collection, Iterable, Iterator
 from dataclasses import dataclass
 from typing import Any, TypeGuard
 
-from sr.printout.model import VERSION, Printout
-from sr.printout.write import number, records
+from sr.printout.model import (
+    VERSION,
+    Barcode,
+    Box,
+    Image,
+    Mark,
+    Outline,
+    Printout,
+    Text,
+    Xref,
+)
+from sr.printout.write import (
+    length,
+    mark_object,
+    number,
+    page_geometry,
+    paper_object,
+)
 from sr.units import fits, round_points
 
 __all__ = [
@@ -191,16 +212,168 @@ def described(kind: str, found: Crossing) -> str:
 def check(printout: Printout) -> list[str]:
     """Return every invariant a printout in memory breaks.
 
-    The records are made one at a time and read as they come,
-    so no more than one page of them is held at once.  The `data`
-    table's contents are left out of them: no invariant reads
-    the bytes of a blob, only its name.
+    What :func:`violations` says about the printout's records,
+    read off the model.  The header's format version and its page
+    count are the model's own, so neither can be wrong.  An image and
+    a barcode carry the most fields a record could get wrong, and are
+    the rarest marks, so each is made into its record and read as one.
 
     Args:
         printout: The document, as the engine built it.
 
     """
-    return violations(records(printout, None, contents=False))
+    said: list[str] = []
+    data = printout.data
+    font_names: set[str] = set()
+    for entry in sorted(printout.fonts, key=lambda one: one.name):
+        font_names.add(entry.name)
+        if entry.data is not None and entry.data not in data:
+            said.append(
+                f"font {plain(entry.name)}: its data {plain(entry.data)} "
+                "is not in the header's data table"
+            )
+    paper, wrong = paper_of(paper_object(printout.paper))
+    said.extend(wrong)
+    overflowed = any(one.kind == "overflow" for one in printout.warnings)
+    names: set[str] = set()
+    targets: list[tuple[str, str]] = []
+    previous = 0
+    for page in printout.pages:
+        label = f"page {plain(page.number)}"
+        area, wrong = area_of(page_geometry(page, printout.paper), paper)
+        said.extend(f"{label}: {one}" for one in wrong)
+        for where, mark in walked(page.marks, f"{label}, mark "):
+            if isinstance(mark, Outline):
+                if mark.name is not None:
+                    names.add(mark.name)
+                level = int(mark.level)
+                if level > previous + 1 or level < 1:
+                    said.append(
+                        f"{where}: the outline entry is at level {level}, "
+                        f"and the one before it at level {previous}"
+                    )
+                previous = level
+                if not overflowed and area is not None:
+                    said.extend(point_violations(where, mark, area))
+                continue
+            if isinstance(mark, Xref) and mark.link == "outline":
+                targets.append((where, mark.target))
+            box = finite(mark.box)
+            if isinstance(mark, Image | Barcode):
+                record = mark_object(mark)
+                said.extend(mark_violations(where, record, font_names, data))
+            else:
+                said.extend(own_violations(where, mark, box, font_names))
+            if not overflowed and area is not None and box is not None:
+                found = crossing(area, *box)
+                if found is not None:
+                    said.append(f"{where}: {described(mark.kind, found)}")
+    for where, target in targets:
+        if not held(target, names):
+            said.append(
+                f"{where}: the xref targets the outline entry {plain(target)}, "
+                "and no entry is named so"
+            )
+    return said
+
+
+def walked(marks: tuple[Mark, ...], prefix: str) -> Iterator[tuple[str, Mark]]:
+    """Yield every mark of the model with where it is, as :func:`walk` does.
+
+    Args:
+        marks: A page's marks, or an xref's.
+        prefix: What goes before each mark's number.
+
+    """
+    for index, mark in enumerate(marks, start=1):
+        where = f"{prefix}{index}"
+        yield where, mark
+        if isinstance(mark, Xref):
+            yield from walked(mark.marks, f"{where}.")
+
+
+def finite(box: Box) -> tuple[float, float, float, float] | None:
+    """Return a box as its record holds it, or ``None`` where it has no reading.
+
+    Args:
+        box: The mark's box.
+
+    """
+    found = (length(box.x), length(box.y), length(box.width), length(box.height))
+    for value in found:
+        if not math.isfinite(value):
+            return None
+    return found
+
+
+def own_violations(
+    where: str,
+    mark: Mark,
+    box: tuple[float, float, float, float] | None,
+    fonts: set[str],
+) -> Iterator[str]:
+    """Yield what :func:`mark_violations` says about a mark's record.
+
+    For a text mark, a line, a rectangle, and an xref: the marks
+    :func:`check` reads off the model rather than off their records.
+
+    Args:
+        where: The mark, as a reader would find it.
+        mark: The mark.
+        box: Its box, as :func:`finite` reads it.
+        fonts: The names of the header's fonts.
+
+    """
+    called = CALLED.get(mark.kind, mark.kind)
+    if box is None:
+        yield f"{where}: the {called} has no box"
+    else:
+        for key, value in (("width", box[2]), ("height", box[3])):
+            if value < 0:
+                yield (
+                    f"{where}: the {called}'s box has a negative {key}, {number(value)}"
+                )
+    if not isinstance(mark, Text):
+        return
+    if mark.font not in fonts:
+        yield (
+            f"{where}: its font {plain(mark.font)} is not in the header's font table"
+        )
+    if not mark.lines:
+        yield f"{where}: the text has no lines"
+        return
+    leading = length(mark.leading)
+    if not math.isfinite(leading):
+        yield f"{where}: the text has no leading"
+        return
+    if box is None:
+        return
+    lines = len(mark.lines)
+    needed = lines * leading
+    if not fits(needed, box[3]):
+        yield (
+            f"{where}: {lines} lines of {number(leading)} pt "
+            f"need {number(round_points(needed))} pt, "
+            f"in a box {number(box[3])} pt tall"
+        )
+
+
+def point_violations(where: str, mark: Outline, area: Area) -> Iterator[str]:
+    """Yield what :func:`placement_violations` says about an outline entry.
+
+    Args:
+        where: The entry, as a reader would find it.
+        mark: The entry.
+        area: Its page's printable area.
+
+    """
+    x, y = length(mark.box.x), length(mark.box.y)
+    if not (math.isfinite(x) and math.isfinite(y)):
+        yield f"{where}: the outline entry has no point"
+        return
+    found = crossing(area, x, y)
+    if found is not None:
+        yield f"{where}: {described(mark.kind, found)}"
 
 
 def violations(found: Iterable[Any]) -> list[str]:

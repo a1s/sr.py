@@ -19,7 +19,7 @@ import pytest
 from sr.api import Options, build
 from sr.errors import BuildError
 from sr.layout.frame import Frame
-from sr.layout.loop import Keys
+from sr.layout.loop import Builder, Keys
 from sr.layout.measure import Extent, Measurement, Measurer
 from sr.layout.place import choose, is_cut, is_legal, split
 from sr.printout.model import Box, Page, Printout, Rectangle, Text
@@ -1297,6 +1297,92 @@ def test_mintailrows_measures_only_the_tail(
         members=GROUP,
     )
     assert measured < 50
+
+
+def lookaheads(monkeypatch: pytest.MonkeyPatch) -> list[bool]:
+    """Return what each lookahead the build runs says of its measuring."""
+    seen: list[bool] = []
+    original = Builder.lookahead
+
+    def watched(
+        self: Builder, cap: float, rows: int | None, *, measuring: bool = True
+    ) -> Any:
+        seen.append(measuring)
+        return original(self, cap, rows, measuring=measuring)
+
+    monkeypatch.setattr(Builder, "lookahead", watched)
+    return seen
+
+
+def tails(tail: int, shape: str) -> tuple[str, list[dict[str, Any]], str]:
+    """Return the bands, the records, and the members of a tail test.
+
+    Args:
+        tail: The group's ``mintailrows``.
+        shape: ``flat`` for long runs of one group, ``short`` for runs
+            shorter than the tail, ``nested`` for runs of a group inside.
+
+    """
+    if shape == "nested":
+        rows = [{"a": 1, "b": 1}] * 4 + [{"a": 1, "b": 2}, {"a": 2, "b": 1}]
+        rows += [{"a": 3, "b": 1}] * 3 + [{"a": 3, "b": 2}] * 4
+        return title(30) + two_levels(f"mintailrows={tail}"), rows, NESTED
+    keys: tuple[int, ...] = (1,) * 9 + (2,) * 2 + (3,) + (4,) * 6
+    if shape == "short":
+        keys = (1, 2, 2, 3, 4, 4, 5, 5, 5, 6)
+    bands = group(
+        band("summary", shown("S"), "height=10"),
+        band("detail", said("'r%d' % ITEM_NUMBER"), "height=10"),
+        props=f"mintailrows={tail}",
+    )
+    return bands, keyed(*keys), GROUP
+
+
+@pytest.mark.parametrize("tail", [1, 2, 3])
+@pytest.mark.parametrize("shape", ["flat", "short", "nested"])
+def test_the_rows_left_are_counted_from_the_keys_as_a_lookahead_counts_them(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tail: int, shape: str
+) -> None:
+    """A group keyed on its record alone counts its tail with no lookahead.
+
+    The same build, with every key taken as one the report could move,
+    counts the rows with a lookahead instead, and places every band
+    where the first build did.
+
+    """
+    bands, rows, members = tails(tail, shape)
+    seen = lookaheads(monkeypatch)
+    counted = built(tmp_path, bands, rows, members=members)
+    assert False not in seen
+    seen.clear()
+    monkeypatch.setattr(Builder, "fixed", lambda self, run, variables: False)
+    looked = built(tmp_path, bands, rows, members=members)
+    assert False in seen
+    assert looked == counted
+
+
+@pytest.mark.parametrize(
+    ("expr", "printwhen"),
+    [("a", "a > 0"), ("(a, total != 0)", None), ("a + 0 * PAGE_NUMBER", None)],
+    ids=["detail-printwhen", "variable", "counter"],
+)
+def test_the_rows_left_are_counted_by_a_lookahead_where_keys_cannot_tell(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    expr: str,
+    printwhen: str | None,
+) -> None:
+    """A detail that may not print, or a key the report moves, needs one."""
+    detail = band(
+        "detail",
+        shown("d"),
+        "height=10" + (f' printwhen="{printwhen}"' if printwhen else ""),
+    )
+    inner = "".join("  " + one for one in (band("summary", shown("S")), detail))
+    bands = f'    group "A" expr="{expr}" {{\n{inner}    }}\n'
+    seen = lookaheads(monkeypatch)
+    built(tmp_path, bands, keyed(1, 1, 2), members=GROUP)
+    assert False in seen
 
 
 def spans(*extents: Extent) -> Measurement:

@@ -10,23 +10,36 @@ that breaks any of them, which is the point of the check.
 from __future__ import annotations
 
 import copy
+import math
+from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from sr.api import Options, build
+from sr.errors import BuildWarning
 from sr.printout.model import (
     Barcode,
     Box,
     FontEntry,
+    Image,
+    Line,
+    Mark,
     Outline,
     Page,
     Paper,
     Printout,
+    Rectangle,
     Report,
     Text,
+    Xref,
 )
 from sr.printout.verify import Area, Crossing, check, crossing, described, violations
+from sr.printout.write import records
+
+ROOT = Path(__file__).resolve().parents[2]
 
 PAGE = {
     "width": 100,
@@ -474,6 +487,147 @@ def test_a_printout_in_memory_is_checked_as_written(tmp_path: Path) -> None:
         "page 1, mark 1: the outline entry is at level 2, "
         "and the one before it at level 0"
     ]
+
+
+def recorded(made: Printout) -> list[str]:
+    """Return what the check of a printout's records says about it."""
+    return violations(records(made, None, contents=False))
+
+
+@pytest.mark.parametrize("example", ["minimal", "sakila", "invoices"])
+def test_an_example_is_checked_in_memory_as_its_records_are(example: str) -> None:
+    folder = ROOT / "example" / example
+    (data,) = folder.glob("*.jsonl")
+    asked = Options(build_time="2026-08-04T09:12:44Z", strict_fonts=True)
+    made = build(folder / f"{example}.kdl", data, asked).printout
+    assert check(made) == recorded(made) == []
+
+
+TEXT_MARK = Text(Box(5, 5, 40, 6), "body", "#000000", "left", 6, ("a",))
+
+MODEL_MARKS: tuple[Mark, ...] = (
+    Outline(Box(5, 5, 0, 0), "top", 1, "top", False),
+    TEXT_MARK,
+    Image(Box(5, 11, 10, 5), data="pic.png"),
+    Barcode(
+        Box(5, 16, 30, 18),
+        "Code128",
+        "A",
+        0.5,
+        False,
+        "#000000",
+        None,
+        stripes=(10, 20, 30),
+    ),
+    Barcode(
+        Box(40, 16, 6, 4),
+        "Aztec",
+        "A",
+        2,
+        False,
+        "#000000",
+        None,
+        rows=((1, 2), (0, 3)),
+    ),
+    Line(Box(5, 40, 40, 0), 1, "solid", "#000000", False),
+    Rectangle(Box(5, 42, 40, 5), 1, "solid", "#000000", None, 0),
+    Xref(
+        Box(50, 5, 40, 6),
+        "outline",
+        "top",
+        None,
+        (replace(TEXT_MARK, box=Box(50, 5, 40, 6)),),
+    ),
+)
+
+
+def model() -> Printout:
+    """Return a printout in memory that keeps every invariant."""
+    return Printout(
+        report=Report("Verify"),
+        built="2026-08-04T09:12:44Z",
+        engine="sr 0.1.0",
+        strict_fonts=True,
+        paper=Paper(100, 60, 5, 5, 5, 5),
+        fonts=(
+            FontEntry(
+                "body",
+                5,
+                False,
+                False,
+                False,
+                "Go",
+                "explicit",
+                file=Path("Go-Regular.ttf"),
+            ),
+        ),
+        data={"pic.png": b"\x00"},
+        pages=(Page(1, MODEL_MARKS),),
+    )
+
+
+def marked(at: int, **changes: Any) -> Callable[[Printout], Printout]:
+    """Return a change to one of the first page's marks."""
+
+    def changed(made: Printout) -> Printout:
+        marks = list(made.pages[0].marks)
+        marks[at] = replace(marks[at], **changes)
+        return replace(made, pages=(replace(made.pages[0], marks=tuple(marks)),))
+
+    return changed
+
+
+BROKEN: dict[str, Callable[[Printout], Printout]] = {
+    "negative width": marked(1, box=Box(5, 5, -1, 6)),
+    "no box": marked(5, box=Box(math.nan, 40, 40, 0)),
+    "unknown font": marked(1, font="other"),
+    "too many lines": marked(1, lines=("a", "b")),
+    "no lines": marked(1, lines=()),
+    "no leading": marked(1, leading=math.inf),
+    "image with no source": marked(2, data=None),
+    "image data not held": marked(2, data="other.png"),
+    "stripes too short": marked(3, stripes=(1, 1)),
+    "negative run": marked(3, stripes=(-1, 61)),
+    "no ink": marked(3, ink=""),
+    "no module": marked(3, module=math.nan),
+    "rows of two lengths": marked(4, rows=((1, 2), (4,))),
+    "outline level jump": marked(0, level=3),
+    "outline with no point": marked(0, box=Box(math.nan, 5, 0, 0)),
+    "outline past a margin": marked(0, box=Box(0, 5, 0, 0)),
+    "xref to no entry": marked(7, target="nowhere"),
+    "past a margin": marked(1, box=Box(0, 5, 40, 6)),
+    "nested past a margin": marked(
+        7, marks=(replace(TEXT_MARK, box=Box(50, 5, 60, 6)),)
+    ),
+    "margins waived": lambda made: replace(
+        marked(1, box=Box(0, 5, 40, 6))(made),
+        warnings=(BuildWarning("overflow", "too tall"),),
+    ),
+    "page geometry": lambda made: replace(
+        made,
+        pages=(replace(made.pages[0], paper=Paper(100, 60, math.nan, 5, 0, 5)),),
+    ),
+    "header geometry": lambda made: replace(
+        made, paper=Paper(100, math.inf, 5, 5, 5, 5)
+    ),
+    "font data not held": lambda made: replace(
+        made, fonts=(replace(made.fonts[0], file=None, data="go.ttf"),)
+    ),
+}
+
+
+def test_a_model_that_keeps_every_invariant_is_checked_as_its_records() -> None:
+    assert check(model()) == recorded(model()) == []
+
+
+@pytest.mark.parametrize("broken", BROKEN.values(), ids=BROKEN.keys())
+def test_a_broken_model_is_checked_as_its_records(
+    broken: Callable[[Printout], Printout],
+) -> None:
+    made = broken(model())
+    said = recorded(made)
+    assert check(made) == said
+    assert said or made.warnings
 
 
 # -- the margins ------------------------------------------------------
