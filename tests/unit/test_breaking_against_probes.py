@@ -118,7 +118,7 @@ def test_every_field_wraps_as_the_reference_wrapped_it(name: str) -> None:
         width = float(box["width"])
         assert field.box.across.size == pytest.approx(width), f"{name} field {index}"
         wrapped = wrap(content(field), width, metrics)
-        assert wrapped.lines == mark["lines"], f"{name} field {index}"
+        assert list(wrapped.lines) == mark["lines"], f"{name} field {index}"
 
 
 def named(message: str) -> str:

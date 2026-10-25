@@ -91,7 +91,7 @@ from sr.errors import (
 from sr.expr import Namespace, apply_format
 from sr.expr.values import quote
 from sr.fonts.resolve import Resolution
-from sr.fonts.text import Metrics, Wrapped, missing_glyph, wrap
+from sr.fonts.text import LONGEST_KEPT, Metrics, Wrapped, missing_glyph, wrap
 from sr.layout.context import Context, condition, evaluate, evaluate_at
 from sr.layout.defer import Deferral, scope_of, snapshot
 from sr.layout.fonttable import FontTable
@@ -150,7 +150,8 @@ BAR_MINIMUM = 18.0
 # How many wrapped strings one measurer keeps.  Past this it forgets
 # them all and starts again, which bounds what a long run of distinct
 # strings holds on to without making the common case pay.
-WRAPS_KEPT = 65536
+# A string longer than LONGEST_KEPT is not kept at all.
+WRAPS_KEPT = 16384
 
 
 @dataclass
@@ -521,7 +522,7 @@ class Measurer:
         wrapping is the part of measuring that costs.  A report sets
         the same strings over and over, and wrapping one is a function
         of the string, the width, and the metrics alone.  The answer
-        is shared, so a caller reads it and does not change it.
+        is shared, which is why it is frozen.
 
         Args:
             text: What the element finally holds.
@@ -532,10 +533,11 @@ class Measurer:
         key = (text, width, metrics)
         found = self.wrapped.get(key)
         if found is None:
-            if len(self.wrapped) >= WRAPS_KEPT:
-                self.wrapped.clear()
             found = wrap(text, width, metrics)
-            self.wrapped[key] = found
+            if len(text) <= LONGEST_KEPT:
+                if len(self.wrapped) >= WRAPS_KEPT:
+                    self.wrapped.clear()
+                self.wrapped[key] = found
         return found
 
     def prints(self, section: Section, frame: Window, context: Context) -> bool:
@@ -1140,7 +1142,7 @@ class Measurer:
         if placed.deferral is None:
             for character in wrapped.missing:
                 self.missing(self.font_name(placed.style.font), character, field.path)
-        placed.lines = tuple(wrapped.lines)
+        placed.lines = wrapped.lines
         if field.stretch:
             placed.content_height = round_points(len(wrapped.lines) * metrics.leading)
 
@@ -1483,7 +1485,7 @@ class Measurer:
         wrapped = self.wrap(text, mark.box.width, metrics)
         for character in wrapped.missing:
             self.missing(mark.font, character, field.path)
-        lines = tuple(wrapped.lines)
+        lines = wrapped.lines
         room = mark.box.height
         if not field.stretch:
             lines = lines[: fitting_lines(lines, room, metrics.leading)]

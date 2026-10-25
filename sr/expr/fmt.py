@@ -27,6 +27,7 @@ from __future__ import annotations
 import decimal
 import math
 import re
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, Final
 
@@ -78,8 +79,12 @@ BASES: Final = {
 }
 
 
+@dataclass(frozen=True, slots=True)
 class Spec:
     """One conversion out of a format string.
+
+    It is frozen, since :func:`parsed` shares one among every use
+    of the same format string.
 
     Attributes:
         flags: The flag characters, in the order they were written.
@@ -89,24 +94,10 @@ class Spec:
 
     """
 
-    __slots__ = ("flags", "precision", "verb", "width")
-
-    def __init__(
-        self, flags: str, width: int | None, precision: int | None, verb: str
-    ) -> None:
-        """Hold the parts of one conversion.
-
-        Args:
-            flags: The flag characters.
-            width: The minimum field width.
-            precision: The precision.
-            verb: The conversion letter.
-
-        """
-        self.flags = flags
-        self.width = width
-        self.precision = precision
-        self.verb = verb
+    flags: str
+    width: int | None
+    precision: int | None
+    verb: str
 
     @property
     def left(self) -> bool:

@@ -659,6 +659,8 @@ class Builder:
         keyed: Each record's group keys, by its 0-based position, where
             every key is a function of its record alone; ``None`` where
             one is not, and each is evaluated wherever it is asked for.
+            Only the records from the one the record loop is at are
+            kept, since nothing looks back.
         counted: Whether the rows left in a group can be counted from
             the keys alone, with no lookahead: the keys are kept, and
             every record prints its detail.
@@ -941,6 +943,9 @@ class Builder:
         self.begin()
         for index, record in enumerate(self.records):
             self.row(index, record)
+            if self.keyed is not None:
+                # The record loop and every lookahead only move on.
+                self.keyed.pop(index, None)
         self.end()
 
     def begin(self) -> None:
@@ -1094,12 +1099,11 @@ class Builder:
         """Return the outermost group the record breaks, and every group's key.
 
         Every group's key is taken for the new record, outermost first,
-        by :meth:`keys`, and the outermost that changed breaks every group
-        inside it.  The first record breaks them all, and ``None`` is
-        no break at all.  No group's key changes here:
-        :meth:`row` keeps every key for the next comparison, since a group
-        nested in one that broke has its key taken all the same, and
-        a lookahead asks first where a run ends.
+        by :meth:`keys`, and :func:`first_change` finds the outermost
+        that changed, which breaks every group inside it.  No group's key
+        changes here: :meth:`row` keeps every key for the next comparison,
+        since a group nested in one that broke has its key taken
+        all the same, and a lookahead asks first where a run ends.
 
         Args:
             index: The record's 0-based position.
@@ -1109,10 +1113,8 @@ class Builder:
         if not self.runs:
             return None, []
         keys = self.keys(index, record)
-        for position, (run, key) in enumerate(zip(self.runs, keys, strict=True)):
-            if self.previous is None or key != run.key:
-                return position, keys
-        return None, keys
+        before = None if self.previous is None else [run.key for run in self.runs]
+        return first_change(keys, before), keys
 
     def keys(self, index: int, record: Record) -> list[Any]:
         """Return every group's key for a record, outermost first.
@@ -1447,9 +1449,9 @@ class Builder:
 
         The current record's row is the first.  Where :attr:`counted`
         allows, the rows are the records up to the next break of this
-        group or of one around it, found from the kept keys, compared
-        as :meth:`breaks` compares them.  Otherwise a lookahead runs
-        the record loop on, counting the rows that print.
+        group or of one around it, which :func:`first_change` finds
+        from the kept keys as it does for :meth:`breaks`.  Otherwise
+        a lookahead runs the record loop on, counting the rows that print.
 
         Args:
             index: The current record's 0-based position.
@@ -1471,7 +1473,8 @@ class Builder:
             if rows >= most:
                 break
             keys = self.keys(later, records[later])
-            if any(keys[outer] != before[outer] for outer in range(position + 1)):
+            breaking = first_change(keys, before)
+            if breaking is not None and breaking <= position:
                 break
             before = keys
             rows += 1
@@ -2922,6 +2925,27 @@ def footer_waits_for_column(frame: Frame) -> bool:
         one.footer is not None and waits_for(one.footer.elements, COLUMN)
         for one in (frame, *frame.descendants())
     )
+
+
+def first_change(keys: list[Any], before: list[Any] | None) -> int | None:
+    """Return the position of the outermost group whose key changed.
+
+    doc/layout.md#the-record-loop: the outermost group whose key is not
+    the previous record's breaks, and every group inside it with it.
+    The first record, which has none before it, breaks them all,
+    and ``None`` is no break at all.
+
+    Args:
+        keys: Every group's key for a record, outermost first.
+        before: The previous record's; ``None`` for the first record.
+
+    """
+    if before is None:
+        return 0 if keys else None
+    for position, (key, previous) in enumerate(zip(keys, before, strict=True)):
+        if key != previous:
+            return position
+    return None
 
 
 def frame_path(top: Frame, bottom: Frame) -> list[Frame]:

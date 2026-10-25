@@ -87,7 +87,13 @@ BREAK = " \t"
 # How many strings one :class:`Metrics` keeps the width of.  Past this
 # it forgets them all and starts again, which bounds what a long run
 # of distinct strings holds on to without making the common case pay.
-WIDTHS_KEPT = 65536
+WIDTHS_KEPT = 16384
+
+# The longest string a cache of measured or wrapped text keeps.
+# A long string is rarely set twice and costs the most to keep,
+# so it is measured afresh each time, and with the count this
+# bounds a cache to a few MB.
+LONGEST_KEPT = 256
 
 
 @dataclass(frozen=True)
@@ -97,25 +103,20 @@ class Metrics:
     The size is an integer because a `font` node's is,
     and points are what everything above this works in.
 
-    What a codepoint advances and what a string measures are kept
-    once asked, since a report sets the same few dozen codepoints
-    and a good many of the same strings over and over.  Each is kept
-    as it was first computed, so a kept answer is the same float
-    a fresh one would be.
+    What a string measures is kept once asked, since a report sets
+    a good many of the same strings over and over.  It is kept as it
+    was first computed, so a kept answer is the same float a fresh
+    one would be.
 
     Attributes:
         face: The resolved face.
         size: The font size, in points.
-        advances: Each codepoint's advance, in points, once asked.
         widths: Each string's width, in points, once asked.
 
     """
 
     face: Face
     size: int
-    advances: dict[str, float] = field(
-        default_factory=dict, init=False, repr=False, compare=False
-    )
     widths: dict[str, float] = field(
         default_factory=dict, init=False, repr=False, compare=False
     )
@@ -135,12 +136,7 @@ class Metrics:
             character: One codepoint.
 
         """
-        found = self.advances.get(character)
-        if found is None:
-            face = self.face
-            found = face.advance(ord(character)) * self.size / face.units_per_em
-            self.advances[character] = found
-        return found
+        return self.face.advance(ord(character)) * self.size / self.face.units_per_em
 
     def width(self, text: str) -> float:
         """Return what a string measures, rounded once.
@@ -154,10 +150,11 @@ class Metrics:
         """
         found = self.widths.get(text)
         if found is None:
-            if len(self.widths) >= WIDTHS_KEPT:
-                self.widths.clear()
             found = round_points(sum(map(self.advance, text)))
-            self.widths[text] = found
+            if len(text) <= LONGEST_KEPT:
+                if len(self.widths) >= WIDTHS_KEPT:
+                    self.widths.clear()
+                self.widths[text] = found
         return found
 
     def missing(self, text: str) -> tuple[str, ...]:
@@ -178,9 +175,12 @@ class Metrics:
         return tuple(found)
 
 
-@dataclass
+@dataclass(frozen=True)
 class Wrapped:
     """What wrapping a string produced.
+
+    It is frozen, since a measurer shares one among every element
+    that sets the same string in the same box.
 
     Attributes:
         lines: The lines, in order.  Never empty: text that is empty
@@ -190,7 +190,7 @@ class Wrapped:
 
     """
 
-    lines: list[str] = field(default_factory=list)
+    lines: tuple[str, ...] = ()
     missing: tuple[str, ...] = ()
 
 
@@ -214,7 +214,7 @@ def wrap(text: str, width: float, metrics: Metrics) -> Wrapped:
     # the lines.  A mandatory break is consumed before anything is
     # measured, so U+000A is never looked for in the face; everything
     # else in the string is, whether or not trimming later removes it.
-    return Wrapped(lines, metrics.missing("".join(paragraphs)))
+    return Wrapped(tuple(lines), metrics.missing("".join(paragraphs)))
 
 
 def paragraph_lines(text: str, width: float, metrics: Metrics) -> list[str]:
