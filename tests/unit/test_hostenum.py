@@ -28,6 +28,9 @@ from __future__ import annotations
 import os
 import struct
 import sys
+import threading
+import time
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -37,18 +40,22 @@ from sr.errors import FontError
 from sr.fonts.face import ITALIC_BIT, MAC_ITALIC_BIT
 from sr.fonts.hostenum import (
     HEAD_BYTES,
+    KEEPER,
     MACOS_DIRECTORIES,
     SUBSTITUTES,
     Catalog,
     Entry,
+    Held,
     Source,
     enumerate_faces,
+    enumerated,
     fontconfig_directories,
     forget_host_catalog,
     host_catalog,
     host_sources,
     peek,
     relaxations,
+    stamp_of,
     style_words,
     substitute_candidates,
     walk,
@@ -507,26 +514,12 @@ def test_a_link_that_points_back_up_the_tree_does_not_walk_for_ever(
 
 # -- keeping the table ------------------------------------------------
 #
-# The table is kept for the process and handed out again while
-# the sources are as they were.  What these pin is that keeping
-# it changes when enumeration happens and never what it finds:
-# every change to a source that enumeration would see is seen here,
-# and the table handed out after one is the one a fresh enumeration builds.
-
-
-def same_table(kept: Catalog, built: Catalog) -> bool:
-    """Report whether two tables hold the same faces and say the same things.
-
-    Args:
-        kept: What :func:`host_catalog` handed out.
-        built: What :func:`enumerate_faces` built for the same sources.
-
-    """
-    return (kept.entries, kept.diagnostics, kept.files) == (
-        built.entries,
-        built.diagnostics,
-        built.files,
-    )
+# The table is kept for the process and handed out again while the
+# sources are as they were.  What these pin is that keeping it changes
+# when enumeration happens and not what it finds: every change to a
+# source that enumeration would see is seen here, and the table handed
+# out after one is the one a fresh enumeration builds.  The changes
+# the check cannot see are doc/template.md's to list and are not pinned.
 
 
 def test_the_kept_table_is_the_one_enumeration_builds(
@@ -535,8 +528,8 @@ def test_the_kept_table_is_the_one_enumeration_builds(
     sources = (Source(directory=font_directory),)
     first = host_catalog(sources)
     again = host_catalog(sources)
-    assert same_table(first, enumerate_faces(sources))
-    assert same_table(again, enumerate_faces(sources))
+    assert first == enumerate_faces(sources)
+    assert again is first
 
 
 def test_the_table_is_enumerated_once_for_unchanged_sources(
@@ -602,18 +595,61 @@ def test_a_font_rewritten_since_is_read_again(
     assert len(enumerations) == 2
 
 
-def test_what_a_build_adds_to_its_table_is_not_kept(
-    font_directory: Path, enumerations: list[tuple[Source, ...]]
+def test_a_file_that_would_not_read_is_read_once_it_will(
+    tmp_path: Path,
+    enumerations: list[tuple[Source, ...]],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # A resolver appends to the diagnostics of the table it was handed,
-    # when a face it looked up would not open.  That line is about one
-    # build, and the next build must not inherit it.
-    sources = (Source(directory=font_directory),)
-    first = host_catalog(sources)
-    first.diagnostics.append("a face that would not open for one build")
-    first.entries.clear()
-    first.files.clear()
-    assert same_table(host_catalog(sources), enumerate_faces(sources))
+    # A font held open without sharing on Windows, or installed without
+    # read access: the `stat` that stamps it succeeds and the read fails,
+    # and nothing in the stamp moves when that passes.
+    directory = tmp_path / "fonts"
+    directory.mkdir()
+    bold = write_style(directory, "B")
+    refusing = {bold}
+
+    def guarded(path: Path, count: int) -> bytes | None:
+        if path in refusing:
+            raise FontError(f"cannot read {path.name}: Permission denied")
+        return peek(path, count)
+
+    monkeypatch.setattr("sr.fonts.hostenum.peek", guarded)
+    sources = (Source(directory=directory),)
+    assert host_catalog(sources).entries == {}
+    assert host_catalog(sources).entries == {}
+    assert len(enumerations) == 1
+    refusing.clear()
+    found = host_catalog(sources).lookup("Go", bold=True, italic=False)
+    assert found is not None and found.bold
+    assert len(enumerations) == 2
+
+
+def test_a_directory_that_would_not_list_is_listed_once_it_will(
+    tmp_path: Path,
+    enumerations: list[tuple[Source, ...]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The walk passes over a directory it cannot list.  The stamp is
+    # taken by that same walk, so a table built while the listing failed
+    # records no files there, and a listing that works finds some.
+    directory = tmp_path / "fonts"
+    directory.mkdir()
+    write_style(directory, "R")
+    refusing = {directory}
+    listing = Path.iterdir
+
+    def guarded(self: Path) -> Iterator[Path]:
+        if self in refusing:
+            raise PermissionError(13, "Permission denied", str(self))
+        return listing(self)
+
+    monkeypatch.setattr(Path, "iterdir", guarded)
+    sources = (Source(directory=directory),)
+    assert host_catalog(sources).entries == {}
+    refusing.clear()
+    found = host_catalog(sources).lookup("Go", bold=False, italic=False)
+    assert found is not None
+    assert len(enumerations) == 2
 
 
 def test_forgetting_the_table_enumerates_again(
@@ -640,16 +676,92 @@ def test_a_table_kept_from_another_directory_is_built_again(
     enumerations: list[tuple[Source, ...]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # The faces would be the same.  The diagnostics would not: each
-    # names its file relative to the working directory, and one kept
-    # from elsewhere would name them relative to somewhere this is not.
+    # The faces would be the same.  The diagnostics would not: each names
+    # a file under the working directory relative to it, and one kept from
+    # elsewhere would name them relative to somewhere this is not.
     sources = (Source(directory=font_directory),)
     host_catalog(sources)
     monkeypatch.chdir(font_directory)
     kept = host_catalog(sources)
     assert len(enumerations) == 2
-    assert same_table(kept, enumerate_faces(sources))
+    assert kept == enumerate_faces(sources)
     assert "notes.txt: not an sfnt font; skipped" in kept.diagnostics
+
+
+def test_a_table_kept_from_another_directory_serves_where_none_holds_a_font(
+    tmp_path: Path,
+    font_directory: Path,
+    enumerations: list[tuple[Source, ...]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Neither directory holds a font, so every diagnostic names its file
+    # by its own path from both, and a process that changes directory
+    # per job does not pay for an enumeration per job.
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    sources = (Source(directory=font_directory),)
+    host_catalog(sources)
+    monkeypatch.chdir(elsewhere)
+    kept = host_catalog(sources)
+    assert len(enumerations) == 1
+    assert kept == enumerate_faces(sources)
+
+
+def test_builds_starting_together_enumerate_once_between_them(
+    font_directory: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The pause holds the lock long enough for the second thread to reach
+    # it while the first is enumerating, rather than after it has finished.
+    asked: list[tuple[Source, ...]] = []
+
+    def slowly(sources: tuple[Source, ...]) -> Held:
+        asked.append(sources)
+        time.sleep(0.2)
+        return enumerated(sources)
+
+    monkeypatch.setattr("sr.fonts.hostenum.enumerated", slowly)
+    sources = (Source(directory=font_directory),)
+    together = threading.Barrier(2)
+    tables: list[Catalog] = []
+
+    def build() -> None:
+        together.wait()
+        tables.append(host_catalog(sources))
+
+    threads = [threading.Thread(target=build) for _ in range(2)]
+    for one in threads:
+        one.start()
+    for one in threads:
+        one.join()
+    assert len(asked) == 1
+    assert tables[0] is tables[1]
+
+
+def test_a_stamp_older_than_the_kept_table_does_not_replace_it(
+    tmp_path: Path, enumerations: list[tuple[Source, ...]]
+) -> None:
+    # A build stamps the sources before it takes the lock.  One that
+    # stamped before a font was installed, and then waited while another
+    # build enumerated the installed font, holds a stamp that matches
+    # nothing kept; it is to take the newer table, not enumerate again.
+    directory = tmp_path / "fonts"
+    directory.mkdir()
+    write_style(directory, "R")
+    sources = (Source(directory=directory),)
+    host_catalog(sources)
+    stale = stamp_of(sources)
+    write_style(directory, "B")
+    newer = host_catalog(sources)
+    assert KEEPER.take(sources, stale) is newer
+    assert len(enumerations) == 2
+
+
+def test_a_forked_child_gets_a_lock_nobody_holds() -> None:
+    # A child has only the thread that forked it, so a lock another
+    # thread held at the fork would never be released in it.
+    with KEEPER.lock:
+        KEEPER.forked()
+        assert not KEEPER.lock.locked()
 
 
 # -- the platform tables ----------------------------------------------

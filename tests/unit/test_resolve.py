@@ -261,6 +261,67 @@ def test_two_builds_enumerate_the_host_once_between_them(
     assert (again.step, again.origin) == (first.step, first.origin)
 
 
+def test_a_kept_face_that_will_not_open_is_looked_up_afresh(
+    tmp_path: Path,
+    enumerations: list[tuple[Source, ...]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Read access taken away on Windows moves nothing `stat` gives, so
+    # the kept table still names the face.  A rewrite the stamp is blind
+    # to is the same change, made wherever this runs.  The build is to
+    # resolve as it would have without a kept table: to the regular face,
+    # since a fresh enumeration refuses the broken bold one.
+    directory = tmp_path / "fonts"
+    directory.mkdir()
+    for name in ("Go-Regular.ttf", "Go-Bold.ttf"):
+        (directory / name).write_bytes((FONTS / name).read_bytes())
+    bold = directory / "Go-Bold.ttf"
+    sources = (Source(directory=directory),)
+    monkeypatch.setattr(
+        "sr.fonts.resolve.host_sources",
+        lambda platform: sources,
+    )
+    monkeypatch.setattr(
+        "sr.fonts.hostenum.stamp_file",
+        lambda path, here: (str(path), "", 0, 0, 0, 0),
+    )
+    assert Resolver().resolve(font(typeface="Go", bold=True)).face.bold
+    bold.write_bytes(b"\x00\x01\x00\x00" + b"\x00" * 20)
+    resolver = Resolver()
+    again = resolver.resolve(font(typeface="Go", bold=True))
+    assert len(enumerations) == 2
+    fresh = Resolver(catalog=enumerate_faces(sources))
+    expected = fresh.resolve(font(typeface="Go", bold=True))
+    assert (again.step, again.origin) == (expected.step, expected.origin)
+    assert not again.face.bold
+    assert resolver.diagnostics == fresh.diagnostics
+
+
+def test_a_face_that_will_not_open_is_this_build_s_line_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A table handed in is the caller's and is not swapped for a fresh
+    # one, so the face that went missing is refused; the line saying
+    # so is the resolver's, and the table is left as it was handed in.
+    directory = tmp_path / "fonts"
+    directory.mkdir()
+    regular = directory / "Go-Regular.ttf"
+    regular.write_bytes((FONTS / "Go-Regular.ttf").read_bytes())
+    catalog = enumerate_faces((Source(directory=directory),))
+    handed = list(catalog.diagnostics)
+    regular.unlink()
+    monkeypatch.setattr(
+        "sr.fonts.resolve.substitute_candidates",
+        lambda platform: ((FONTS / "Go-Bold.ttf").as_posix(),),
+    )
+    resolver = Resolver(catalog=catalog)
+    assert resolver.resolve(font(typeface="Go")).step == "substitute"
+    assert catalog.diagnostics == handed
+    refused = [one for one in resolver.diagnostics if "Go-Regular.ttf" in one]
+    assert len(refused) == 1
+    assert "cannot read" in refused[0]
+
+
 # -- step 3, the aliases ----------------------------------------------
 
 

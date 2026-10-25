@@ -50,6 +50,7 @@ from sr.fonts.face import Face, Origin, build, faces_in, open_face, read_bytes
 from sr.fonts.hostenum import (
     Catalog,
     Entry,
+    forget_host_catalog,
     host_catalog,
     host_sources,
     substitute_candidates,
@@ -164,13 +165,19 @@ class Resolver:
     """The chain, with the host table it may or may not need.
 
     One resolver serves one build, and a build is a tree of documents
-    rather than a single one.  It holds its own copy of the host table,
-    taken on first use, so that every document of the tree resolves
-    against one table even if a font is installed while it builds;
+    rather than a single one.  It takes the host table on first use
+    and holds it, so that every document of the tree resolves against
+    one table even if a font is installed while it builds;
     the substitute face is one face across the tree for the same reason.
     The table itself outlives the resolver, kept for the process by
-    :func:`sr.fonts.hostenum.host_catalog`, so the next build takes
-    a copy rather than enumerating again.
+    :func:`sr.fonts.hostenum.host_catalog` and shared with every build
+    that takes it, so what this build has to add about the machine is
+    kept here beside it.
+
+    One thing undoes that holding.  A face the kept table names that
+    will not open means the table is out of date in a way its stamp
+    could not see, so the build forgets it, takes a freshly enumerated
+    one, and asks again: see :meth:`retake`.
 
     :meth:`reading` is how it moves from one document to the next;
     `basedir` and `blobs` belong to whichever it is reading now, since
@@ -211,6 +218,11 @@ class Resolver:
         self.strict = strict
         self.platform = platform
         self.catalog = catalog
+        # A table handed in is the caller's, and is never retaken.
+        self.kept = catalog is None
+        self.retaken = False
+        # Faces this build looked up and could not open, as diagnostics.
+        self.refused: list[str] = []
         self.substitute: Face | None = None
         self.substitute_warnings: tuple[BuildWarning, ...] = ()
 
@@ -231,19 +243,46 @@ class Resolver:
 
     @property
     def diagnostics(self) -> tuple[str, ...]:
-        """Return what enumerating the host had to say, if it ran.
+        """Return what enumerating the host had to say, where it was asked.
 
-        Empty when it did not, which is the ordinary case
+        The enumeration's own lines, from whichever build ran it, then
+        a line for each face this build looked up and could not open.
+        Empty where no `font` needed the host, which is the ordinary case
         for a template whose fonts all name a file.
 
         """
-        return () if self.catalog is None else tuple(self.catalog.diagnostics)
+        if self.catalog is None:
+            return ()
+        return tuple(self.catalog.diagnostics) + tuple(self.refused)
 
     def host(self) -> Catalog:
-        """Return the host table, asking for the process' copy on first use."""
+        """Return the host table, taking the process' kept one on first use."""
         if self.catalog is None:
             self.catalog = host_catalog(host_sources(self.platform))
         return self.catalog
+
+    def retake(self) -> bool:
+        """Swap the kept table for a fresh one, once per build.
+
+        Called when a face the table names will not open.
+        The table was read from that file, so the file has changed since
+        in a way the stamp did not see: on Windows, read access taken away,
+        which moves no number `stat` gives.  The answer without a kept table
+        would come from an enumeration run now, so one is.
+
+        Returns:
+            Whether a fresh table was taken, and the lookup is worth
+            asking again.  Not for a table the caller handed in,
+            and not twice: a face that will not open from a table
+            built a moment ago is refused as it always was.
+
+        """
+        if not self.kept or self.retaken:
+            return False
+        self.retaken = True
+        forget_host_catalog()
+        self.catalog = host_catalog(host_sources(self.platform))
+        return True
 
     def resolve(self, font: Font) -> Resolution:
         """Return the face a `font` node resolves to.
@@ -357,7 +396,9 @@ class Resolver:
         try:
             face = self.face_of(entry)
         except FontError as refused:
-            self.host().diagnostics.append(str(refused))
+            if self.retake():
+                return self.from_host(font, family, step)
+            self.refused.append(str(refused))
             return None
         return Resolution(font, face, step)
 

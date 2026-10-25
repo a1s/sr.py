@@ -1967,16 +1967,35 @@ would satisfy this rule by accident while hiding real faces, which is the defect
 it exists to prevent.
 
 **The table may be kept between builds.** Building it parses every face
-the machine has, which takes seconds, and its answer changes only when
-a font does. A process that builds one report after another may keep
-the table and enumerate once, provided what it hands out is the table
-enumeration would build now. This engine checks that before every build
-that needs the table: every file the sources offer, in the order they
-offer it, by name, modification time and size. Any difference, including
-a font installed or removed, and the table is enumerated again from the start.
-The one change the check cannot see is a file rewritten in place with its size
-kept and its modification time set back; a library caller that does that asks
-for the kept table to be forgotten.
+the machine has, which takes seconds, and its answer changes only when a font
+file does. A process that builds one report after another may keep the table
+and enumerate once, provided what it hands out is the table enumeration would
+build now.
+
+This engine checks that before every build that needs the table. Every file
+the sources offer is compared, in order, with what the enumeration found just
+before reading it: its name, modification time, change time, size, and inode,
+and how a diagnostic would spell its name from the working directory. A file
+that would not open or read is tried again. Any difference, and the table
+is enumerated again from the start. That sees a font installed, removed,
+renamed, or replaced, a directory that would not list, and a read that failed
+and would now succeed.
+
+What it cannot see is a file whose contents change while every one of those
+stays put:
+
+- On Windows, which records no time for a change to a file's metadata,
+  a font rewritten in place with its size kept and its modification time
+  kept or set back, as extracting an archive or a copy that keeps times can do.
+- On Windows, read access taken away. That one is caught where it matters:
+  a face the kept table names that will not open makes the build enumerate
+  again and ask once more.
+- On any platform, a rewrite that keeps the size and the inode and lands
+  within the file system's timestamp resolution of the enumeration: two
+  seconds on FAT, one on HFS+, and coarser on some network shares.
+
+A library caller that makes such a change in a running process asks for
+the kept table to be forgotten, with `sr.api.forget_host_catalog()`.
 
 **Enumeration diagnostics are not report warnings.** They describe the machine,
 not the document, so they do not enter the [printout's warning

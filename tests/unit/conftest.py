@@ -18,18 +18,12 @@ from __future__ import annotations
 
 import io
 import struct
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from fontTools.ttLib import TTCollection, TTFont
 
-from sr.fonts.hostenum import (
-    Catalog,
-    Source,
-    enumerate_faces,
-    forget_host_catalog,
-)
+from sr.fonts.hostenum import Held, Source, enumerated
 
 ROOT = Path(__file__).resolve().parents[2]
 FONTS = ROOT / "example" / "fonts"
@@ -119,23 +113,18 @@ def font_directory(
 
 
 @pytest.fixture
-def enumerations(
-    monkeypatch: pytest.MonkeyPatch,
-) -> Iterator[list[tuple[Source, ...]]]:
+def enumerations(monkeypatch: pytest.MonkeyPatch) -> list[tuple[Source, ...]]:
     """Return the sources each enumeration was asked for, as it happens.
 
-    The host table is kept for the process, so a test that counts
-    how often it is built starts with none kept and leaves none behind:
-    a table one test kept is not another test's to find.
+    The suite's root conftest drops the kept table around every test,
+    so the count starts from nothing kept.
 
     """
     asked: list[tuple[Source, ...]] = []
 
-    def enumerating(sources: tuple[Source, ...]) -> Catalog:
+    def enumerating(sources: tuple[Source, ...]) -> Held:
         asked.append(sources)
-        return enumerate_faces(sources)
+        return enumerated(sources)
 
-    monkeypatch.setattr("sr.fonts.hostenum.enumerate_faces", enumerating)
-    forget_host_catalog()
-    yield asked
-    forget_host_catalog()
+    monkeypatch.setattr("sr.fonts.hostenum.enumerated", enumerating)
+    return asked
