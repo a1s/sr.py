@@ -23,7 +23,7 @@ from pathlib import Path
 import pytest
 from fontTools.ttLib import TTCollection, TTFont
 
-from sr.fonts.hostenum import Held, Source, enumerated
+from sr.fonts.hostenum import Held, Keeper, Source
 
 ROOT = Path(__file__).resolve().parents[2]
 FONTS = ROOT / "example" / "fonts"
@@ -114,17 +114,23 @@ def font_directory(
 
 @pytest.fixture
 def enumerations(monkeypatch: pytest.MonkeyPatch) -> list[tuple[Source, ...]]:
-    """Return the sources each enumeration was asked for, as it happens.
+    """Return the sources of each host table kept, in the order kept.
+
+    The keeper keeps a table only after enumerating for it, so this
+    counts the enumerations that builds asked for.  A test's own call
+    to `enumerate_faces`, made to have something to compare with,
+    keeps nothing and is not counted, whether it comes first or last.
 
     The suite's root conftest drops the kept table around every test,
     so the count starts from nothing kept.
 
     """
-    asked: list[tuple[Source, ...]] = []
+    kept: list[tuple[Source, ...]] = []
 
-    def enumerating(sources: tuple[Source, ...]) -> Held:
-        asked.append(sources)
-        return enumerated(sources)
+    def keeping(keeper: Keeper, name: str, value: object) -> None:
+        if isinstance(value, Held):
+            kept.append(value.sources)
+        object.__setattr__(keeper, name, value)
 
-    monkeypatch.setattr("sr.fonts.hostenum.enumerated", enumerating)
-    return asked
+    monkeypatch.setattr(Keeper, "__setattr__", keeping)
+    return kept

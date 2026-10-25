@@ -683,9 +683,9 @@ def test_a_table_kept_from_another_directory_is_built_again(
     host_catalog(sources)
     monkeypatch.chdir(font_directory)
     kept = host_catalog(sources)
-    assert len(enumerations) == 2
     assert kept == enumerate_faces(sources)
     assert "notes.txt: not an sfnt font; skipped" in kept.diagnostics
+    assert len(enumerations) == 2
 
 
 def test_a_table_kept_from_another_directory_serves_where_none_holds_a_font(
@@ -703,19 +703,18 @@ def test_a_table_kept_from_another_directory_serves_where_none_holds_a_font(
     host_catalog(sources)
     monkeypatch.chdir(elsewhere)
     kept = host_catalog(sources)
-    assert len(enumerations) == 1
     assert kept == enumerate_faces(sources)
+    assert len(enumerations) == 1
 
 
 def test_builds_starting_together_enumerate_once_between_them(
-    font_directory: Path, monkeypatch: pytest.MonkeyPatch
+    font_directory: Path,
+    enumerations: list[tuple[Source, ...]],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # The pause holds the lock long enough for the second thread to reach
     # it while the first is enumerating, rather than after it has finished.
-    asked: list[tuple[Source, ...]] = []
-
     def slowly(sources: tuple[Source, ...]) -> Held:
-        asked.append(sources)
         time.sleep(0.2)
         return enumerated(sources)
 
@@ -733,7 +732,7 @@ def test_builds_starting_together_enumerate_once_between_them(
         one.start()
     for one in threads:
         one.join()
-    assert len(asked) == 1
+    assert len(enumerations) == 1
     assert tables[0] is tables[1]
 
 
