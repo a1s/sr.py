@@ -23,7 +23,12 @@ from __future__ import annotations
 
 from sr.expr.builtins import GLOBALS, GROUP_SUFFIXES, PREDEFINED
 from sr.expr.calc import Accumulator, make
-from sr.expr.compile import Expression, compile_expression, evaluate
+from sr.expr.compile import (
+    Expression,
+    FinalNames,
+    compile_expression,
+    evaluate,
+)
 from sr.expr.fmt import apply_format, format_value, interpolate
 from sr.expr.values import (
     Decimal,
@@ -46,6 +51,7 @@ __all__ = [
     "Decimal",
     "Duration",
     "Expression",
+    "FinalNames",
     "FrozenDict",
     "FrozenList",
     "Namespace",

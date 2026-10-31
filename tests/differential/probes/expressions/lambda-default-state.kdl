@@ -1,0 +1,23 @@
+// probes/expressions/lambda-default-state.kdl -- the one value not frozen.
+//
+// A registered divergence: a lambda's default is evaluated once, where
+// the lambda is written, so a mutable default is shared by every call of
+// that one function value.  Both engines let it be mutated, which makes
+// what it accumulates a count of how many times the engine evaluated the
+// expression.  The two do not count a stretched field the same way:
+// the reference measures it and then places it, and this engine
+// evaluates it once.  See `divergences.toml`, entry `lambda-default-state`.
+//
+// Freezing the default would close the gap and diverge the other way,
+// since the reference does not freeze it either.  That is the ticket.
+
+report name="expressions/lambda-default-state" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  variable "counter" expr="lambda seen=[]: [seen.append(1), len(seen)][1]" calc="first" reset="report"
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=20 {
+      field expr="str(counter())" left=0 top=0 width=400 height=12 stretch=#true   // 1 here, 2 in the reference
+    }
+  }
+}

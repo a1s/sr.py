@@ -1,6 +1,6 @@
 // broken/expression-syntax.kdl -- expressions the dialect will not compile.
 //
-// expect: there are no lambdas
+// expect: a lambda parameter may not be starred
 // expect: there are no f-strings
 // expect: unexpected input character '\f' at offset 3
 // expect: non-ASCII hex escape \xff (use \u00FF for the UTF-8 encoding of U+00FF)
@@ -12,7 +12,7 @@ report name="probe" {
   layout pagesize="A4" {
     style font="body" color="black"
     detail height=20 {
-      field expr="lambda: 1"
+      field expr="lambda *rest: rest"
       field expr="f'{1}'"
       field expr="1 +\f 2"
       field expr="'A\\xffB'"

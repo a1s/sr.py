@@ -55,6 +55,24 @@ def test_a_comprehension_variable_is_local_to_its_comprehension() -> None:
     assert compile_expression("{k: v for k, v in pairs}").names == ("pairs",)
 
 
+def test_a_lambda_parameter_is_local_to_its_lambda() -> None:
+    assert compile_expression("(lambda value: value * factor)(2)").names == ("factor",)
+    assert compile_expression("(lambda amount: amount)(2)").names == ()
+
+
+def test_a_lambda_default_is_read_where_the_lambda_is_written() -> None:
+    """A default belongs to the enclosing scope, so it is a free name."""
+    assert compile_expression("(lambda value, plus=rate: plus)(1)").names == ("rate",)
+
+
+def test_a_lambda_closes_over_the_scope_it_is_written_in() -> None:
+    assert evaluate("(lambda value: value + amount)(1)", {"amount": 10}) == 11
+
+
+def test_a_lambda_parameter_shadows_the_scope_it_is_written_in() -> None:
+    assert evaluate("(lambda amount: amount)(1)", {"amount": 10}) == 1
+
+
 def test_a_compiled_expression_is_called_with_what_it_needs() -> None:
     compiled = compile_expression("unit * qty")
     assert compiled(Decimal("2.50"), 4) == Decimal("10.00")
@@ -85,7 +103,13 @@ def test_the_globals_need_no_declaring() -> None:
     ("source", "complaint"),
     [
         ("2 ** 3", "no \\*\\* operator"),
-        ("lambda x: x", "no lambdas"),
+        ("lambda *rest: rest", "lambda parameter may not be starred"),
+        ("lambda **named: named", "lambda parameter may not be starred"),
+        ("lambda one, /, two: one", r"no / or bare \*"),
+        ("lambda one, *, two: one", r"no / or bare \*"),
+        ("lambda _sr_name: 1", "may not begin"),
+        ("lambda total, total: total", "duplicate parameter: total"),
+        ("lambda __debug__: 1", "may not be named __debug__"),
         ("f'{x}'", "no f-strings"),
         ("(x := 1)", "no := operator"),
         ("1 < 2 < 3", "no chained comparisons"),
@@ -236,6 +260,7 @@ def test_a_form_feed_in_a_literal_or_a_comment_compiles(source: str) -> None:
         "'a'.__class__",
         "().__class__.__bases__",
         "[].append.__globals__",
+        "(lambda value: value.__class__)(1)",
     ],
 )
 def test_nothing_reaches_outside_the_language(source: str) -> None:
@@ -294,10 +319,85 @@ def test_the_position_names_are_floats_in_points() -> None:
         ("[x for x in range(4) if x % 2 == 0]", [0, 2]),
         ("sorted(['b', 'a'])", ["a", "b"]),
         ("'%s-%s' % ('a', 'b')", "a-b"),
+        ("(lambda value: value + 1)(2)", 3),
+        ("(lambda value, plus=10: value + plus)(1)", 11),
+        ("sorted(['bb', 'a'], key=lambda word: len(word))", ["a", "bb"]),
+        ("type(lambda value: value)", "function"),
+        ("str(lambda value: value)", "<function lambda>"),
+        ("type(len)", "builtin_function_or_method"),
+        ("str(len)", "<built-in function len>"),
+        ("str(math.pow)", "<built-in function pow>"),
+        ("str('ab'.upper)", "<built-in method upper of string value>"),
+        ("str([1, 2].append)", "<built-in method append of list value>"),
+        ("str({1: 2}.get)", "<built-in method get of dict value>"),
+        ("str(set([1]).add)", "<built-in method add of set value>"),
     ],
 )
 def test_the_dialect_computes_what_it_should(source: str, answer: object) -> None:
     assert evaluate(source) == answer
+
+
+# ------------------------------------------------- calling a function
+
+
+def test_a_function_already_running_is_not_entered_again() -> None:
+    """doc/expressions.md#calling-a-function: the no-recursion rule.
+
+    A lambda reaches itself by being handed itself, which is the whole
+    of what the rule has to stop.
+
+    """
+    with pytest.raises(ExpressionError, match="called recursively"):
+        evaluate(
+            "(lambda step, number: step(step, number))"
+            "(lambda step, number: 1 if number == 0 else step(step, number - 1), 1)"
+        )
+
+
+def test_the_recursion_rule_is_about_the_lambda_and_not_the_value() -> None:
+    """Two functions made from one lambda are one function to the rule."""
+    with pytest.raises(ExpressionError, match="called recursively"):
+        evaluate(
+            "(lambda pair: pair[0](pair[1], 0))"
+            "([(lambda other, n: 5 if n else other(other, 1)) for i in [1, 2]])"
+        )
+
+
+def test_a_function_that_has_ended_may_be_called_again() -> None:
+    """The guard is on re-entry and not on a count, so a key still works."""
+    assert evaluate("sorted([3, 1, 2], key=lambda number: -number)") == [3, 2, 1]
+
+
+def test_an_error_in_the_body_is_not_read_as_a_bad_argument_list() -> None:
+    """Only a call that never entered the body gets the arity message."""
+    with pytest.raises(ExpressionError, match="unsupported operand"):
+        evaluate("(lambda value: value + 'text')(1)")
+
+
+@pytest.mark.parametrize(
+    ("source", "complaint"),
+    [
+        ("(lambda one: one)()", "missing 1 argument (one)"),
+        ("(lambda one, two: one)()", "missing 2 arguments (one, two)"),
+        ("(lambda one, two, three=3: one)(1)", "missing 1 argument (two)"),
+        ("(lambda one: one)(1, 2)", "accepts 1 positional argument (2 given)"),
+        (
+            "(lambda one, two=2: one)(1, 2, 3)",
+            "accepts at most 2 positional arguments (3 given)",
+        ),
+        ("(lambda: 1)(1)", "accepts no arguments (1 given)"),
+        ("(lambda: 1)(one=1)", "accepts no arguments (1 given)"),
+        ("(lambda one: one)(two=2)", 'got an unexpected keyword argument "two"'),
+        ("(lambda one: one)(1, one=2)", 'got multiple values for parameter "one"'),
+    ],
+)
+def test_a_call_that_does_not_fit_says_what_the_reference_says(
+    source: str, complaint: str
+) -> None:
+    """The wording is the reference's, and names no part of the compiler."""
+    with pytest.raises(ExpressionError) as refused:
+        evaluate(source)
+    assert refused.value.message == f"function lambda {complaint}"
 
 
 def test_or_is_the_defaulting_operator_the_specification_recommends() -> None:

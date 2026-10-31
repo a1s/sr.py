@@ -40,6 +40,7 @@ from sr.errors import ExpressionError
 from sr.expr import golayout
 from sr.expr.fmt import format_value, interpolate
 from sr.expr.values import (
+    CALLABLE_NAMES,
     NANOSECONDS,
     Decimal,
     Duration,
@@ -97,7 +98,7 @@ PREDEFINED: Final[tuple[str, ...]] = (
 GROUP_SUFFIXES: Final[tuple[str, ...]] = ("_COUNT", "_PAGE_NUMBER")
 
 
-def frozen(kind: str, method: str) -> Callable[..., Any]:
+def frozen(receiver: Any, method: str) -> Callable[..., Any]:
     """Return a method that refuses because its receiver is frozen.
 
     doc/expressions.md keeps the mutating methods on frozen values
@@ -105,15 +106,22 @@ def frozen(kind: str, method: str) -> Callable[..., Any]:
     is told the value cannot be changed rather than that the method
     does not exist.
 
+    The refusal carries its receiver and its name the way a bound
+    method carries them, so that printing it reads like printing
+    any other method rather than like printing a closure.
+
     Args:
-        kind: What the receiver is, for the diagnostic.
+        receiver: The frozen value the method was asked of.
         method: The method's name.
 
     """
+    kind = type_name(receiver)
 
     def refuse(*args: Any, **kwargs: Any) -> Any:
         raise ExpressionError(f"cannot {method} a frozen {kind}")
 
+    refuse.__name__ = method
+    refuse.__self__ = receiver  # type: ignore[attr-defined]
     return refuse
 
 
@@ -364,16 +372,19 @@ DICT_QUERIES: Final[dict[str, Callable[..., Any]]] = {
 }
 
 
-def list_index(items: tuple[Any, ...], value: Any, *bounds: int) -> int:
+def list_index(items: FrozenList, value: Any, *bounds: int) -> int:
     """Return where a value first appears in a frozen list.
 
+    The receiver is the frozen list rather than the tuple inside it,
+    so that the bound method names a list when it is printed.
+
     Args:
-        items: The elements to search.
+        items: The list to search.
         value: What to look for.
         *bounds: An optional start and end.
 
     """
-    return list(items).index(value, *bounds)
+    return list(items.items).index(value, *bounds)
 
 
 # ------------------------------------------------------------------ sets
@@ -567,9 +578,9 @@ def attribute_of_frozen_list(items: FrozenList, name: str) -> Any:
 
     """
     if name == "index":
-        return partial(list_index, items.items)
+        return partial(list_index, items)
     if name in LIST_MUTATORS:
-        return frozen("list", name)
+        return frozen(items, name)
     raise ExpressionError(f"list has no attribute {name!r}")
 
 
@@ -601,7 +612,7 @@ def attribute_of_frozen_dict(entries: FrozenDict, name: str) -> Any:
     if query is not None:
         return partial(query, entries)
     if name in DICT_MUTATORS:
-        return frozen("dict", name)
+        return frozen(entries, name)
     raise ExpressionError(f"dict has no attribute {name!r}")
 
 
@@ -638,7 +649,7 @@ def attribute_of_set(members: Set, name: str) -> Any:
         return partial(query, members)
     mutator = SET_MUTATORS.get(name)
     if mutator is not None:
-        return frozen("set", name) if members.frozen else partial(mutator, members)
+        return frozen(members, name) if members.frozen else partial(mutator, members)
     raise ExpressionError(f"set has no attribute {name!r}")
 
 
@@ -1563,6 +1574,26 @@ GLOBALS: Final[dict[str, Any]] = {
     "type": type_name,
     "zip": sr_zip,
 }
+
+# The language's name for every callable a template can reach, which is
+# what `sr.expr.values.callable_repr` writes in place of a repr with an
+# address in it.  The name is the table key and not the Python
+# function's own, because `bool` is `truthy` here and `.get` on a dict
+# is `dict_get`.  A method of a list or a dict that may be changed is
+# Python's own bound method and carries its name already, and so does
+# the refusal `frozen` returns for one that may not.
+CALLABLE_NAMES.update(
+    (function, name)
+    for table in (GLOBALS, MATH.members, TIME.members)
+    for name, function in table.items()
+    if callable(function)
+)
+CALLABLE_NAMES.update(
+    (function, name)
+    for table in (STRING_METHODS, DICT_QUERIES, SET_QUERIES, SET_MUTATORS)
+    for name, function in table.items()
+)
+CALLABLE_NAMES[list_index] = "index"
 
 
 def iterate(value: Any) -> Iterator[Any]:

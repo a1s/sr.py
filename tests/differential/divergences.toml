@@ -1346,3 +1346,45 @@ affects = [
     "validate/probe/layout/band-height",
     "validate/probe/layout/style-walk",
 ]
+
+[[divergence]]
+id = "lambda-parameter-forms"
+summary = "the reference takes *args, **kwargs, a bare *, and __debug__ as lambda parameters; here a parameter is plain or defaulted"
+reason = """
+`starlark-go` retired `resolve.AllowLambda`, so the reference hosts a lambda \
+whether it chose one or not, and the whole `def` parameter grammar with it.  \
+This engine compiles expressions through Python's parser, where the same \
+forms are free, and refuses them all the same: doc/expressions.md#functions \
+takes plain parameters and their defaults and nothing else.  Narrowing is \
+the half of the decision that can be taken back, and a call here already \
+refuses a starred argument.  `__debug__` is the one row that is not a \
+choice: Python's parser takes it as a parameter and Python's compiler \
+then refuses to bind it, so taking it would mean renaming it throughout \
+the body.  `/` is in neither engine and so is in no probe.  The check \
+refuses this one here, as the build does.\
+"""
+ticket = "doc/expressions.md#functions: widen the lambda parameters, or keep them"
+since = "2026-10-31"
+affects = [
+    "probe/expressions/lambda-parameters",
+    "validate/probe/expressions/lambda-parameters",
+]
+
+[[divergence]]
+id = "lambda-default-state"
+summary = "a mutable lambda default counts the evaluations of the expression, and the reference evaluates a stretched field twice"
+reason = """
+A lambda's default is evaluated once, where the lambda is written, so a \
+default that is a list is shared by every call of that one function value.  \
+Neither engine freezes it: `starlark-go` does not reach a function's \
+defaults when it freezes a value, and this engine hands Python's own \
+default through.  It is the only value in scope that a second evaluation \
+can see the first one's work in, which makes what it accumulates a count \
+of evaluations rather than of records.  The reference measures a stretched \
+field and then places it, evaluating twice; this engine evaluates once.  \
+The count is the divergence, not the mutation, and freezing the default \
+here would trade it for a louder one.\
+"""
+ticket = "doc/expressions.md#a-mutable-default: freeze a lambda default, or keep the gap"
+since = "2026-10-31"
+affects = ["probe/expressions/lambda-default-state"]

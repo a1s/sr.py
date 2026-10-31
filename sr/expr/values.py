@@ -48,6 +48,8 @@ import re
 from collections.abc import Hashable, Iterable, Iterator, Mapping, Sequence
 from datetime import UTC, datetime, timedelta, tzinfo
 from fractions import Fraction
+from functools import partial
+from types import CodeType
 from typing import Any, Final
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -55,11 +57,13 @@ from sr.errors import ExpressionError
 from sr.expr import golayout
 
 __all__ = [
+    "CALLABLE_NAMES",
     "DIVISION_PLACES",
     "Decimal",
     "Duration",
     "FrozenDict",
     "FrozenList",
+    "Function",
     "Namespace",
     "Record",
     "Set",
@@ -1198,6 +1202,177 @@ def truthy(value: Any) -> bool:
     return bool(value)
 
 
+# The language's name for every callable the engine predeclares,
+# filled by `sr.expr.builtins` once its tables exist.  A predeclared
+# callable is a Python object whose `repr` carries a memory address,
+# and an address differs between runs; `callable_repr` writes the name
+# from here instead.  The key is the callable rather than its Python
+# name, because several tables hold a function under a name that is
+# not the one it was defined with.
+CALLABLE_NAMES: Final[dict[Any, str]] = {}
+
+# The code objects part way through a call.  Starlark refuses to enter
+# a function that is already running, which is the whole of its answer
+# to recursion in a language with no `def`: a lambda reaches itself
+# only by being handed itself, and this is what stops it there.
+# The guard is on the code rather than on the value, so that two
+# functions made from one lambda share it, which is where the
+# reference puts it too.  Expressions evaluate on one thread,
+# so one set serves the process.
+RUNNING: Final[set[CodeType]] = set()
+
+
+class Function:
+    """A lambda a template wrote, as a value of the language.
+
+    The body is an ordinary Python lambda, which is what makes a call
+    cost a call.  What the wrapper adds is everything the language
+    says about a function and Python says differently: the type name,
+    a repr with no address in it, the refusal to recurse, and the
+    reference's wording for arguments that do not fit.
+
+    doc/expressions.md#functions is what this implements.
+
+    Attributes:
+        call: The compiled lambda.
+        parameters: The parameter names, in the order they are taken.
+        required: How many of them have no default, which is
+            how many leading parameters a call has to fill.
+
+    """
+
+    __slots__ = ("call", "parameters", "required")
+
+    def __init__(self, call: Any, parameters: tuple[str, ...], required: int) -> None:
+        """Hold a compiled lambda with what its calls need to be checked.
+
+        Args:
+            call: The compiled lambda.
+            parameters: The parameter names, in order.
+            required: How many of them have no default.
+
+        """
+        self.call = call
+        self.parameters = parameters
+        self.required = required
+
+    def __repr__(self) -> str:
+        """Spell the function the way the reference prints one."""
+        return "<function lambda>"
+
+    def __call__(self, *values: Any, **named: Any) -> Any:
+        """Call the lambda, refusing a re-entry and a bad argument list.
+
+        The arguments are handed to Python, which binds them far faster
+        than this could and raises :class:`TypeError` when they do not
+        fit.  A binding failure happens before the body runs and so
+        leaves a traceback one frame deep, which is how it is told
+        from a :class:`TypeError` the body itself raised.
+
+        Args:
+            *values: The positional arguments.
+            **named: The keyword arguments.
+
+        Raises:
+            ExpressionError: The function is already running,
+                or the arguments do not fit its parameters.
+
+        """
+        code = self.call.__code__
+        if code in RUNNING:
+            raise ExpressionError("function lambda called recursively")
+        RUNNING.add(code)
+        try:
+            return self.call(*values, **named)
+        except TypeError as error:
+            traceback = error.__traceback__
+            if traceback is None or traceback.tb_next is not None:
+                raise
+            mismatch = self.mismatch(values, named)
+            if mismatch is None:
+                raise
+            raise mismatch from None
+        finally:
+            RUNNING.discard(code)
+
+    def mismatch(
+        self, values: tuple[Any, ...], named: Mapping[str, Any]
+    ) -> ExpressionError | None:
+        """Return what the reference says about arguments that do not fit.
+
+        ``None`` where the arguments do look like they fit, which leaves
+        the caller to re-raise whatever Python refused them for.
+
+        Args:
+            values: The positional arguments.
+            named: The keyword arguments.
+
+        """
+        parameters = self.parameters
+        if not parameters:
+            given = len(values) + len(named)
+            return ExpressionError(
+                f"function lambda accepts no arguments ({given} given)"
+            )
+        if len(values) > len(parameters):
+            most = "at most " if self.required < len(parameters) else ""
+            plural = "" if len(parameters) == 1 else "s"
+            return ExpressionError(
+                f"function lambda accepts {most}{len(parameters)} "
+                f"positional argument{plural} ({len(values)} given)"
+            )
+        for name in named:
+            if name not in parameters:
+                return ExpressionError(
+                    f'function lambda got an unexpected keyword argument "{name}"'
+                )
+            if parameters.index(name) < len(values):
+                return ExpressionError(
+                    f'function lambda got multiple values for parameter "{name}"'
+                )
+        missing = [
+            name
+            for position, name in enumerate(parameters[: self.required])
+            if position >= len(values) and name not in named
+        ]
+        if missing:
+            plural = "" if len(missing) == 1 else "s"
+            return ExpressionError(
+                f"function lambda missing {len(missing)} "
+                f"argument{plural} ({', '.join(missing)})"
+            )
+        return None
+
+
+def callable_repr(value: Any) -> str:
+    """Return what the reference prints for a callable.
+
+    Python writes a memory address into the repr of a function
+    and of a bound method, and a printout holding one would differ
+    from run to run.  The reference writes the name the language
+    knows the callable by, and so does this.
+
+    Args:
+        value: The callable to write.
+
+    """
+    if isinstance(value, Function):
+        return "<function lambda>"
+    if isinstance(value, partial) and value.args:
+        named = CALLABLE_NAMES.get(value.func)
+        if named is not None:
+            owner = type_name(value.args[0])
+            return f"<built-in method {named} of {owner} value>"
+    receiver = getattr(value, "__self__", None)
+    if receiver is not None:
+        owner = type_name(receiver)
+        return f"<built-in method {value.__name__} of {owner} value>"
+    named = CALLABLE_NAMES.get(value)
+    if named is None:
+        named = getattr(value, "__name__", "lambda")
+    return f"<built-in function {named}>"
+
+
 # What `type()` answers, for the types whose Python name is
 # not the language's.  Everything absent from here answers
 # with its class name, which is already right for `int`, `float`,
@@ -1217,6 +1392,7 @@ TYPE_NAMES: Final = {
     Record: "record",
     Set: "set",
     Namespace: "module",
+    Function: "function",
 }
 
 
@@ -1525,4 +1701,6 @@ def starlark_repr(value: Any) -> str:
         return f"range({value.stop})"
     if isinstance(value, bytes):
         return "b" + quote(value.decode("utf-8", "surrogateescape"))
+    if callable(value):
+        return callable_repr(value)
     return repr(value)

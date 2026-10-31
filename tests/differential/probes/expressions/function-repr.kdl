@@ -1,0 +1,29 @@
+// probes/expressions/function-repr.kdl -- what a callable prints as.
+//
+// Every callable a template can reach is a Python object here, and
+// Python writes a memory address into the repr of a function and of a
+// bound method.  An address differs between runs, so a printout that
+// held one would not be reproducible.  This is what says the engine
+// writes the reference's names instead, for a predeclared function,
+// for a method bound to each kind of receiver, and inside a container.
+//
+// A lambda a template wrote is in probes/expressions/lambda.kdl.
+
+report name="expressions/function-repr" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=200 {
+      field expr="str(len)" left=0 top=0 width=400 height=12 stretch=#true                   // <built-in function len>
+      field expr="str(sorted)" left=0 top=20 width=400 height=12 stretch=#true               // <built-in function sorted>
+      field expr="str(type)" left=0 top=40 width=400 height=12 stretch=#true                 // <built-in function type>
+      field expr="str(bool)" left=0 top=60 width=400 height=12 stretch=#true                 // <built-in function bool>: named for the language, not for `truthy`
+      field expr="str(math.pow)" left=0 top=80 width=400 height=12 stretch=#true             // <built-in function pow>: the member's name, without its module
+      field expr="str('ab'.upper)" left=0 top=100 width=400 height=12 stretch=#true          // <built-in method upper of string value>
+      field expr="str({1: 2}.get)" left=0 top=120 width=400 height=12 stretch=#true          // <built-in method get of dict value>
+      field expr="str([1, 2].append)" left=0 top=140 width=400 height=12 stretch=#true       // <built-in method append of list value>
+      field expr="str(set([1]).add)" left=0 top=160 width=400 height=12 stretch=#true        // <built-in method add of set value>
+      field expr="str([len])" left=0 top=180 width=400 height=12 stretch=#true               // [<built-in function len>]: a container walks to the same answer
+    }
+  }
+}

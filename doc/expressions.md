@@ -13,6 +13,7 @@ the formatting mechanism, and variable accumulation semantics.
 - [Modules and builtins](#modules-and-builtins)
 - [Strings](#strings)
 - [The `decimal` type](#the-decimal-type)
+- [Functions](#functions)
 - [Truth values](#truth-values)
 - [Formatting](#formatting)
 - [Variables](#variables)
@@ -37,6 +38,10 @@ Starlark is Python-like, not Python. What matters for templates:
 - **`set` is available**, which `calc="set"` uses. Sets are a dialect option
   in Starlark rather than part of the core language; the engine enables them
   explicitly and does not rely on the host default.
+- **`lambda` is available**, which is what a `sorted` key wants.
+  It is not a dialect option: the host retired the flag that switched
+  it off. Plain parameters and their defaults are taken, and the rest
+  of Starlark's parameter grammar is not. See [Functions](#functions).
 - **Literals are Starlark's.** The prefixes are `r`, `b`, and `rb`;
   two literals in a row are not joined; and only Starlark's escapes
   are escapes. See [Literals](#literals).
@@ -542,6 +547,142 @@ and `round`, `sqrt`, `pow` and the rest give a **float**.
 `calc="sum"`, `"avg"`, `"min"`, `"max"` over decimals produce decimals;
 `avg` quantizes like `/`. `"std"` and `"var"` produce floats.
 
+## Functions
+
+A `lambda` makes a function, and a function is a value.
+
+```
+sorted(rows, key=lambda row: row.amount)
+(lambda net, rate=0.21: net * (1 + rate))(100)
+```
+
+`lambda` is not a dialect option, unlike `set` and the two that
+[Language](#language) leaves off. `starlark-go` retired the flag that
+switched it off, so an engine hosting Starlark has a lambda whether it
+chose one or not. What is left to choose is the parameter grammar.
+
+This dialect takes **plain parameters and their defaults**. Starlark's own
+lambda takes three forms more: `*args`, `**kwargs`, and the bare `*` that
+makes the parameters after it keyword-only. The reference takes all three
+and this engine refuses them, which is a registered divergence rather than
+a settled rule: a call here already refuses a starred argument, and
+narrowing is the half of the decision that can be taken back.
+
+A parameter may not be named `__debug__`, which Starlark treats as
+an ordinary identifier and the reference accepts. That one is a limit
+of this engine's host rather than a choice, and it is registered with
+the other three.
+
+A parameter may not be repeated. `lambda total, total: total` is
+`duplicate parameter: total` in both engines.
+
+Python's `/` is not Starlark's, and both engines refuse it.
+
+A parameter is local to its lambda, the way a comprehension variable is
+local to its comprehension. Everything else the body names is read
+where the lambda is written, and so is a default: in
+
+```
+lambda net, rate=vat: net * (1 + rate)
+```
+
+`vat` is read once, where the lambda is made, and not again when it is
+called.
+
+### A function as a value
+
+| | |
+|---|---|
+| `type` | `function`; a predeclared name is a `builtin_function_or_method` |
+| `str`, `repr` | `<function lambda>` |
+| truth | every function is true |
+| `==` | identity, so two lambdas written out separately are never equal |
+| hashing | hashable, so a function works as a `dict` key or a `set` member |
+
+Neither a function's text nor its address is in its `repr`, so two
+functions a printout writes cannot be told apart in it. That is the price
+of [Determinism](#determinism): an address differs from one run to the
+next, and a printout holding one would not be reproducible.
+
+The same holds for the callables the engine predeclares. A builtin is
+`<built-in function len>` and a method taken off a value without calling
+it is `<built-in method upper of string value>`, naming the type rather
+than the value it is bound to:
+
+```
+str(len)             # <built-in function len>
+str(math.pow)        # <built-in function pow>
+str('ab'.upper)      # <built-in method upper of string value>
+str([1, 2].append)   # <built-in method append of list value>
+```
+
+### Calling a function
+
+A call fills the parameters from the left, then by name. A call that
+does not fit fails with the function named, the way a builtin's does:
+
+| The call | What it says |
+|---|---|
+| too few | `function lambda missing 1 argument (rate)` |
+| too many | `function lambda accepts 2 positional arguments (3 given)` |
+| too many, where a default could have taken one | `function lambda accepts at most 2 positional arguments (3 given)` |
+| a name that is not a parameter | `function lambda got an unexpected keyword argument "vat"` |
+| a name already filled from the left | `function lambda got multiple values for parameter "rate"` |
+| any argument at all, to a function that takes none | `function lambda accepts no arguments (1 given)` |
+
+A function **already running cannot be entered again**. This is what
+[Language](#language) means by no recursion, and with `lambda` it is
+reachable: a function handed itself as an argument can call itself
+through that parameter, and the second entry fails with
+
+```
+function lambda called recursively
+```
+
+The rule is about the `lambda` in the template rather than about the
+value, so two functions made from one `lambda` are one function for it.
+A `sorted` key is not affected: it is called once per comparison and
+each call ends before the next begins.
+
+### A function in a variable
+
+A `variable` holds a function the way it holds any other value,
+and that is the only way a function gets a name:
+
+```kdl
+variable "twice" expr="lambda value: value * 2" calc="last" reset="report"
+```
+
+A later expression calls `twice(21)` and gets `42`. The [`calc`](#calc)
+values that collect rather than combine are the ones that make sense:
+`first`, `last`, `list`, `set`, and `count`. `sum` of two functions fails,
+and so does every other accumulator that adds its values together.
+
+It is not a way to recurse, and for a reason of its own. A lambda reads
+a variable as it stood when the lambda was made rather than as it stands
+when the lambda is called, so a lambda that names its own variable
+reaches the value from before itself. On the first record that value is
+the empty accumulator, `None`, and the call fails there. The rule that
+a running function cannot be entered again never comes into it.
+
+### A mutable default
+
+A default is evaluated once, where the lambda is written, so
+a default that is a list or a dict is shared by every call
+of that one function value:
+
+```
+lambda seen=[]: seen
+```
+
+Both engines let such a default be mutated, which makes it the one way
+a value outlives a single evaluation without going through a
+`variable`. **Do not rely on it.** What the default accumulates counts
+how many times the engine evaluated the expression, which is not
+something the template decides, and the two engines do not agree on that
+count for a field that is measured before it is placed. Every other
+value in scope is [frozen](#methods), and this is the gap in that rule.
+
 ## Truth values
 
 `printwhen`, `style when`, `eject when`, and `outline when` take an expression
@@ -556,6 +697,7 @@ and test it for truth. The rules:
 | string, list, dict, set | non-empty |
 | time | it is not the **zero time** (year 1, January 1, midnight UTC) |
 | duration | non-zero |
+| function | always |
 | record | it is not `None` — an empty record is still true |
 
 The time rule matters for the common "is this field filled in?" test. A JSON

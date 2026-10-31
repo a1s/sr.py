@@ -12,11 +12,12 @@ that build it.
    So :mod:`sr.expr.literals` reads the tokens first, by Starlark's
    rules, and the parser gets the text with the literals blanked.
 2. **Reject** every node kind the dialect does not have.  This is what
-   makes the superset a subset again: no ``**``, no lambda, no f-string,
-   no walrus, no chained comparison, no starred argument, no ``is``.
+   makes the superset a subset again: no ``**``, no f-string, no walrus,
+   no chained comparison, no starred argument, no ``is``.
 3. **Rewrite** ``a.b`` into ``getattr_(a, "b")``, ``a[i]`` into
    ``getitem_(a, i)``, ``a[i:j]`` into ``getslice_(...)``, and ``a % b``
-   into ``mod_(a, b)``.  Attribute and index resolution then run through
+   into ``mod_(a, b)``, and wrap each lambda in the function value
+   the language has.  Attribute and index resolution then run through
    the engine's own tables rather than through Python's, which is what
    keeps ``__class__`` out of the language and what makes ``%`` on a
    string Starlark's formatter instead of Python's.
@@ -46,8 +47,9 @@ from typing import Any, Final
 from sr.errors import ExpressionError
 from sr.expr.builtins import GLOBALS, getattr_, getitem_, getslice_, mod_
 from sr.expr.literals import Lexed, lex
+from sr.expr.values import Function
 
-__all__ = ["Expression", "compile_expression", "evaluate"]
+__all__ = ["Expression", "FinalNames", "compile_expression", "evaluate"]
 
 # The name the compiled function is given, and the prefix its helpers
 # share.  An expression may not use a name beginning with this, which is
@@ -65,15 +67,23 @@ RUNTIME: Final[dict[str, Any]] = {
     "_sr_getitem": getitem_,
     "_sr_getslice": getslice_,
     "_sr_mod": mod_,
+    "_sr_function": Function,
 }
+
+# Names Python's parser takes as a parameter and its compiler then
+# refuses to bind.  Starlark has no such list, so the reference
+# takes them; supporting one here would mean renaming it throughout
+# the body, and the name it would buy is one no template wants.
+# doc/expressions.md#functions registers the difference.
+UNBINDABLE: Final[frozenset[str]] = frozenset({"__debug__"})
 
 # The names an expression may read without them being in scope, which is
 # the runtime minus the one name in it that is Python's rather than ours.
 # `__builtins__` is a dict like any other to the resolvers, so a name
 # test that let it through would hand a template `setdefault` on the
-# namespace every expression in the process shares.  Left out, it is a
-# free name like any other, and every caller has the same answer for a
-# free name nothing defines: undefined.
+# namespace every expression in the process shares.  Left out, it is
+# a free name like any other, and every caller has the same answer
+# for a free name nothing defines: undefined.
 DEFINED: Final[frozenset[str]] = frozenset(RUNTIME) - {"__builtins__"}
 
 # What ends a line for Python's tokenizer, and so for a line number
@@ -84,7 +94,6 @@ LINE_END: Final = re.compile(r"\r\n|\r|\n")
 # The message names the Starlark spelling wherever there is one, because
 # a template author reading it wants the alternative rather than the rule.
 REFUSED: Final[dict[type[ast.AST], str]] = {
-    ast.Lambda: "there are no lambdas; the language has no function definitions",
     ast.NamedExpr: "there is no := operator",
     ast.JoinedStr: "there are no f-strings; use the format() builtin",
     ast.FormattedValue: "there are no f-strings; use the format() builtin",
@@ -245,6 +254,45 @@ class Rejector(ast.NodeVisitor):
                 raise self.refuse(node, "an argument may not be starred")
         self.generic_visit(node)
 
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        """Refuse the parameter forms this dialect's lambda leaves out.
+
+        Starlark's own ``lambda`` takes the whole ``def`` parameter
+        grammar.  This one takes plain parameters and their defaults,
+        and the rest waits for doc/expressions.md to ask for it.
+        Python's ``/`` is not Starlark's in any case.
+
+        """
+        arguments = node.args
+        if arguments.vararg is not None or arguments.kwarg is not None:
+            raise self.refuse(node, "a lambda parameter may not be starred")
+        if arguments.posonlyargs or arguments.kwonlyargs:
+            raise self.refuse(
+                node, "a lambda takes plain parameters; there is no / or bare *"
+            )
+        taken: set[str] = set()
+        for parameter in arguments.args:
+            if parameter.arg in taken:
+                raise self.refuse(parameter, f"duplicate parameter: {parameter.arg}")
+            taken.add(parameter.arg)
+        self.generic_visit(node)
+
+    def visit_arg(self, node: ast.arg) -> None:
+        """Refuse a parameter named for the compiler's own machinery.
+
+        A parameter is an ``ast.arg`` rather than an ``ast.Name``, so
+        :meth:`visit_Name` never sees one, and a lambda that took
+        ``_sr_getattr`` would shadow the helper that every rewritten
+        attribute access in its body calls.
+
+        """
+        if node.arg.startswith(RESERVED):
+            raise self.refuse(
+                node, f"a name may not begin with {RESERVED!r}: {node.arg}"
+            )
+        if node.arg in UNBINDABLE:
+            raise self.refuse(node, f"a parameter may not be named {node.arg}")
+
     def visit_Constant(self, node: ast.Constant) -> None:
         """Refuse the literal kinds the language has no values for.
 
@@ -294,6 +342,7 @@ class Names(ast.NodeVisitor):
 
     Comprehension variables are local to their comprehension, as they
     are in Starlark, so ``[x for x in xs]`` reads ``xs`` and not ``x``.
+    A lambda's parameters are local to the lambda the same way.
 
     Attributes:
         bound: The names a comprehension has bound around the current node.
@@ -319,6 +368,22 @@ class Names(ast.NodeVisitor):
         """Visit a dict comprehension with its variables bound."""
         self.comprehend(node.generators, node.key, node.value)
 
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        """Visit a lambda with its parameters bound.
+
+        A default belongs to the scope the lambda is written in rather
+        than to the lambda, so the defaults are visited before the
+        parameters bind and the body after.  Only plain parameters
+        arrive here: :class:`Rejector` has refused the other forms.
+
+        """
+        for default in node.args.defaults:
+            self.visit(default)
+        was = set(self.bound)
+        self.bound |= {parameter.arg for parameter in node.args.args}
+        self.visit(node.body)
+        self.bound = was
+
     def comprehend(
         self, generators: list[ast.comprehension], *bodies: ast.expr
     ) -> None:
@@ -338,6 +403,59 @@ class Names(ast.NodeVisitor):
         for body in bodies:
             self.visit(body)
         self.bound = was
+
+
+class FinalNames(Names):
+    """The pass that finds the members an expression reads out of ``FINAL``.
+
+    Both spellings are read: ``FINAL.total`` and ``FINAL["total"]``.
+    A subscript by anything but a literal string names something
+    only the run knows, and is left out rather than reported.
+
+    What makes this a subclass rather than a walk of its own is that
+    ``FINAL`` is a name like any other, and a lambda parameter or a
+    comprehension variable may be called that.  The inherited passes
+    bind those, so an expression that shadows ``FINAL`` reads nothing
+    out of the predefined one.
+
+    Attributes:
+        members: The members read, in the order they first appear.
+
+    """
+
+    def __init__(self) -> None:
+        """Start with nothing bound, nothing found, and nothing read."""
+        super().__init__()
+        self.members: list[str] = []
+
+    def visit_Attribute(self, node: ast.Attribute) -> None:
+        """Record the member ``FINAL.total`` reads."""
+        if self.reads_final(node.value):
+            self.members.append(node.attr)
+        self.generic_visit(node)
+
+    def visit_Subscript(self, node: ast.Subscript) -> None:
+        """Record the member ``FINAL["total"]`` reads."""
+        if (
+            self.reads_final(node.value)
+            and isinstance(node.slice, ast.Constant)
+            and isinstance(node.slice.value, str)
+        ):
+            self.members.append(node.slice.value)
+        self.generic_visit(node)
+
+    def reads_final(self, node: ast.expr) -> bool:
+        """Report whether a node is the predefined ``FINAL`` itself.
+
+        Args:
+            node: The node the member is being read from.
+
+        """
+        return (
+            isinstance(node, ast.Name)
+            and node.id == "FINAL"
+            and "FINAL" not in self.bound
+        )
 
 
 class Rewriter(ast.NodeTransformer):
@@ -372,6 +490,28 @@ class Rewriter(ast.NodeTransformer):
         if isinstance(node.op, ast.Mod):
             return call("_sr_mod", node, node.left, node.right)
         return node
+
+    def visit_Lambda(self, node: ast.Lambda) -> ast.AST:
+        """Wrap a lambda in the value the language calls a function.
+
+        Python's own function would do for calling, and for nothing
+        else: it names its type after the compiler's wrapper, prints
+        an address, recurses as deep as the interpreter allows, and
+        describes a bad argument list in Python's words.  The wrapper
+        answers all four, and takes its parameter names and its count
+        of required ones from here, where they are already known.
+
+        """
+        self.generic_visit(node)
+        parameters = tuple(parameter.arg for parameter in node.args.args)
+        required = len(parameters) - len(node.args.defaults)
+        return call(
+            "_sr_function",
+            node,
+            node,
+            ast.Tuple(elts=[ast.Constant(name) for name in parameters], ctx=ast.Load()),
+            ast.Constant(required),
+        )
 
 
 def call(helper: str, at: ast.AST, *args: ast.expr) -> ast.Call:
@@ -573,7 +713,14 @@ def build(
     assert isinstance(body, ast.Return)
     body.value = tree.body
     ast.fix_missing_locations(shell)
-    code = compile(shell, filename=f"<expr {source!r}>", mode="exec")
+    try:
+        code = compile(shell, filename=f"<expr {source!r}>", mode="exec")
+    except SyntaxError as error:
+        # The rejection pass refuses what is known to reach here,
+        # so this is a backstop: a template that found another way
+        # gets a diagnostic naming the expression rather than
+        # a traceback out of the loader.
+        raise ExpressionError(error.msg) from None
     made: dict[str, Any] = {}
     exec(code, RUNTIME, made)
     function: Callable[..., Any] = made[FUNCTION_NAME]

@@ -74,6 +74,11 @@ def elements(loaded: Loaded) -> tuple[Element | Xref, ...]:
         ("other.FINAL", ()),
         ("FINAL[name]", ()),
         ("this is not an expression", ()),
+        # A local name called FINAL is not the predefined one, so what
+        # is read off it belongs to no scope that has ended.
+        ("(lambda FINAL: FINAL.amount)(THIS)", ()),
+        ("[FINAL.amount for FINAL in rows]", ()),
+        ("FINAL.total + (lambda FINAL: FINAL.amount)(THIS)", ("total",)),
     ],
 )
 def test_the_names_read_out_of_final(source: str, expected: tuple[str, ...]) -> None:
