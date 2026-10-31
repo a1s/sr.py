@@ -329,7 +329,8 @@ the reference gave, and names the section of `doc/` that answer became.
 | `expressions/null-folds` | what a null does to an accumulator |
 | `expressions/date-layout` | a point in a layout that is not a fraction |
 | `expressions/lambda` | the lambda both engines take, and what one prints as |
-| `expressions/lambda-starred` | the lambda parameters this engine leaves out |
+| `expressions/lambda-parameters` | the lambda parameters this engine leaves out |
+| `expressions/function-repr` | what a predeclared function and a bound method print as |
 | `values/dimensions` | what a dimension string means |
 | `values/colors` | what each colour spelling resolves to |
 | `values/hex-float` | a number the host's parser takes and the grammar does not |
@@ -474,10 +475,19 @@ until doc/expressions.md#functions was written. The two agree on plain
 parameters and their defaults, on what `type` and `repr` call a function,
 and on a function held in a variable, which `expressions/lambda` records.
 They do not agree on the rest of Starlark's parameter grammar: the reference
-takes `*args`, `**kwargs` and a bare `*`, and this engine refuses all three.
-That is `expressions/lambda-starred` and the divergence
-`lambda-starred-parameters`, the second of the two that go the way
+takes `*args`, `**kwargs`, a bare `*`, and `__debug__`, and this engine
+refuses all four. That is `expressions/lambda-parameters` and the divergence
+`lambda-parameter-forms`, the second of the two that go the way
 `values/hex-float` does, built by the reference and refused here.
+
+`lambda` made one older gap worth a probe of its own. Every callable a
+template can reach is a Python object here, and Python writes a memory
+address into the repr of a function and of a bound method, so a printout
+that held one would not be reproducible. Nothing printed a callable until
+a lambda could be written, and nothing caught it. `expressions/function-repr`
+is that probe: predeclared functions, a method bound to each kind of
+receiver, and a function inside a list, each named the way the reference
+names it.
 
 The CBOR encoding is compared over a part of the corpus, in
 [test_cbor.py](../test_cbor.py), and agrees wherever the NDJSON does,

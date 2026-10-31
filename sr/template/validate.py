@@ -41,7 +41,7 @@ from dataclasses import dataclass, field
 
 from sr.barcode.readable import unreadable
 from sr.errors import Diagnostic, Diagnostics, NodePath
-from sr.expr import GLOBALS, GROUP_SUFFIXES, PREDEFINED, Expression
+from sr.expr import GLOBALS, GROUP_SUFFIXES, PREDEFINED, Expression, FinalNames
 from sr.template.load import (
     bands_of,
     elements_of,
@@ -1281,6 +1281,11 @@ def final_names(source: str) -> tuple[str, ...]:
     A subscript by anything but a literal string names something
     only the run knows, and is left out rather than reported.
 
+    The reading is :class:`FinalNames`, which knows the dialect's
+    scopes: a lambda parameter or a comprehension variable called
+    ``FINAL`` shadows the predefined one, and a member read off it
+    belongs to no scope that has ended.
+
     Args:
         source: The expression, as the template wrote it.
 
@@ -1289,25 +1294,6 @@ def final_names(source: str) -> tuple[str, ...]:
         tree = ast.parse(source, mode="eval")
     except SyntaxError:
         return ()
-    found: list[str] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Attribute) and is_final(node.value):
-            found.append(node.attr)
-        elif (
-            isinstance(node, ast.Subscript)
-            and is_final(node.value)
-            and isinstance(node.slice, ast.Constant)
-            and isinstance(node.slice.value, str)
-        ):
-            found.append(node.slice.value)
-    return tuple(found)
-
-
-def is_final(node: ast.expr) -> bool:
-    """Report whether an expression node is the bare name ``FINAL``.
-
-    Args:
-        node: The node to test.
-
-    """
-    return isinstance(node, ast.Name) and node.id == "FINAL"
+    reader = FinalNames()
+    reader.visit(tree)
+    return tuple(reader.members)

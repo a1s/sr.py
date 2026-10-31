@@ -568,6 +568,14 @@ and this engine refuses them, which is a registered divergence rather than
 a settled rule: a call here already refuses a starred argument, and
 narrowing is the half of the decision that can be taken back.
 
+A parameter may not be named `__debug__`, which Starlark treats as
+an ordinary identifier and the reference accepts. That one is a limit
+of this engine's host rather than a choice, and it is registered with
+the other three.
+
+A parameter may not be repeated. `lambda total, total: total` is
+`duplicate parameter: total` in both engines.
+
 Python's `/` is not Starlark's, and both engines refuse it.
 
 A parameter is local to its lambda, the way a comprehension variable is
@@ -596,6 +604,46 @@ functions a printout writes cannot be told apart in it. That is the price
 of [Determinism](#determinism): an address differs from one run to the
 next, and a printout holding one would not be reproducible.
 
+The same holds for the callables the engine predeclares. A builtin is
+`<built-in function len>` and a method taken off a value without calling
+it is `<built-in method upper of string value>`, naming the type rather
+than the value it is bound to:
+
+```
+str(len)             # <built-in function len>
+str(math.pow)        # <built-in function pow>
+str('ab'.upper)      # <built-in method upper of string value>
+str([1, 2].append)   # <built-in method append of list value>
+```
+
+### Calling a function
+
+A call fills the parameters from the left, then by name. A call that
+does not fit fails with the function named, the way a builtin's does:
+
+| The call | What it says |
+|---|---|
+| too few | `function lambda missing 1 argument (rate)` |
+| too many | `function lambda accepts 2 positional arguments (3 given)` |
+| too many, where a default could have taken one | `function lambda accepts at most 2 positional arguments (3 given)` |
+| a name that is not a parameter | `function lambda got an unexpected keyword argument "vat"` |
+| a name already filled from the left | `function lambda got multiple values for parameter "rate"` |
+| any argument at all, to a function that takes none | `function lambda accepts no arguments (1 given)` |
+
+A function **already running cannot be entered again**. This is what
+[Language](#language) means by no recursion, and with `lambda` it is
+reachable: a function handed itself as an argument can call itself
+through that parameter, and the second entry fails with
+
+```
+function lambda called recursively
+```
+
+The rule is about the `lambda` in the template rather than about the
+value, so two functions made from one `lambda` are one function for it.
+A `sorted` key is not affected: it is called once per comparison and
+each call ends before the next begins.
+
 ### A function in a variable
 
 A `variable` holds a function the way it holds any other value,
@@ -610,12 +658,30 @@ values that collect rather than combine are the ones that make sense:
 `first`, `last`, `list`, `set`, and `count`. `sum` of two functions fails,
 and so does every other accumulator that adds its values together.
 
-It is not a way to recurse. A lambda reads a variable as it stood when
-the lambda was made rather than as it stands when the lambda is called,
-so a lambda that names its own variable reaches the value from before
-itself. On the first record that value is the empty accumulator, `None`,
-and the call fails there. [No recursion](#language) needs no rule of its
-own to survive `lambda`.
+It is not a way to recurse, and for a reason of its own. A lambda reads
+a variable as it stood when the lambda was made rather than as it stands
+when the lambda is called, so a lambda that names its own variable
+reaches the value from before itself. On the first record that value is
+the empty accumulator, `None`, and the call fails there. The rule that
+a running function cannot be entered again never comes into it.
+
+### A mutable default
+
+A default is evaluated once, where the lambda is written, so
+a default that is a list or a dict is shared by every call
+of that one function value:
+
+```
+lambda seen=[]: seen
+```
+
+Both engines let such a default be mutated, which makes it the one way
+a value outlives a single evaluation without going through a
+`variable`. **Do not rely on it.** What the default accumulates counts
+how many times the engine evaluated the expression, which is not
+something the template decides, and the two engines do not agree on that
+count for a field that is measured before it is placed. Every other
+value in scope is [frozen](#methods), and this is the gap in that rule.
 
 ## Truth values
 
