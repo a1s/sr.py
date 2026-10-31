@@ -109,10 +109,12 @@ jobs:
 
   # The same lint, type, and test checks a pull request gets,
   # run here from their own file rather than copied into this one.
+  # `$/` is GitHub's name for this repository at the commit being run,
+  # which, unlike `./`, counts as pinned under a policy that requires it.
   checks:
     name: Checks
     needs: verify
-    uses: ./.github/workflows/test.yml
+    uses: $/.github/workflows/test.yml
 
   build:
     name: Build distributions

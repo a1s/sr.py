@@ -77,7 +77,7 @@ def test_pages_look_the_same(
     except SrError as refused:
         failures.append(f"this renderer refused it: {refused}")
     target = build_directory / "reference.pdf"
-    done = subprocess.run(  # the argv is ours, not a shell string
+    done = subprocess.run(  # noqa: S603 -- the argv is ours, no shell
         [str(reference.path), "render", str(printout), "-o", str(target)],
         capture_output=True,
         text=True,

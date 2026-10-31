@@ -167,7 +167,7 @@ def local_engine() -> Engine:
         )
     command = (sys.executable, str(ENTRY_POINT))
     try:
-        completed = subprocess.run(  # the argv is ours, not a shell string
+        completed = subprocess.run(  # noqa: S603 -- the argv is ours, no shell
             [*command, "version"],
             cwd=ROOT,
             capture_output=True,
@@ -207,7 +207,7 @@ def run(engine: Engine, case: Case, directory: Path) -> Build:
         # naming a character outside it -- a missing-glyph warning quoting
         # the glyph, which is how the text probes report -- raises inside
         # the reader thread instead of reaching the failure message.
-        completed = subprocess.run(  # the argv is ours, not a shell string
+        completed = subprocess.run(  # noqa: S603 -- the argv is ours, no shell
             arguments,
             cwd=ROOT,
             capture_output=True,

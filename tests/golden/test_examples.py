@@ -58,7 +58,7 @@ def run(*argv: str) -> subprocess.CompletedProcess[str]:
         *argv: The arguments after the program name.
 
     """
-    return subprocess.run(  # the argv is ours, not a shell string
+    return subprocess.run(  # noqa: S603 -- the argv is ours, no shell
         [sys.executable, str(ENTRY_POINT), *argv],
         cwd=ROOT,
         capture_output=True,

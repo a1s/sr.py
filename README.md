@@ -230,8 +230,10 @@ is diagnosable from the artifact.
 ## Development
 
 ```bash
-make install    # a venv, the dependencies, and the test and lint tools
-make check      # ruff, mypy, pytest
+make install    # a venv, the dependencies, and the test, lint, and audit tools
+make check      # ruff, zizmor, mypy, pytest
+make audit      # known vulnerabilities in the packages and the actions
+                # (the actions' half needs a GitHub token in GH_TOKEN)
 ```
 
 Everything generated goes under `build/`: the pytest, ruff and mypy caches,

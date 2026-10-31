@@ -722,7 +722,7 @@ def build(
         # a traceback out of the loader.
         raise ExpressionError(error.msg) from None
     made: dict[str, Any] = {}
-    exec(code, RUNTIME, made)
+    exec(code, RUNTIME, made)  # noqa: S102 -- this is the sandbox
     function: Callable[..., Any] = made[FUNCTION_NAME]
     return function
 

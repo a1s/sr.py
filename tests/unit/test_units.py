@@ -89,7 +89,7 @@ def test_the_shortcut_rounds_as_the_rule_does() -> None:
     and the largest doubles.  The sign of a zero is compared too.
 
     """
-    chosen = random.Random(1)
+    chosen = random.Random(1)  # noqa: S311 -- test data, not a secret
     values = [chosen.uniform(-1e6, 1e6) for _ in range(20000)]
     values += [chosen.randrange(-(10**9), 10**9) / 2000 for _ in range(20000)]
     values += [0.0, -0.0, -0.0004, 0.0005, -0.0005, 0.1235, 0.49999999999999994]

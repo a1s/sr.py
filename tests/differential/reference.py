@@ -158,7 +158,7 @@ def build_reference() -> ReferenceBinary:
         "./cmd/sr",
     ]
     try:
-        completed = subprocess.run(  # the argv is ours, not a shell string
+        completed = subprocess.run(  # noqa: S603 -- the argv is ours, no shell
             command,
             cwd=tree,
             capture_output=True,
@@ -188,7 +188,7 @@ def reference_version(binary: Path) -> str:
 
     """
     try:
-        completed = subprocess.run(  # the argv is ours, not a shell string
+        completed = subprocess.run(  # noqa: S603 -- the argv is ours, no shell
             [str(binary), "version"],
             capture_output=True,
             text=True,

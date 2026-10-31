@@ -60,7 +60,7 @@ def run_reference(
         stdin: What standard input holds, where the command reads it.
 
     """
-    done = subprocess.run(  # the argv is ours, not a shell string
+    done = subprocess.run(  # noqa: S603 -- the argv is ours, no shell
         [*oracle.command, *argv],
         cwd=ROOT,
         input=b"" if stdin is None else stdin,

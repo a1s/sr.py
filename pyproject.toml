@@ -25,7 +25,11 @@ dependencies = [
     "ckdl>=1.0",  # KDL v2 parsing, which arrived in 1.0
     "fonttools",  # font tables, collections, subsetting primitives
     "cbor2",      # the .srp.cbor encoding
-    "pillow",     # image decode, for the renderer only
+    # Image decode, for the renderer only.
+    # 13.0 fixed a buffer overflow in the JPEG decoder, and
+    # decompression-bomb checks that APNG and GIF could get past,
+    # which are the formats the renderer opens.
+    "pillow>=13",
     # The IANA zone database, which `zoneinfo` reads and Windows
     # does not ship.  A dependency rather than a host lookup on purpose:
     # a template that names Europe/Riga must mean the same thing on every
@@ -54,6 +58,7 @@ dev = [
     # or a release that cannot be cut.  Moved by hand, with the fixes.
     "ruff==0.16.6",
     "mypy==2.3.1",
+    "zizmor==1.31.1",  # the GitHub workflows and the Dependabot config
 ]
 # Verification tools for the renderer and a second opinion on
 # expression semantics.  Split out because their wheels are
@@ -65,6 +70,14 @@ oracles = [
     # in a QR symbol but the choice of mask.  It was the engine's encoder
     # until its masks turned out not to be the reference's.
     "qrcode",
+]
+# Known vulnerabilities in the installed packages, for `make audit`.
+# Out of `dev`, which holds what CI runs: no CI job runs this,
+# and it would bring two dozen packages of its own into every one.
+# Not pinned: its answer moves with the advisory database,
+# whichever version asks.
+audit = [
+    "pip-audit>=2.10",
 ]
 
 [tool.setuptools.dynamic]
@@ -102,6 +115,7 @@ select = [
     "I",    # import sorting
     "UP",   # pyupgrade
     "B",    # bugbear
+    "S",    # bandit -- calls that are risky on untrusted input
     "D",    # pydocstyle -- PEP 257
     # The `google` convention below switches D401 off.  Named here to switch
     # it back on: PEP 257 asks a docstring to prescribe the function's effect
@@ -109,6 +123,11 @@ select = [
     "D401",
     "RUF",
 ]
+# S101 objects to `assert` because `python -O` strips it.
+# pytest's checks are asserts, and every one under `sr/` narrows a type
+# for mypy rather than checking input, so stripping one loses a diagnostic,
+# not a check.
+ignore = ["S101"]
 
 [tool.ruff.lint.pydocstyle]
 # PEP 257 for the shape of a docstring -- a one-line summary, then a blank

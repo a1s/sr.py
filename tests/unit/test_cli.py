@@ -1759,7 +1759,7 @@ def started(*argv: str) -> subprocess.CompletedProcess[bytes]:
         *argv: What follows the interpreter on its command line.
 
     """
-    return subprocess.run(  # the argv is ours, not a shell string
+    return subprocess.run(  # noqa: S603 -- the argv is ours, no shell
         [sys.executable, *argv],
         cwd=ROOT,
         capture_output=True,

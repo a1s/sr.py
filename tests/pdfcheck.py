@@ -147,7 +147,7 @@ def qpdf(path: Path) -> None:
     command = shutil.which("qpdf")
     if command is None:
         return
-    done = subprocess.run(  # the argv is ours, not a shell string
+    done = subprocess.run(  # noqa: S603 -- the argv is ours, no shell
         [command, "--check", str(path)],
         capture_output=True,
         text=True,
