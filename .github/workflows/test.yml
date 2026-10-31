@@ -7,17 +7,20 @@ name: Test
 # Pushes to main are covered too: a PR is tested against its own merge
 # commit, which is not what ends up on the branch after other PRs land.
 #
-# Everything a run depends on is pinned: the actions to commits,
-# the Go reference to a commit, and ruff, mypy, and zizmor in pyproject.toml.
-# A commit then gets the same answer whenever it is tested, and a tag
-# is held to the bar its pull request met.  Dependabot moves the actions;
-# the rest moves in a pull request of its own.
+# What sets the bar is pinned: the actions to commits, the Go reference
+# to a commit, and ruff, mypy, and zizmor in pyproject.toml.
+# A tag is then held to the bar its pull request met. Dependabot
+# moves the actions; the rest moves in a pull request of its own.
 #
-# A check whose answer changes while the commit does not
-# stays out of this file, or a release could be refused
-# for something that happened after its pull request passed.
+# Everything else is not: the engine's dependencies, pytest,
+# and the runner images come in at their newest,
+# so a new release of one can still fail a run that passed before,
+# a release's included.  A check that looks up advisories stays out
+# of this file all the same: it would raise the bar on purpose,
+# every time one is published, whatever the pull request met.
 # CodeQL runs from the repository's settings, and
-# `make audit` looks up known vulnerabilities on demand.
+# `make audit` looks up known vulnerabilities on demand,
+# in the packages and in the actions.
 on:
   pull_request:
   push:

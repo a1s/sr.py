@@ -43,7 +43,8 @@ endif
 export PYTHONPYCACHEPREFIX := $(BUILD_DIR)/pycache
 
 .PHONY: all venv install test test-required test-linux test-linux-matrix \
-        lint fmt typecheck check audit build-dir reference clean
+        lint fmt typecheck check audit audit-packages audit-actions \
+        build-dir reference clean
 
 all: check
 
@@ -101,15 +102,20 @@ test-linux-matrix:
 	done
 
 # zizmor is a compiled program with no `python -m` form,
-# so it is run from the directory where pip puts the commands
-# of $(PYTHON)'s packages.  Deferred, like VENV_PYTHON,
-# so that `make install lint` finds it.
-ZIZMOR = $(shell $(PYTHON) -c "import pathlib, sysconfig; \
-    print(pathlib.Path(sysconfig.get_path('scripts')).as_posix())")/zizmor
+# so it is run from wherever its install recorded putting it.
+# That is the scheme pip actually used, rather than the
+# interpreter's default: pip falls back to the user's own directory
+# when the interpreter's is not writable, as under Program Files.
+# Deferred, like VENV_PYTHON, so that `make install lint` finds it.
+ZIZMOR = $(shell $(PYTHON) -c "from importlib.metadata import files; \
+    print(next(path.locate().resolve().as_posix() \
+        for path in files('zizmor') \
+        if path.parent.name in ('bin', 'Scripts')))")
 
 # zizmor reads the workflows and the Dependabot config.
 # Offline, because its online audits ask GitHub about advisories and commits,
 # and their answers change while the commit under test does not.
+# `make audit-actions` runs them.
 lint:
 	$(PYTHON) -m ruff check .
 	$(PYTHON) -m ruff format --check .
@@ -133,14 +139,29 @@ typecheck:
 
 check: lint typecheck test
 
-# Known vulnerabilities in everything the venv holds:
+# Known vulnerabilities, in the packages and in the actions.
+# Not part of `check`, and not run by the workflows:
+# the advisories change from day to day,
+# so their answer for one commit does too.
+audit: audit-packages audit-actions
+
+# Everything the venv holds:
 # the engine's dependencies, the test and lint tools, and the oracles.
 # The project itself is skipped, being installed from the working tree,
-# not from PyPI.  Not part of `check`, and not run by the workflows:
-# the advisory database changes from day to day,
-# so its answer for one commit does too.
-audit:
+# not from PyPI.
+audit-packages:
 	$(PYTHON) -m pip_audit --skip-editable --cache-dir $(BUILD_DIR)/pip-audit
+
+# The actions the workflows pin, through the zizmor audits `lint` leaves out:
+# a pin to a commit that is not in the action's own repository,
+# a version with an advisory, and a ref that is both a branch and a tag.
+# They ask GitHub, which wants a token in GH_TOKEN,
+# and without one zizmor quietly runs offline and passes,
+# so the token is checked first.
+audit-actions:
+	@test -n "$$GH_TOKEN$$GITHUB_TOKEN$$ZIZMOR_GITHUB_TOKEN" \
+	    || { echo "audit-actions: set GH_TOKEN to a GitHub token" >&2; exit 1; }
+	"$(ZIZMOR)" --cache-dir $(BUILD_DIR)/zizmor .
 
 # -------- the oracle --------
 

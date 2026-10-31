@@ -72,8 +72,8 @@ oracles = [
     "qrcode",
 ]
 # Known vulnerabilities in the installed packages, for `make audit`.
-# Out of `dev` because it brings two dozen packages of its own,
-# which every CI job would install and none would run.
+# Out of `dev`, which holds what CI runs: no CI job runs this,
+# and it would bring two dozen packages of its own into every one.
 # Not pinned: its answer moves with the advisory database,
 # whichever version asks.
 audit = [
