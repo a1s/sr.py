@@ -121,7 +121,7 @@ template, and that this is its answer. It has no answer file; the comparison
 then requires both engines to refuse it and to exit with the same status, and
 nothing else is compared, because no document was written and doc/cli.md leaves
 the wording of a diagnostic to each engine. A build by either side fails the
-suite, and so does a refusal with no status at all — a timeout, or a run that
+suite, and so does a refusal with no status at all: a timeout, or a run that
 reported success and wrote nothing.
 
 The probe says so rather than the harness working it out, because a refusal
