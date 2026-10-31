@@ -60,6 +60,9 @@ CBOR_CASES = (
     "probe/barcode/code128",
     "probe/pagination/overflow",
     "probe/pagination/groups",
+    # Two groups, so the two group tables have an order to read off,
+    # which :func:`test_the_reference_writes_its_cbor_tables_sorted` reads.
+    "probe/deferred/nested-groups",
     "probe/subreport/paper",
     "probe/layout/xref",
 )
@@ -168,24 +171,43 @@ def test_cbor_printouts_agree(
     )
 
 
+# A case per name-keyed table whose header fills it with more than one
+# key, since one key has no order and says nothing about the next.
+# `key-order` carries three blobs whose names the reference's hash map
+# yielded unsorted whichever of its rotations a run started from;
+# `nested-groups` has two groups, so both group tables have two keys.
+ORDERED = (
+    ("probe/data/key-order", "data"),
+    ("probe/deferred/nested-groups", "groupRuns"),
+    ("probe/deferred/nested-groups", "groupKeys"),
+)
+
+
 @pytest.mark.differential
+@pytest.mark.parametrize(("ident", "table"), ORDERED, ids=lambda one: one)
 def test_the_reference_writes_its_cbor_tables_sorted(
-    oracle: Engine, build_directory: Path
+    ident: str, table: str, oracle: Engine, build_directory: Path
 ) -> None:
     """What the comparison reads raw, held to account.
 
-    Three blobs whose names the reference's hash map yielded unsorted,
-    whichever of its rotations a run started from, until it began
+    The reference wrote these in its hash map's order until it began
     sorting them as doc/printout.md does.  Were it to go back, the
-    comparison would pass or fail by chance, so this says which it is.
+    comparison would pass or fail by chance, so this says which it is,
+    for each of the three tables and not just the one that used to show
+    it most readily.
 
     """
-    (case,) = [one for one in cbor_cases() if one.ident == "probe/data/key-order"]
+    (case,) = [one for one in cbor_cases() if one.ident == ident]
     built = run(oracle, case, build_directory)
     header = cbor_records(built.printout)[0]
-    assert list(header["data"]) == sorted(header["data"]), (
-        "the reference writes its CBOR `data` table unsorted again, so the "
-        "comparison turns on its hash map's order: sort the reference's "
+    keys = list(header.get(table) or {})
+    assert len(keys) > 1, (
+        f"{ident} no longer fills `{table}` with more than one key, so this "
+        "reads no order at all: point it at a case that does"
+    )
+    assert keys == sorted(keys), (
+        f"the reference writes its CBOR `{table}` table unsorted again, so "
+        "the comparison turns on its hash map's order: sort the reference's "
         "named tables in as_compared before holding it to this engine's"
     )
 

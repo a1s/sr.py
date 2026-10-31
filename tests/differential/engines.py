@@ -71,7 +71,23 @@ class BuildFailed(Exception):
     Unlike :class:`EngineUnavailable` this is a real failure: the
     engine exists, it was asked to build something, and it would not.
 
+    Attributes:
+        code: The status it exited with, where it exited.  A timeout
+            and a run that reported success and wrote nothing have none,
+            so neither is ever the same refusal as anything else.
+
     """
+
+    def __init__(self, message: str, code: int | None = None) -> None:
+        """Hold what the engine said, and the status it said it with.
+
+        Args:
+            message: The report, which is what ``str`` gives.
+            code: The exit status, where the engine exited.
+
+        """
+        super().__init__(message)
+        self.code = code
 
 
 @dataclass(frozen=True)
@@ -208,7 +224,8 @@ def run(engine: Engine, case: Case, directory: Path) -> Build:
     if completed.returncode != 0:
         raise BuildFailed(
             f"{engine.name} exited {completed.returncode} on {case.ident}\n"
-            f"  {' '.join(arguments)}\n" + indent(completed.stderr or completed.stdout)
+            f"  {' '.join(arguments)}\n" + indent(completed.stderr or completed.stdout),
+            completed.returncode,
         )
     if not out.is_file():
         raise BuildFailed(

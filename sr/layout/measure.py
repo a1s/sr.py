@@ -1663,8 +1663,8 @@ class Measurer:
 
     # -- diagnostics ------------------------------------------------------
 
-    def missing(self,
-        font: str, character: str, path: NodePath, record: int | None
+    def missing(
+        self, font: str, character: str, path: NodePath, record: int | None
     ) -> None:
         """Record that a face has no glyph for a character, once.
 
@@ -1686,8 +1686,7 @@ class Measurer:
         if key in self.shared.reported:
             return
         self.shared.reported.add(key)
-        self.shared.warnings.append(
-            missing_glyph(font, character, str(path), record))
+        self.shared.warnings.append(missing_glyph(font, character, str(path), record))
 
 
 def deferrals(

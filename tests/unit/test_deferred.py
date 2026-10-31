@@ -467,6 +467,27 @@ def test_the_value_raises_a_glyph_warning_and_the_placeholder_none(
     ]
 
 
+def test_a_deferred_glyph_warning_carries_the_record_its_field_sat_on(
+    tmp_path: Path,
+) -> None:
+    """The record is the one the placeholder was measured for.
+
+    doc/printout.md#header-line names the record that produced a warning,
+    and a deferred field's value is produced where the field sat, however
+    much later the scope ends.  Only the second row's value wants the
+    character, so a warning that always said 0 would be wrong here.
+
+    """
+    field = deferred(
+        "('\\u4e2d' if ITEM_NUMBER == 2 else 'x') + str(FINAL.PAGE_NUMBER)",
+        "report",
+        'text="y" left=0 top=0 width=100 height=6',
+    )
+    printout = built(tmp_path, band("detail", field), rows_of(3))
+    glyphs = [one for one in printout.warnings if one.kind == "glyph"]
+    assert [(one.record, "中" in one.message) for one in glyphs] == [(1, True)]
+
+
 def test_a_header_reservation_registers_nothing(tmp_path: Path) -> None:
     """Each page's header resolves once, from the one that was placed."""
     header = deferred(

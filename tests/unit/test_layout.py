@@ -783,14 +783,21 @@ def test_a_glyph_warning_names_the_xref_child_that_needed_it_first(
 def test_a_glyph_warning_carries_the_record_of_its_first_use(
     tmp_path: Path,
 ) -> None:
-    """doc/printout.md#header-line: a record produced it, so it is named."""
+    """doc/printout.md#header-line: a record produced it, so it is named.
+
+    The first row sets a character the face has, and the second
+    the one it has not, so the record the warning carries is 1
+    and a warning that always said 0 would be wrong here.
+
+    """
     printout = built(
         tmp_path,
-        '    detail { field text="中" left=0 width=50 }',
-        data='{"n":1}\n{"n":2}\n',
+        "    detail { field expr=\"'x' if ITEM_NUMBER == 1 else '中'\""
+        " left=0 width=50 }",
+        data='{"n":1}\n{"n":2}\n{"n":3}\n',
     )
     glyphs = [one for one in printout.warnings if one.kind == "glyph"]
-    assert [one.record for one in glyphs] == [0]
+    assert [(one.record, "中" in one.message) for one in glyphs] == [(1, True)]
 
 
 def test_a_title_bands_glyph_warning_carries_no_record(tmp_path: Path) -> None:

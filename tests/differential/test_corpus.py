@@ -27,7 +27,7 @@ import pytest
 from sr.printout.inspect import read_printout
 from sr.printout.verify import violations
 from tests.differential.answers import answer_path, distil
-from tests.differential.cases import ROOT, Case, corpus, probe_cases
+from tests.differential.cases import REFUSED, ROOT, Case, corpus, probe_cases
 from tests.differential.diff import compare_printouts, restamped
 from tests.differential.engines import Build, BuildFailed, Engine, run
 from tests.differential.register import Divergence, Register
@@ -70,6 +70,41 @@ def attempt(engine: Engine, case: Case, directory: Path) -> Build | BuildFailed:
 def expected(entry: Divergence, detail: str) -> None:
     """Mark the running test as an expected difference."""
     pytest.xfail(f"{entry.describe()}\n{detail}")
+
+
+def agreed_on_a_refusal(
+    case: Case,
+    outcomes: dict[str, Build | BuildFailed],
+    refused: dict[str, BuildFailed],
+) -> None:
+    """Hold a case whose answer is a refusal to both engines refusing it.
+
+    A probe says ``!refused`` when that is its answer, and then neither
+    engine may build it and both have to refuse it the same way.  Nothing
+    else is compared: no document was written, and doc/cli.md leaves the
+    wording of a diagnostic to each engine, so the exit code is the whole
+    of what the two have in common.  A refusal with no code -- a timeout,
+    or a run that reported success and wrote nothing -- is never that.
+
+    Args:
+        case: The case, which declared the refusal.
+        outcomes: What each engine did.
+        refused: The ones that refused, a subset of it.
+
+    """
+    built = sorted(set(outcomes) - set(refused))
+    assert not built, (
+        f"{case.ident}: its sidecar says both engines refuse it, and "
+        f"{', '.join(built)} built it. Take {REFUSED!r} out of the sidecar "
+        "and record the answer, or find out why the build came back."
+    )
+    detail = "\n".join(str(failure) for failure in refused.values())
+    codes = {name: failure.code for name, failure in refused.items()}
+    assert len(set(codes.values())) == 1 and None not in codes.values(), (
+        f"{case.ident}: both engines refuse it, and not in the same way: "
+        f"{codes}. doc/cli.md gives each exit code a meaning, so two "
+        f"refusals that mean different things are not an answer.\n{detail}"
+    )
 
 
 def has_done_its_work(ident: str, listed: Divergence, registered: bool) -> None:

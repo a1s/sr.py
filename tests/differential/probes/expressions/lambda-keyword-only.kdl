@@ -1,0 +1,23 @@
+// probes/expressions/lambda-keyword-only.kdl -- a bare star among the parameters.
+//
+// A bare `*` makes every parameter after it keyword-only.
+// It is the third of the four parameter forms a lambda does not take;
+// `lambda-star-args.kdl` says why each has a probe of its own.
+//
+// `/`, which would make what precedes it positional-only, is not probed
+// at all: neither engine names it, the reference calling it "not an
+// identifier", so there is no answer either could give that the other
+// does not.
+//
+// Both engines refuse it, so there is no answer file beside this probe.
+// doc/expressions.md#functions is what this became.
+
+report name="expressions/lambda-keyword-only" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=20 {
+      field expr="str((lambda one, *, two: one + two)(1, two=2))" left=0 top=0 width=400 height=12 stretch=#true  // 3
+    }
+  }
+}

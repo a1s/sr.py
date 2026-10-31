@@ -222,6 +222,32 @@ def test_the_host_fonts_directive_drops_strict_fonts(tmp_path: Path) -> None:
     assert "--strict-fonts" in plain.argv(tmp_path / "out.srp.jsonl")
 
 
+def test_the_refused_directive_marks_the_probe_and_is_not_an_argument(
+    tmp_path: Path,
+) -> None:
+    """`!refused` says the probe's answer is that both engines refuse it."""
+    (tmp_path / "bad.kdl").write_text("report {}\n", encoding="utf-8")
+    (tmp_path / "bad.args").write_text("!refused\n", encoding="utf-8")
+    (tmp_path / "plain.kdl").write_text("report {}\n", encoding="utf-8")
+    found = {case.ident: case for case in probe_cases(tmp_path)}
+
+    refused = found["probe/bad"]
+    assert refused.refused
+    assert not refused.host_fonts
+    assert "!refused" not in refused.argv(tmp_path / "out.srp.jsonl")
+    assert not found["probe/plain"].refused
+
+
+def test_the_two_directives_are_independent(tmp_path: Path) -> None:
+    """A sidecar may carry both, and each is read on its own."""
+    (tmp_path / "both.kdl").write_text("report {}\n", encoding="utf-8")
+    (tmp_path / "both.args").write_text(
+        "!refused\nleft=1\n!host-fonts\n", encoding="utf-8"
+    )
+    (case,) = probe_cases(tmp_path)
+    assert (case.refused, case.host_fonts, case.params) == (True, True, ("left=1",))
+
+
 def test_an_unknown_directive_is_refused(tmp_path: Path) -> None:
     """A probe built other than as its author asked answers another question."""
     (tmp_path / "odd.kdl").write_text("report {}\n", encoding="utf-8")

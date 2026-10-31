@@ -36,8 +36,10 @@
 # reference's, `graft-beside-columns`, `graft-without-room`, and
 # `inline-summary-strip`; two of its probes show `column-floor`
 # and `column-footer-strip` again, inside a subreport.
-# M13 added `outline-balance` and `margins-named-by-band`, each a
-# printout of the reference's that breaks one of the invariants.
+# M13 added `outline-balance`, a printout of the reference's that breaks
+# one of the invariants, and `margins-named-by-band`, which once did and
+# no longer does: the reference raises the overflow warning now, and names
+# the band the mark sits in rather than the element it came from.
 # M14 added one decision about rendering, `image-past-its-pixels`.
 # Its case is a render, which the harness names `render/` and then
 # the case whose printout was rendered.
@@ -47,11 +49,14 @@
 # one about the dump,
 # `outline-name-quoted`, and three defects: `help-arguments`
 # and `subreport-fonts-listed` in the reference, and
-# `load-diagnostic-spelling` on both sides.  Ten entries above
-# cover a report or a command line as well as a printout.
+# `load-diagnostic-spelling` on both sides.  Six entries above
+# cover a report or a command line as well as a printout, and nine
+# cover one and no printout.
 #
-# The reference's 0.2.0 took doc/ and most of what was filed against it,
-# and thirteen entries came out with it: `glyph-warning-order`,
+# At `e20f237` -- `v0.1.0-4`, still reporting `sr 0.1.0`, and the work
+# its changelog files under an unreleased 0.2.0 -- the reference took
+# doc/ and most of what was filed against it, and thirteen entries came
+# out with it: `glyph-warning-order`,
 # `empty-font-table-is-null`, `negative-sizes-refused`,
 # `overflow-record-zero`, `barcode-lengths-unrounded`,
 # `cut-crop-ignores-alignment`, `grow-ignores-valign`,
@@ -62,9 +67,12 @@
 # `barcode-charset` to `barcode-eci`, `margins-unchecked` to
 # `margins-named-by-band`, and `font-warning-node` to
 # `font-warning-in-the-check`.  It brought one of its own,
-# `cbor-empty-group-tables`.  The last four of the thirteen are
-# templates both engines now refuse, which the comparison reads as
-# agreement; see test_corpus.py.
+# `cbor-empty-group-tables`.  Four of the thirteen --
+# `negative-sizes-refused`, `outline-target-missing`, `final-vertical`,
+# and `lambda-parameter-forms` -- covered templates both engines now
+# refuse.  Such a probe says `!refused` in its sidecar, and the
+# comparison then holds the two to one exit code and nothing else;
+# see test_corpus.py.
 #
 # The milestone numbers:
 #   M0: Scaffold and oracle

@@ -6,10 +6,10 @@
 // since an extent below zero describes no box.
 //
 // Accepting it would draw the box with no height while keeping the
-// declared bottom above the top for the floating pass, so the float
-// here would land 5pt lower than it does below a height of 0.
-// Both engines refuse the template, and a negative stroke width with it,
-// so there is no answer file beside this probe.
+// declared bottom above the top for the floating pass, so the float here
+// would land 5pt lower than it does below a height of 0.  Both engines
+// refuse the template, and a negative stroke width with it, so there is
+// no answer file beside this probe.
 
 report name="values/negative-size" {
   font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10

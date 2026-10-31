@@ -1,0 +1,20 @@
+// probes/expressions/lambda-debug-name.kdl -- a parameter named __debug__.
+//
+// The fourth of the four parameter forms a lambda does not take, and the
+// only one that is not a choice: `__debug__` is an identifier like any
+// other in Starlark, and Python parses it as a parameter and then refuses
+// to bind it, so taking it would mean renaming it throughout the body.
+// `lambda-star-args.kdl` says why each form has a probe of its own.
+//
+// Both engines refuse it, so there is no answer file beside this probe.
+// doc/expressions.md#functions is what this became.
+
+report name="expressions/lambda-debug-name" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=20 {
+      field expr="str((lambda __debug__: __debug__)(5))" left=0 top=0 width=400 height=12 stretch=#true  // 5
+    }
+  }
+}
