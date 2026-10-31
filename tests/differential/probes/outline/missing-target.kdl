@@ -9,8 +9,8 @@
 // a renderer would refuse the printout, and the printout's fifth invariant
 // rules it out.
 //
-// The reference builds it, writing an xref with nothing to go to.
-// Registered under the divergence `outline-target-missing`.
+// Both engines refuse it, which is the one way a probe has of being
+// answered without a printout: there is no answer file beside it.
 
 report name="outline/missing-target" {
   font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5

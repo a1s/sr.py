@@ -1,16 +1,13 @@
 // probes/image/grow-valign.kdl -- a grow image shorter than its box.
 //
-// A registered divergence, and a defect in the reference rather than a
-// rule to copy.  See `divergences.toml`, entry `grow-ignores-valign`.
-//
 // `wide.png` is 24 by 12 and every box here is 40 by 40, so a `grow` image
 // has nothing to grow into: it is drawn at its natural size inside a box
 // larger on both axes.  doc/template.md#alignment has `halign` and `valign`
-// place an image's bitmap in its box, and the reference applies the first:
-// `a`, centred, starts 8 across.  It does not apply the second: `a` and `b`
-// start at the box's top whether `valign` says `center` or `bottom`, where
+// place an image's bitmap in its box, and both apply: `a`, centred, starts
+// 8 across and 14 down, and `b`, aligned bottom, starts 28 down.  Applying
+// the first and not the second would start both at the box's top, where
 // a barcode's symbol in the same box would be moved down, and so would the
-// same image under `scale="cut"`.  Here `a` starts 14 down and `b` 28.
+// same image under `scale="cut"`.
 //
 // The band is 40 tall either way: the declared box counts towards it.
 

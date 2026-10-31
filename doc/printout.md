@@ -251,10 +251,11 @@ naming it, and one about a node does not.
 diagnostic is document order and for anything raised while pages are being
 made is the order they were made in. A `glyph` warning is raised once per font
 and character, at the first element set in that font that needed the character,
-and that first use is what fixes its place in the array. The array mixes kinds,
-so build order is the only order all four have in common; sorting the `glyph`
-ones among themselves would tell a reader nothing the `node` field does not
-already say, and would put them out of step with the rest.
+and that first use is what fixes its place in the array and the `record` it
+carries. The array mixes kinds, so build order is the only order all four
+have in common; sorting the `glyph` ones among themselves would tell a reader
+nothing the `node` field does not already say, and would put them out of step
+with the rest.
 
 ### The `engine` field
 

@@ -13,14 +13,19 @@ that differs for a reason doc/ records differs in either encoding.
 
 Two things of the reference's are set right before the comparison.
 One is the image `type` the NDJSON comparison drops as well.
-The other is the order of the three tables whose keys are names,
-`data`, `groupRuns`, and `groupKeys`: doc/printout.md sorts them,
-and the reference sorts them in NDJSON and writes them in CBOR
-in its hash map's order, which changes from one run to the next.
-A comparison against that would pass or fail by chance, so the
-reference's are sorted here, and
-:func:`test_the_reference_still_writes_cbor_tables_unsorted` fails
-the day that is no longer needed.
+The other is an empty `groupRuns` or `groupKeys`: doc/printout.md
+leaves both out while no group has opened, which the reference does
+in NDJSON and not in CBOR, so comparing them would leave every case
+without a group differing and hide whatever else differs in it.
+The divergence `cbor-empty-group-tables` registers that, and
+`cli/format/over-a-known-extension` keeps it visible, being the
+one command line that writes a CBOR file and compares it whole.
+
+There was a third until the reference began writing the three tables
+whose keys are names, `data`, `groupRuns`, and `groupKeys`, in the
+sorted order doc/printout.md gives them; sorting them here is no longer
+needed, and nothing else is sorted, so what the comparison reads is
+otherwise the bytes the reference wrote.
 
 """
 
@@ -55,6 +60,9 @@ CBOR_CASES = (
     "probe/barcode/code128",
     "probe/pagination/overflow",
     "probe/pagination/groups",
+    # Two groups, so the two group tables have an order to read off,
+    # which :func:`test_the_reference_writes_its_cbor_tables_sorted` reads.
+    "probe/deferred/nested-groups",
     "probe/subreport/paper",
     "probe/layout/xref",
 )
@@ -69,8 +77,8 @@ def cbor_cases() -> list[Case]:
     ]
 
 
-# The header's tables whose keys are names rather than fields.
-NAMED_TABLES = ("data", "groupRuns", "groupKeys")
+# The header's group tables, which are absent until a group has opened.
+GROUP_TABLES = ("groupRuns", "groupKeys")
 
 
 def as_compared(printout: bytes) -> bytes:
@@ -78,10 +86,10 @@ def as_compared(printout: bytes) -> bytes:
 
     Its image `type` fields are dropped, as
     :func:`~tests.differential.test_corpus.without_image_types` drops them
-    from NDJSON, and its name-keyed tables are sorted.  A record that needs
-    either is decoded, changed, and encoded again; every other record keeps
-    the bytes the reference wrote, so the encoding is compared wherever
-    nothing had to change.
+    from NDJSON, and so is an empty group table.  A record that needs
+    either is decoded, changed, and encoded again; every other record
+    keeps the bytes the reference wrote, so the encoding is compared
+    wherever nothing had to change.
 
     """
     kept = b""
@@ -89,7 +97,7 @@ def as_compared(printout: bytes) -> bytes:
     while start < len(printout):
         record, end = cbor_item(printout, start, 0)
         changed = drop_image_types(record)
-        changed = sort_named_tables(record) or changed
+        changed = drop_empty_group_tables(record) or changed
         if changed:
             kept += cbor2.dumps(record)
         else:
@@ -98,8 +106,15 @@ def as_compared(printout: bytes) -> bytes:
     return kept
 
 
-def sort_named_tables(record: Any) -> bool:
-    """Sort a header's name-keyed tables in place, saying whether any moved.
+def drop_empty_group_tables(record: Any) -> bool:
+    """Remove a header's empty group tables, saying whether any went.
+
+    doc/printout.md#header-line writes `groupRuns` and `groupKeys` once
+    a group has opened and leaves them out while none has.  The reference
+    leaves them out of its NDJSON and writes them empty in its CBOR,
+    which is `cbor-empty-group-tables` in divergences.toml.  A table
+    with anything in it is left alone, so a difference in what a group
+    counted is still compared.
 
     Args:
         record: A record, which is changed only where it is a header.
@@ -107,13 +122,12 @@ def sort_named_tables(record: Any) -> bool:
     """
     if not isinstance(record, dict) or record.get("kind") != "header":
         return False
-    moved = False
-    for name in NAMED_TABLES:
-        table = record.get(name)
-        if isinstance(table, dict) and list(table) != sorted(table):
-            record[name] = {key: table[key] for key in sorted(table)}
-            moved = True
-    return moved
+    dropped = False
+    for name in GROUP_TABLES:
+        if record.get(name) == {}:
+            del record[name]
+            dropped = True
+    return dropped
 
 
 def drop_image_types(value: Any) -> bool:
@@ -157,22 +171,44 @@ def test_cbor_printouts_agree(
     )
 
 
-@pytest.mark.differential
-def test_the_reference_still_writes_cbor_tables_unsorted(
-    oracle: Engine, build_directory: Path
-) -> None:
-    """The reason :func:`sort_named_tables` exists, held to account.
+# A case per name-keyed table whose header fills it with more than one
+# key, since one key has no order and says nothing about the next.
+# `key-order` carries three blobs whose names the reference's hash map
+# yielded unsorted whichever of its rotations a run started from;
+# `nested-groups` has two groups, so both group tables have two keys.
+ORDERED = (
+    ("probe/data/key-order", "data"),
+    ("probe/deferred/nested-groups", "groupRuns"),
+    ("probe/deferred/nested-groups", "groupKeys"),
+)
 
-    Three blobs whose names the reference's hash map never yields
-    in sorted order, whichever of its rotations a run starts from.
+
+@pytest.mark.differential
+@pytest.mark.parametrize(("ident", "table"), ORDERED, ids=lambda one: one)
+def test_the_reference_writes_its_cbor_tables_sorted(
+    ident: str, table: str, oracle: Engine, build_directory: Path
+) -> None:
+    """What the comparison reads raw, held to account.
+
+    The reference wrote these in its hash map's order until it began
+    sorting them as doc/printout.md does.  Were it to go back, the
+    comparison would pass or fail by chance, so this says which it is,
+    for each of the three tables and not just the one that used to show
+    it most readily.
 
     """
-    (case,) = [one for one in cbor_cases() if one.ident == "probe/data/key-order"]
+    (case,) = [one for one in cbor_cases() if one.ident == ident]
     built = run(oracle, case, build_directory)
     header = cbor_records(built.printout)[0]
-    assert list(header["data"]) != sorted(header["data"]), (
-        "the reference now writes its CBOR `data` table sorted: drop "
-        "sort_named_tables from test_cbor.py, and the note that explains it"
+    keys = list(header.get(table) or {})
+    assert len(keys) > 1, (
+        f"{ident} no longer fills `{table}` with more than one key, so this "
+        "reads no order at all: point it at a case that does"
+    )
+    assert keys == sorted(keys), (
+        f"the reference writes its CBOR `{table}` table unsorted again, so "
+        "the comparison turns on its hash map's order: sort the reference's "
+        "named tables in as_compared before holding it to this engine's"
     )
 
 
@@ -197,14 +233,34 @@ def test_only_an_image_marks_type_is_dropped_from_cbor() -> None:
     ]
 
 
-def test_a_headers_named_tables_are_sorted_and_nothing_else_is() -> None:
-    header = {
-        "kind": "header",
-        "groupRuns": {"b": 1, "a": 2},
-        "data": {"z": {}, "a": {}},
-        "page": {"width": 1.0, "height": 1.0},
-    }
-    compared = cbor2.loads(as_compared(cbor2.dumps(header)))
-    assert list(compared["groupRuns"]) == ["a", "b"]
-    assert list(compared["data"]) == ["a", "z"]
-    assert list(compared["page"]) == ["width", "height"]
+def test_a_record_that_needs_nothing_keeps_the_bytes_it_came_in() -> None:
+    header = cbor2.dumps(
+        {
+            "kind": "header",
+            "groupRuns": {"b": 1, "a": 2},
+            "data": {"z": {}, "a": {}},
+            "page": {"width": 1.0, "height": 1.0},
+        }
+    )
+    assert as_compared(header) == header
+
+
+def test_only_an_empty_group_table_is_dropped() -> None:
+    compared = cbor2.loads(
+        as_compared(
+            cbor2.dumps(
+                {
+                    "kind": "header",
+                    "groupRuns": {},
+                    "groupKeys": {"g": 1},
+                    "data": {},
+                }
+            )
+        )
+    )
+    assert compared == {"kind": "header", "groupKeys": {"g": 1}, "data": {}}
+
+
+def test_a_page_keeps_a_table_a_header_would_lose() -> None:
+    page = cbor2.dumps({"kind": "page", "groupRuns": {}})
+    assert cbor2.loads(as_compared(page)) == {"kind": "page", "groupRuns": {}}

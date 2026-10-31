@@ -7,9 +7,8 @@
 // both keep it: a name need not be unique, and an xref goes to the
 // first entry that carries it.
 //
-// The reference writes every name it is given, so `first` is
-// written there and not here.  Registered under the divergence
-// `outline-names-untargeted`.
+// So `first` is not written: a name no xref goes to tells a reader
+// nothing, and a renderer has nothing to do with it.
 
 report name="outline/names" {
   font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5

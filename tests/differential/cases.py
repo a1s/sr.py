@@ -46,6 +46,12 @@ COMMON_FLAGS: tuple[str, ...] = ("--build-time", BUILD_TIME, STRICT_FONTS)
 # The harness directive that lets a probe resolve fonts on the host.
 HOST_FONTS = "!host-fonts"
 
+# The harness directive that says a probe's answer is a refusal.
+REFUSED = "!refused"
+
+# Every directive a sidecar may carry.
+DIRECTIVES = (HOST_FONTS, REFUSED)
+
 # The extension for each printout encoding, per doc/cli.md.
 SUFFIXES = {"jsonl": ".srp.jsonl", "cbor": ".srp.cbor"}
 
@@ -104,6 +110,9 @@ class Case:
             face with it.  What the host chose is then part of the
             printout, which :func:`~tests.differential.answers.distil`
             takes out of the recorded answer.
+        refused: Whether the case's answer is that both engines refuse
+            the template.  It then has no printout and no answer file,
+            and a build by either engine is a failure.
 
     """
 
@@ -114,6 +123,7 @@ class Case:
     flags: tuple[str, ...] = ()
     encoding: str = "jsonl"
     host_fonts: bool = False
+    refused: bool = False
 
     def __post_init__(self) -> None:
         """Reject an encoding no extension names."""
@@ -226,6 +236,7 @@ class Sidecar:
     params: tuple[str, ...] = ()
     flags: tuple[str, ...] = ()
     host_fonts: bool = False
+    refused: bool = False
 
 
 def read_sidecar(path: Path) -> Sidecar:
@@ -236,9 +247,13 @@ def read_sidecar(path: Path) -> Sidecar:
     rather than an argument; any other line is a ``NAME=VALUE`` parameter.
     Blank lines and lines starting with ``#`` are ignored.
 
-    The one directive is ``!host-fonts``, which drops ``--strict-fonts``
-    so that a `typeface` can reach the host's substitute face.  A flag
+    There are two directives.  ``!host-fonts`` drops ``--strict-fonts``
+    so that a `typeface` can reach the host's substitute face; a flag
     cannot say that, because the engines have no flag that undoes another.
+    ``!refused`` says the probe's answer is that both engines refuse the
+    template, so it has no printout and no answer file.  A probe says so
+    rather than the harness inferring it, because a refusal neither engine
+    meant -- a typo in a new probe -- looks exactly the same from outside.
 
     Raises:
         ValueError: A directive the harness does not know, which is refused
@@ -248,7 +263,7 @@ def read_sidecar(path: Path) -> Sidecar:
     """
     params: list[str] = []
     flags: list[str] = []
-    host_fonts = False
+    host_fonts = refused = False
     if not path.is_file():
         return Sidecar()
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -256,15 +271,16 @@ def read_sidecar(path: Path) -> Sidecar:
         if not argument or argument.startswith("#"):
             continue
         if argument.startswith("!"):
-            if argument != HOST_FONTS:
+            if argument not in DIRECTIVES:
                 raise ValueError(
                     f"{path.name}: unknown harness directive {argument!r};"
-                    f" the one there is is {HOST_FONTS!r}"
+                    f" the ones there are are {', '.join(DIRECTIVES)}"
                 )
-            host_fonts = True
+            host_fonts = host_fonts or argument == HOST_FONTS
+            refused = refused or argument == REFUSED
             continue
         (flags if argument.startswith("-") else params).append(argument)
-    return Sidecar(tuple(params), tuple(flags), host_fonts)
+    return Sidecar(tuple(params), tuple(flags), host_fonts, refused)
 
 
 def probe_cases(directory: Path = PROBE_DIR) -> list[Case]:
@@ -304,6 +320,7 @@ def probe_cases(directory: Path = PROBE_DIR) -> list[Case]:
                 params=sidecar.params,
                 flags=sidecar.flags,
                 host_fonts=sidecar.host_fonts,
+                refused=sidecar.refused,
             )
         )
     return cases

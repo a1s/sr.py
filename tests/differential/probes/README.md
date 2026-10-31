@@ -41,7 +41,10 @@ python -m tests.differential.record_answers
 
 A change to one of those files in a diff is a change in what `doc/` was written
 from. Read it before committing it. A probe the reference refuses has no answer
-file, and the suite checks that too.
+file, and the suite checks that too. Such a probe is still answered, in the one
+way a probe has of being answered without a printout: either the divergence
+register says why the reference refuses it, or the probe's sidecar says
+[`!refused`](#a-probe-whose-answer-is-a-refusal).
 
 A probe without records of its own is built over [`records.jsonl`](records.jsonl)
 at the top of this directory: one record, whose contents nothing reads,
@@ -61,8 +64,9 @@ divergence register's patterns, so it is renamed only deliberately.
 `NAME.args` holds one argument per line. A line starting with `-` is passed
 to the engine as written; a line starting with `!` is a directive to the
 harness rather than an argument; any other line is a `NAME=VALUE` parameter.
-Blank lines and lines starting with `#` are ignored. There is one directive,
-`!host-fonts`, below, and any other is refused rather than ignored.
+Blank lines and lines starting with `#` are ignored. There are two directives,
+`!host-fonts` and `!refused`, both below, and any other is refused rather
+than ignored.
 
 ```
 # probes/breaking/overflow.args
@@ -109,6 +113,37 @@ everything but their names, because that is the question the second asks.
 An image in `example/` works too, and `example/fonts/` is where a probe's
 fonts come from, but prefer these: a fixture that exists to be a fixture
 can be changed when a probe needs it to be.
+
+### A probe whose answer is a refusal
+
+A probe whose sidecar holds `!refused` says that both engines refuse its
+template, and that this is its answer. It has no answer file; the comparison
+then requires both engines to refuse it and to exit with the same status, and
+nothing else is compared, because no document was written and doc/cli.md leaves
+the wording of a diagnostic to each engine. A build by either side fails the
+suite, and so does a refusal with no status at all: a timeout, or a run that
+reported success and wrote nothing.
+
+The probe says so rather than the harness working it out, because a refusal
+neither engine meant looks exactly the same from outside: a typo in a new
+probe makes both engines exit 1, and a harness that read that as agreement
+would wave through a probe that measures nothing. The declaration is held to
+in both directions, so it cannot go stale unnoticed either.
+
+A template is refused if any one of its expressions is, so such a probe asks
+about one thing. Four forms of Starlark's parameter grammar that a lambda does
+not take are four probes, not one: a reference that took two of them back
+would leave a single probe refused, and nothing would say so.
+
+What this does **not** compare is how much each engine says, and there is a
+live example of that. On `expressions/lambda-star-args` the reference prints
+the one error the form earns; this engine prints that one and a second, "a
+field without evaltime takes exactly one of expr, text or data; this one has
+0", because an `expr` that would not compile leaves the field with no content
+source and the two checks do not know about each other. Both exit 1, so the
+probe is answered, and the cascade is invisible here. It is a defect on this
+side, older than the probes, and it wants a load that tells validation which
+expressions it could not read.
 
 ### Fonts from the host
 
@@ -238,7 +273,8 @@ the reference gave, and names the section of `doc/` that answer became.
 | `deferred/split` | a deferred stretch field in a band that splits |
 | `deferred/at-a-break` | `FINAL` where a page ends at a group break |
 | `deferred/glyphs` | the glyph warnings of a deferred field |
-| `deferred/final-vertical` | the vertical names, through `FINAL` |
+| `deferred/final-vertical-position` | `VERTICAL_POSITION`, through `FINAL` |
+| `deferred/final-vertical-space` | `VERTICAL_SPACE`, through `FINAL` |
 | `barcode/code128` | which code sets a Code 128 symbol uses |
 | `barcode/code39` | Code 39's wide elements and its check character |
 | `barcode/code93` | Code 93's full ASCII, and its check characters |
@@ -329,7 +365,10 @@ the reference gave, and names the section of `doc/` that answer became.
 | `expressions/null-folds` | what a null does to an accumulator |
 | `expressions/date-layout` | a point in a layout that is not a fraction |
 | `expressions/lambda` | the lambda both engines take, and what one prints as |
-| `expressions/lambda-parameters` | the lambda parameters this engine leaves out |
+| `expressions/lambda-star-args` | `*args` among a lambda's parameters |
+| `expressions/lambda-star-star` | `**kwargs` among them |
+| `expressions/lambda-keyword-only` | a bare `*` among them |
+| `expressions/lambda-debug-name` | a parameter named `__debug__` |
 | `expressions/function-repr` | what a predeclared function and a bound method print as |
 | `values/dimensions` | what a dimension string means |
 | `values/colors` | what each colour spelling resolves to |
@@ -350,36 +389,33 @@ go the other way, built by the reference and refused here.
 `expressions/time-fields` and `expressions/decimal-precision` are the odd
 ones: most of their rows agree, and one row each carries the difference --
 a date before year 1, and a precision deeper than a float reaches.
-`values/unknown-names` is the twelfth and the only one about a rule neither
+`values/unknown-names` is the twelfth and was once about a rule neither
 engine had written down: both refused a name the format does not define,
-doc/ now accepts it, and the reference is the side that has not caught up.
+doc/ now accepts it, and the reference has caught up. What is left is the
+warning's wording, and `unknown-node-lists-what-fits` registers that.
 
-A thirteenth was added in M6 and covers the two `breaking` probes that
-report more than one missing glyph: the reference has two orders for
-the `warnings` array and uses them both, so it cannot settle the question
-and doc/printout.md does.
+A thirteenth was added in M6 and covered the two `breaking` probes that
+report more than one missing glyph, the reference having had two orders
+for the `warnings` array and used them both. It settles the question the
+way doc/printout.md does now, and the entry has gone.
 
-M7 added three more.
-`layout/float-zero-height` is one: the reference drops the gap of a
-floating element whose height is zero, which no reading of doc/ gives.
-`printout/no-fonts` is the other: where no element prints, the reference
-writes the font table as `null` rather than as an empty array.
-Both of those are filed against the reference. The third,
-`values/negative-size`, is a decision: doc/ now refuses a negative size,
-and the reference still builds one.
+M7 added `layout/float-zero-height`: the reference drops the gap of a
+floating element whose height is zero, which no reading of doc/ gives,
+and it is filed against the reference.
 
-`printout/font-warning` is older than any of them and was registered last.
-The reference leaves `node` out of a `font` warning, which doc/ requires,
-and has since M5; no probe could see it until `!host-fonts` let one reach
-the substitute face.
+`printout/font-warning` is older than any of them and was registered last,
+because no probe could reach the substitute face until `!host-fonts` let
+one. The reference now names the `font` node in the printout's warning,
+as doc/printout.md#header-line requires, and its check still writes that
+warning as the message alone, where doc/cli.md#sr-validate writes one as
+the dump does. That is `font-warning-in-the-check`.
 
-M8 added the `pagination/` group, and fifteen divergences with it.
-Eleven are defects in the reference's pagination rather than decisions:
+M8 added the `pagination/` group, and fourteen divergences with it.
+Ten are defects in the reference's pagination rather than decisions:
 `column-after-title` and `column-after-group-title`, where a column opened
 after a band across the columns is drawn over it; `cut-in-place`, where
 a band too tall for any frame is cut on a page the reference first ejects
-to; `overflow-first-record`, where an overflow warning loses its record 0;
-`nested-groups`, where the last outer group summary goes missing;
+to; `nested-groups`, where the last outer group summary goes missing;
 `group-title-moves`, where a group whose title moves counts the page it
 left; `mintailrows`, which the reference does not implement;
 `scope-resets`, where `reset="item"` and `reset="detail"` never fire;
@@ -414,34 +450,36 @@ engine's answer are `test_an_empty_frame_is_measured_below_the_column_headers`
 and `test_an_empty_frame_begins_below_the_headers_as_drawn` in
 [test_pagination.py](../../unit/test_pagination.py).
 
-M10 added the `barcode/` group and three defects in the reference with it,
-all about what a symbol is rather than where it goes. In `code93`, the
+M10 added the `barcode/` group and two defects in the reference with it,
+both about what a symbol is rather than where it goes. In `code93`, the
 reference writes Code 93's first check character and leaves out the second,
-which the specification requires; in `qr-plus`, it writes digits with a plus
-sign among them in numeric mode, which drops the sign; and in `rounding`,
-it writes a barcode's length, its bars, and a grown module as binary64 left
-them rather than at three decimals. The last would show in every barcode
-drawn at a module that is not a whole number of points, so every other
-`barcode/` probe draws at one point, and compares byte for byte.
+which the specification requires; and in `qr-plus`, it writes digits with
+a plus sign among them in numeric mode, which drops the sign. A third has
+gone: in `rounding` the reference wrote a barcode's length, its bars, and
+a grown module as binary64 left them rather than at three decimals, which
+would have shown in every barcode drawn at a module that is not a whole
+number of points, so every other `barcode/` probe draws at one point,
+and compares byte for byte.
 
-M10 also added one decision, in `charset`. The reference writes a 2-D
+M10 also added one decision, in `charset`. The reference wrote a 2-D
 value's UTF-8 bytes with no ECI, which every 2-D standard reads as
 ISO 8859-1. doc/ keeps that as the default and adds `charset` and `eci`
-for readers that follow the standard. The reference refuses both as unknown
-properties, so the probe is refused there until it catches up.
+for readers that follow the standard. The reference has taken `charset`
+and not `eci`, which it now accepts and ignores as a name it does not
+know, so it warns six times where this engine does not and its symbols
+carry no ECI header. That is `barcode-eci`.
 
 M11 added the `image/` group and five `data/` probes, and with them
-three defects in the reference and two decisions. In `cut-aligned`,
-the reference keeps the top-left pixels of every clipped image,
-whatever its alignment says; in `grow-valign`, it ignores `valign`
-for a grow image shorter than its box, though it honours `halign`;
-and in `data/unprinted`, it writes the blob of an image it built
-for a footer's reservation and never drew. The first decision is
-`no-pixels`: an image with no pixels along an axis is refused here,
-and the reference builds it. The second is `type`: the reference
-takes a `type` on an image and writes one on every image mark,
-though it converts nothing, and here an image has neither.
-The comparison drops the reference's mark `type`, so what differs
+three defects in the reference and two decisions. The defects have gone:
+in `cut-aligned` the reference kept the top-left pixels of every clipped
+image, whatever its alignment said; in `grow-valign` it ignored `valign`
+for a grow image shorter than its box, though it honoured `halign`; and
+in `data/unprinted` it wrote the blob of an image it built for a footer's
+reservation and never drew. The first decision is `no-pixels`: an image
+with no pixels along an axis is refused here, and the reference builds it.
+The second is `type`: the reference takes a `type` on an image and writes
+one on every image mark, though it converts nothing, and here an image has
+neither. The comparison drops the reference's mark `type`, so what differs
 is the warning a `type` in the template gets here.
 
 After M11 came one decision, in `printout/twin-fonts`. doc/printout.md#fonts
@@ -452,15 +490,17 @@ mark set in either font names it. doc/ now keeps the two apart.
 
 M13 added the `outline/` group and `printout/margins`, and with them
 four defects in the reference, each a printout that breaks one of
-its own invariants, and one decision. In `margins`, the reference
-checks no mark against the page's margins, which doc/layout.md#errors
-makes an overflow; in `missing-target`, it writes an xref to an outline
-entry no entry carries; in `levels`, it writes each entry at the level
-its template declared, gaps and all, where doc/ writes its depth in the
-tree; and in `balance`, it leaves a balanced band's entry where the fill
-put it. The decision is in `names`: doc/printout.md#outline has always
-written an entry's `name` only where an xref targets it, and the
-reference writes every name.
+its own invariants, and one decision. Three have gone: in `missing-target`
+the reference wrote an xref to an outline entry no entry carried; in
+`levels` it wrote each entry at the level its template declared, gaps and
+all, where doc/ writes its depth in the tree; and in `names` it wrote
+every name, where doc/printout.md#outline has always written an entry's
+`name` only where an xref targets it. Two of the four defects have gone,
+`missing-target` and `levels`, and so has the decision, `names`. What is
+left is one defect, `balance`, where the reference leaves a balanced
+band's entry where the fill put it, and `margins`, which is no longer
+one: the reference raises the overflow doc/layout.md#errors asks for, and
+names the band the mark sits in rather than the element it came from.
 
 Five older probes put marks outside the margins without meaning to,
 since the reference never said so: `layout/anchored-stretch`,
@@ -474,11 +514,11 @@ so the reference has taken a lambda all along, and this engine refused one
 until doc/expressions.md#functions was written. The two agree on plain
 parameters and their defaults, on what `type` and `repr` call a function,
 and on a function held in a variable, which `expressions/lambda` records.
-They do not agree on the rest of Starlark's parameter grammar: the reference
-takes `*args`, `**kwargs`, a bare `*`, and `__debug__`, and this engine
-refuses all four. That is `expressions/lambda-parameters` and the divergence
-`lambda-parameter-forms`, the second of the two that go the way
-`values/hex-float` does, built by the reference and refused here.
+The rest of Starlark's parameter grammar -- `*args`, `**kwargs`, a bare `*`,
+and `__debug__` -- both engines now refuse. Each has a probe of its own,
+because a template is refused if any one of its expressions is, so one
+probe carrying all four would say only that at least one of them is still
+refused, and a reference that took two of them back would pass.
 
 `lambda` made one older gap worth a probe of its own. Every callable a
 template can reach is a Python object here, and Python writes a memory
@@ -491,12 +531,12 @@ names it.
 
 The CBOR encoding is compared over a part of the corpus, in
 [test_cbor.py](../test_cbor.py), and agrees wherever the NDJSON does,
-with one thing set right first: the reference writes the tables whose
-keys are names, `data`, `groupRuns`, and `groupKeys`, in its hash map's
-order, which changes from one run to the next, where doc/ sorts them.
-A case cannot be registered as differing for a reason that comes and
-goes, so the comparison sorts the reference's, and a test there fails
-once the reference sorts them itself.
+with one thing set right first: the reference writes `groupRuns` and
+`groupKeys` as empty maps in CBOR where its own NDJSON leaves them out,
+and doc/printout.md#cbor writes the same records in both. An empty one is
+dropped before the comparison, and `cbor-empty-group-tables` registers the
+difference against the one command line that writes a CBOR file and
+compares it whole.
 
 Of the rest, every one agrees byte for byte. The three `data/` probes that
 waited for an image to be built were in [pending.toml](../pending.toml)

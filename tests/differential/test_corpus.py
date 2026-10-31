@@ -27,7 +27,7 @@ import pytest
 from sr.printout.inspect import read_printout
 from sr.printout.verify import violations
 from tests.differential.answers import answer_path, distil
-from tests.differential.cases import ROOT, Case, corpus, probe_cases
+from tests.differential.cases import REFUSED, ROOT, Case, corpus, probe_cases
 from tests.differential.diff import compare_printouts, restamped
 from tests.differential.engines import Build, BuildFailed, Engine, run
 from tests.differential.register import Divergence, Register
@@ -70,6 +70,64 @@ def attempt(engine: Engine, case: Case, directory: Path) -> Build | BuildFailed:
 def expected(entry: Divergence, detail: str) -> None:
     """Mark the running test as an expected difference."""
     pytest.xfail(f"{entry.describe()}\n{detail}")
+
+
+def agreed_on_a_refusal(
+    case: Case,
+    outcomes: dict[str, Build | BuildFailed],
+    refused: dict[str, BuildFailed],
+) -> None:
+    """Hold a case whose answer is a refusal to both engines refusing it.
+
+    A probe says ``!refused`` when that is its answer, and then neither
+    engine may build it and both have to refuse it the same way.  Nothing
+    else is compared: no document was written, and doc/cli.md leaves the
+    wording of a diagnostic to each engine, so the exit code is the whole
+    of what the two have in common.  A refusal with no code -- a timeout,
+    or a run that reported success and wrote nothing -- is never that.
+
+    Args:
+        case: The case, which declared the refusal.
+        outcomes: What each engine did.
+        refused: The ones that refused, a subset of it.
+
+    """
+    built = sorted(set(outcomes) - set(refused))
+    assert not built, (
+        f"{case.ident}: its sidecar says both engines refuse it, and "
+        f"{', '.join(built)} built it. Take {REFUSED!r} out of the sidecar "
+        "and record the answer, or find out why the build came back."
+    )
+    detail = "\n".join(str(failure) for failure in refused.values())
+    codes = {name: failure.code for name, failure in refused.items()}
+    assert len(set(codes.values())) == 1 and None not in codes.values(), (
+        f"{case.ident}: both engines refuse it, and not in the same way: "
+        f"{codes}. doc/cli.md gives each exit code a meaning, so two "
+        f"refusals that mean different things are not an answer.\n{detail}"
+    )
+
+
+def has_done_its_work(ident: str, listed: Divergence, registered: bool) -> None:
+    """Fail, asking for the entry a comparison no longer needs.
+
+    A listed case that stops differing is how both lists shrink by
+    themselves: the entry is read, taken out, and the case joins the
+    ones that simply agree.
+
+    Args:
+        ident: What was compared.
+        listed: The entry that covered it.
+        registered: Whether it came from the divergence register
+            rather than from the pending list.
+
+    """
+    file = "divergences.toml" if registered else "pending.toml"
+    word = "divergence" if registered else "pending entry"
+    pytest.fail(
+        f"{ident} now agrees, so the {word} {listed.ident!r} "
+        f"has done its work: remove it from {file}",
+        pytrace=False,
+    )
 
 
 def unbuilt(entry: Divergence, detail: str) -> None:
@@ -140,6 +198,12 @@ def judge(
         for name, outcome in outcomes.items()
         if isinstance(outcome, BuildFailed)
     }
+    if case.refused:
+        agreed_on_a_refusal(case, outcomes, refused)
+        listed = entry if entry is not None else waiting
+        if listed is not None:
+            has_done_its_work(case.ident, listed, entry is not None)
+        return
     if refused:
         detail = "\n".join(str(failure) for failure in refused.values())
         if entry is not None:
@@ -174,13 +238,7 @@ def judge(
     listed = entry if entry is not None else waiting
     assert listed is not None
     if comparison.identical:
-        file = "divergences.toml" if entry is not None else "pending.toml"
-        word = "divergence" if entry is not None else "pending entry"
-        pytest.fail(
-            f"{case.ident} now agrees, so the {word} {listed.ident!r} "
-            f"has done its work: remove it from {file}",
-            pytrace=False,
-        )
+        has_done_its_work(case.ident, listed, entry is not None)
     if entry is not None:
         expected(entry, comparison.report)
     unbuilt(listed, comparison.report)
@@ -222,14 +280,26 @@ def test_the_reference_builds_every_probe(
     A refusal the register covers is the answer rather than a fault:
     two of the dialect amendments are expressions the reference has
     no name for, and refusing them is exactly the divergence recorded.
+    So is one the probe's sidecar declared with ``!refused``, where being
+    refused is the answer.  Anything else the reference will not build
+    is a probe that has stopped measuring, a new one with a typo in it
+    included, and this is what says so.
 
     """
     outcome = attempt(oracle, case, build_directory)
-    if isinstance(outcome, BuildFailed):
-        entry = register.entry_for(case.ident)
-        if entry is not None:
-            expected(entry, str(outcome))
-        pytest.fail(str(outcome), pytrace=False)
+    if not isinstance(outcome, BuildFailed):
+        assert not case.refused, (
+            f"{case.ident}: its sidecar says both engines refuse it, and "
+            f"the reference built it. Take {REFUSED!r} out of the sidecar "
+            "and record the answer."
+        )
+        return
+    entry = register.entry_for(case.ident)
+    if entry is not None:
+        expected(entry, str(outcome))
+    if case.refused:
+        return
+    pytest.fail(str(outcome), pytrace=False)
 
 
 @pytest.mark.differential
@@ -252,17 +322,24 @@ def test_the_reference_still_answers_the_same_way(
     Record them again with ``python -m tests.differential.record_answers``,
     and read what changes before committing it.
 
+    A probe the reference refuses has no answer to record, and that is
+    the answer only where the register says why or where the sidecar
+    says ``!refused``.  Either way the file beside it has to be gone,
+    since a stale one would be a lie.
+
     """
     recorded = answer_path(ROOT / case.template)
     outcome = attempt(oracle, case, build_directory)
     if isinstance(outcome, BuildFailed):
         entry = register.entry_for(case.ident)
-        assert entry is not None, str(outcome)
+        assert entry is not None or case.refused, str(outcome)
         assert not recorded.exists(), (
             f"{case.ident}: the reference refuses this probe, so "
             f"{recorded.name} should not exist. It said:\n{outcome}"
         )
-        expected(entry, str(outcome))
+        if entry is not None:
+            expected(entry, str(outcome))
+        return
     assert recorded.is_file(), (
         f"{case.ident}: no recorded answer; run "
         "`python -m tests.differential.record_answers`"
@@ -297,3 +374,63 @@ def test_only_an_image_marks_type_is_dropped() -> None:
     assert without_image_types(printout) == (
         image + b'"data":"wide.png"}' + barcode + b'"type":"Code128"}'
     )
+
+
+def refusal(name: str, code: int | None) -> BuildFailed:
+    """Return a refusal as an engine's run would raise it."""
+    return BuildFailed(f"{name} refused it", code)
+
+
+def declared_refused() -> Case:
+    """Return a case whose sidecar says both engines refuse it."""
+    return Case(
+        ident="probe/refused",
+        template=Path("tests/differential/probes/values/negative-size.kdl"),
+        refused=True,
+    )
+
+
+def test_two_refusals_with_one_exit_code_are_an_answer() -> None:
+    refused = {"reference": refusal("reference", 1), "local": refusal("local", 1)}
+    agreed_on_a_refusal(declared_refused(), dict(refused), refused)
+
+
+@pytest.mark.parametrize(
+    ("theirs", "ours"),
+    [(1, 2), (2, 1), (1, None), (None, None)],
+    ids=["one-two", "two-one", "no-code-here", "no-code-either-side"],
+)
+def test_two_refusals_that_mean_different_things_are_not(
+    theirs: int | None, ours: int | None
+) -> None:
+    """doc/cli.md gives each exit code a meaning.
+
+    A timeout and a run that wrote no file carry none, so neither is ever
+    the same refusal as anything else, their own kind included.
+
+    """
+    refused = {
+        "reference": refusal("reference", theirs),
+        "local": refusal("local", ours),
+    }
+    with pytest.raises(AssertionError, match="not in the same way"):
+        agreed_on_a_refusal(declared_refused(), dict(refused), refused)
+
+
+def test_a_declared_refusal_one_engine_built_is_a_failure() -> None:
+    """The declaration is held to, so it cannot go stale unnoticed."""
+    case = declared_refused()
+    theirs = refusal("local", 1)
+    outcomes: dict[str, Build | BuildFailed] = {
+        "reference": Build(
+            engine=Engine("reference", (), "sr 0.1.0"),
+            case=case,
+            path=Path("out.srp.jsonl"),
+            printout=b"",
+            stdout="",
+            stderr="",
+        ),
+        "local": theirs,
+    }
+    with pytest.raises(AssertionError, match="reference built it"):
+        agreed_on_a_refusal(case, outcomes, {"local": theirs})

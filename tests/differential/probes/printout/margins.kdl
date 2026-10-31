@@ -14,9 +14,9 @@
 // for that and not a second time for its marks, which is why
 // pagination/overflow agrees with the reference byte for byte.
 //
-// The reference checks no mark against the margins, so it
-// builds this without --allow-overflow and writes no warning.
-// Registered under the divergence `margins-unchecked`.
+// The reference raises the same three warnings and names the band each
+// mark sits in rather than the element it came from, which is the
+// divergence `margins-named-by-band`.
 
 report name="printout/margins" {
   font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5

@@ -1,0 +1,18 @@
+// probes/expressions/lambda-star-star.kdl -- a doubly starred parameter.
+//
+// `**kwargs` collects the rest of the keyword arguments into a dict.
+// It is the second of the four parameter forms a lambda does not take;
+// `lambda-star-args.kdl` says why each has a probe of its own.
+//
+// Both engines refuse it, so there is no answer file beside this probe.
+// doc/expressions.md#functions is what this became.
+
+report name="expressions/lambda-star-star" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=20 {
+      field expr="str((lambda **named: named)(one=1))" left=0 top=0 width=400 height=12 stretch=#true  // {"one": 1}
+    }
+  }
+}

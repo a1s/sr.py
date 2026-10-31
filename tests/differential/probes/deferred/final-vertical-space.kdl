@@ -1,0 +1,28 @@
+// probes/deferred/final-vertical-space.kdl -- VERTICAL_SPACE through FINAL.
+//
+// It describes a band being measured: what it has left to grow into.
+// When a scope ends no band is, so it has no value there, and doc/
+// refuses it in FINAL at validation.  `final-vertical-position.kdl`
+// asks the same question of the other vertical name, and says why
+// each has a probe of its own.
+//
+// Both engines refuse it, so there is no answer file beside this probe.
+// doc/expressions.md#final is what this became.
+
+report name="deferred/final-vertical-space" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=4
+  records {
+    member "a" type="int"
+  }
+  layout width=200 height=100 leftmargin=5 rightmargin=5 topmargin=5 bottommargin=5 {
+    style font="body" color="black"
+    title height=4.8 {
+      field expr="'T with %s left' % FINAL.VERTICAL_SPACE" evaltime="A" left=0 top=0 width=190 height=4.8
+    }
+    group "A" expr="a" {
+      detail height=4.8 {
+        field expr="'r%d' % ITEM_NUMBER" left=0 top=0 width=190 height=4.8
+      }
+    }
+  }
+}

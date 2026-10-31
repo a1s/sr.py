@@ -1,0 +1,21 @@
+// probes/expressions/lambda-star-args.kdl -- a starred lambda parameter.
+//
+// A lambda takes plain parameters and their defaults.  `*args`, which
+// collects the rest of the positional arguments into a tuple, is one of
+// the four forms of Starlark's parameter grammar it does not take, and
+// each has a probe of its own: a template is refused if any one of its
+// expressions is, so four forms in one template would say only that at
+// least one of them is still refused.
+//
+// Both engines refuse it, so there is no answer file beside this probe.
+// doc/expressions.md#functions is what this became.
+
+report name="expressions/lambda-star-args" {
+  font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10
+  layout pagesize="A4" leftmargin=0 rightmargin=0 topmargin=0 bottommargin=0 {
+    style font="body" color="black"
+    detail height=20 {
+      field expr="str((lambda *rest: rest)(1, 2))" left=0 top=0 width=400 height=12 stretch=#true  // (1, 2)
+    }
+  }
+}

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- A `glyph` warning carries the record whose band first needed
+  the character, as every other warning a record produced does.
 - Support for building reports from a sequence of records.
 - Allow `lambda` in Starlark expressions.
 - Add per-process cache for the host font table lookups.

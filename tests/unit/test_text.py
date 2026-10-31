@@ -365,10 +365,15 @@ def test_a_character_is_named_the_way_go_quotes_a_rune(
 
 
 def test_the_missing_glyph_warning_is_the_one_the_printout_carries() -> None:
-    warning = missing_glyph("body", "\t", "report > layout > detail > field")
+    warning = missing_glyph("body", "\t", "report > layout > detail > field", 3)
     assert warning.kind == "glyph"
     assert warning.message == (
         "the font \"body\" has no glyph for '\\t', "
         "so an empty box is drawn in its place"
     )
     assert warning.node == "report > layout > detail > field"
+    assert warning.record == 3
+
+
+def test_a_missing_glyph_warning_without_a_record_carries_none() -> None:
+    assert missing_glyph("body", "\t").record is None
