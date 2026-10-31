@@ -11,3 +11,8 @@ updates:
       actions:
         patterns:
           - '*'
+    # A release is proposed a week after it is published, not the day of.
+    # A compromised one is usually found and pulled within days,
+    # and this keeps it out of the pins until then.
+    cooldown:
+      default-days: 7

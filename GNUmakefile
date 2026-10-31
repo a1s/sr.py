@@ -43,7 +43,7 @@ endif
 export PYTHONPYCACHEPREFIX := $(BUILD_DIR)/pycache
 
 .PHONY: all venv install test test-required test-linux test-linux-matrix \
-        lint fmt typecheck check build-dir reference clean
+        lint fmt typecheck check audit build-dir reference clean
 
 all: check
 
@@ -57,13 +57,14 @@ build-dir:
 	test -f $(BUILD_MARKER) || touch $(BUILD_MARKER)
 
 # The engine's dependencies, the test and lint tools,
-# and the two oracles the later milestones verify against.
+# the two oracles the later milestones verify against,
+# and the tool `make audit` runs.
 # Editable, so `sr` imports from the working tree.
 #
 # build-dir first: setuptools writes its metadata into an egg_base
 # that has to exist already, and setup.cfg points that at $(BUILD_DIR).
 install: venv build-dir
-	$(PYTHON) -m pip install -e ".[dev,oracles]"
+	$(PYTHON) -m pip install -e ".[dev,oracles,audit]"
 
 # -------- dev hygiene --------
 
@@ -99,9 +100,20 @@ test-linux-matrix:
 	    SR_LINUX_IMAGE=python:$$one-slim sh tests/linux/run.sh || exit 1; \
 	done
 
+# zizmor is a compiled program with no `python -m` form,
+# so it is run from the directory where pip puts the commands
+# of $(PYTHON)'s packages.  Deferred, like VENV_PYTHON,
+# so that `make install lint` finds it.
+ZIZMOR = $(shell $(PYTHON) -c "import pathlib, sysconfig; \
+    print(pathlib.Path(sysconfig.get_path('scripts')).as_posix())")/zizmor
+
+# zizmor reads the workflows and the Dependabot config.
+# Offline, because its online audits ask GitHub about advisories and commits,
+# and their answers change while the commit under test does not.
 lint:
 	$(PYTHON) -m ruff check .
 	$(PYTHON) -m ruff format --check .
+	"$(ZIZMOR)" --offline .
 
 fmt:
 	$(PYTHON) -m ruff check --fix .
@@ -120,6 +132,15 @@ typecheck:
 	done
 
 check: lint typecheck test
+
+# Known vulnerabilities in everything the venv holds:
+# the engine's dependencies, the test and lint tools, and the oracles.
+# The project itself is skipped, being installed from the working tree,
+# not from PyPI.  Not part of `check`, and not run by the workflows:
+# the advisory database changes from day to day,
+# so its answer for one commit does too.
+audit:
+	$(PYTHON) -m pip_audit --skip-editable --cache-dir $(BUILD_DIR)/pip-audit
 
 # -------- the oracle --------
 

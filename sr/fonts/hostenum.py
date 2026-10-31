@@ -476,7 +476,7 @@ def fontconfig_directories() -> tuple[Path, ...]:
     found: list[Path] = []
     for config in FONTCONFIG_FILES:
         try:
-            tree = parser.parse(config)
+            tree = parser.parse(config)  # noqa: S314 -- a system file
         except (OSError, parser.ParseError):
             continue
         for element in tree.getroot().iter("dir"):
@@ -532,7 +532,7 @@ def fontconfig_monospace() -> str | None:
     import subprocess
 
     try:
-        done = subprocess.run(
+        done = subprocess.run(  # noqa: S603 -- the argv is ours, no shell
             MONOSPACE_QUERY, capture_output=True, text=True, timeout=1, check=False
         )
     except (OSError, subprocess.SubprocessError):
