@@ -18,8 +18,8 @@ __all__ = ["DATE", "NAME", "VERSION", "engine"]
 NAME = "sr"
 
 # Kept in step with CHANGELOG.md.
-VERSION = "0.1.1"
-DATE = date(2026, 10, 18)
+VERSION = "0.2.0"
+DATE = date(2026, 10, 31)
 
 
 def engine() -> str:

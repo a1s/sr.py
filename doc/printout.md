@@ -813,7 +813,7 @@ s-reports build -t example/minimal/minimal.kdl \
 ```
 
 ```json
-{"sr":1,"kind":"header","report":{"name":"Minimal"},"built":"2026-08-04T09:12:44Z","engine":"sr 0.1.0","strictFonts":true,"pages":1,"page":{"width":595.276,"height":841.89,"leftMargin":42.52,"rightMargin":42.52,"topMargin":28.35,"bottomMargin":28.35},"fonts":[{"name":"body","size":9,"bold":false,"italic":false,"underline":false,"resolvedFile":"../fonts/Go-Regular.ttf","resolvedFace":"Go","resolvedBy":"explicit"}],"data":{}}
+{"sr":1,"kind":"header","report":{"name":"Minimal"},"built":"2026-08-04T09:12:44Z","engine":"sr 0.2.0","strictFonts":true,"pages":1,"page":{"width":595.276,"height":841.89,"leftMargin":42.52,"rightMargin":42.52,"topMargin":28.35,"bottomMargin":28.35},"fonts":[{"name":"body","size":9,"bold":false,"italic":false,"underline":false,"resolvedFile":"../fonts/Go-Regular.ttf","resolvedFace":"Go","resolvedBy":"explicit"}],"data":{}}
 {"kind":"page","number":1,"marks":[
   {"kind":"text","box":{"x":42.52,"y":28.35,"width":200,"height":10.8},"font":"body","color":"#000000","align":"left","leading":10.8,"lines":["Film title"]},
   {"kind":"line","box":{"x":42.52,"y":39.15,"width":510.236,"height":0},"width":0.5,"dash":"solid","color":"#000000","backslant":false},

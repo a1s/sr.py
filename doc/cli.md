@@ -531,7 +531,7 @@ written as a box is, in pixels: `crop 7,3.5 10x5`.
 ## `s-reports version`
 
 ```
-sr 0.1.0
+sr 0.2.0
 ```
 
 `s-reports --version` prints the same. `s-reports -version` is a usage error,
