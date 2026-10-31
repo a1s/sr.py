@@ -347,7 +347,12 @@ def trim(line: str) -> str:
     return line.rstrip(BREAK)
 
 
-def missing_glyph(font: str, character: str, node: str | None = None) -> BuildWarning:
+def missing_glyph(
+    font: str,
+    character: str,
+    node: str | None = None,
+    record: int | None = None,
+) -> BuildWarning:
     """Return the warning for a character the resolved font has not got.
 
     The wording is the printout's, not a diagnostic's: a `glyph` warning
@@ -358,6 +363,9 @@ def missing_glyph(font: str, character: str, node: str | None = None) -> BuildWa
         font: The name the template gave the `font` node.
         character: The character that has no glyph.
         node: The node path it was met at, where the caller knows one.
+        record: The record whose band was being built, where one was:
+            doc/printout.md#header-line leaves `record` out
+            only where no record produced the warning.
 
     """
     return BuildWarning(
@@ -365,4 +373,5 @@ def missing_glyph(font: str, character: str, node: str | None = None) -> BuildWa
         f"the font {quote(font)} has no glyph for {quote_char(character)}, "
         "so an empty box is drawn in its place",
         node=node,
+        record=record,
     )

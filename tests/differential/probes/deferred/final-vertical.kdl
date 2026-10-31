@@ -4,13 +4,13 @@
 // and what it has left to grow into.  When a scope ends no band is, so
 // neither has a value there, and doc/ refuses them in FINAL at validation.
 //
-// The reference accepts them and answers with whatever band it measured last.
-// Here a deferral in the report's title waits for the first break
-// of group A, and reads the position of the second row, 9.6 pt down,
-// because that row was measured last; the break itself is lower,
-// 14.4 pt down, below the second row.
+// Answering with whatever band was measured last would make the value
+// depend on lookaheads and reservations a template cannot see.  Here a
+// deferral in the report's title waits for the first break of group A,
+// and the row measured last is the second, 9.6 pt down, while the break
+// itself is lower, 14.4 pt down, below that row.
 //
-// Registered as the divergence `final-vertical`.
+// Both engines refuse it, so there is no answer file beside this probe.
 // doc/expressions.md#final is what this became.
 
 report name="deferred/final-vertical" {

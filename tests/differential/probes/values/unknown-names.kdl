@@ -1,11 +1,5 @@
 // probes/values/unknown-names.kdl -- a name the format does not define.
 //
-// A registered divergence: built here, refused by the reference, which
-// takes all four of the names below for mistakes -- `accept` included,
-// the node it does not have yet -- and says `unexpected node here` or
-// `unknown property` for each.  There is no flag that relaxes it.
-// See `divergences.toml`, entry `unknown-names-accepted`.
-//
 // doc/template.md#unknown-names: a node or a property the format does not
 // define is accepted rather than refused, so a template written for a
 // newer, an older or a different implementation still loads.  A name is
@@ -19,6 +13,10 @@
 // `x-vendor-hint`, reserved by its prefix; and `sprocket`, which is
 // neither and is the one warning the load produces.  No near miss is
 // here, since this probe is about what builds and that one does not.
+//
+// That warning's message is where the two engines part: this one ends it
+// with the children `detail` does take, and the reference stops at the
+// node.  Registered as the divergence `unknown-node-lists-what-fits`.
 
 report name="values/unknown-names" {
   accept "wobble"

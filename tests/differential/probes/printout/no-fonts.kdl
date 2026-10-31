@@ -3,8 +3,8 @@
 // doc/printout.md#fonts lists the fonts used, and here none is: the only
 // element is suppressed.  The table is then empty, and doc/ writes it
 // as an empty array, `"fonts":[]`, as it writes an empty `data` as `{}`.
-// The reference writes `"fonts":null`, which is a registered divergence
-// rather than the rule; see divergences.toml, `empty-font-table-is-null`.
+// `"fonts":null` would be a third spelling of nothing, which a reader
+// of the header would have to know about to count the fonts.
 
 report name="printout/no-fonts" {
   font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10

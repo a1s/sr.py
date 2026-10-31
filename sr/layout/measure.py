@@ -1141,7 +1141,12 @@ class Measurer:
         wrapped = self.wrap(text, placed.width, metrics)
         if placed.deferral is None:
             for character in wrapped.missing:
-                self.missing(self.font_name(placed.style.font), character, field.path)
+                self.missing(
+                    self.font_name(placed.style.font),
+                    character,
+                    field.path,
+                    context.record_index,
+                )
         placed.lines = wrapped.lines
         if field.stretch:
             placed.content_height = round_points(len(wrapped.lines) * metrics.leading)
@@ -1484,7 +1489,7 @@ class Measurer:
         metrics = self.faces[mark.font]
         wrapped = self.wrap(text, mark.box.width, metrics)
         for character in wrapped.missing:
-            self.missing(mark.font, character, field.path)
+            self.missing(mark.font, character, field.path, record)
         lines = wrapped.lines
         room = mark.box.height
         if not field.stretch:
@@ -1658,24 +1663,31 @@ class Measurer:
 
     # -- diagnostics ------------------------------------------------------
 
-    def missing(self, font: str, character: str, path: NodePath) -> None:
+    def missing(self,
+        font: str, character: str, path: NodePath, record: int | None
+    ) -> None:
         """Record that a face has no glyph for a character, once.
 
         One warning per font and character however many marks are
         set in it: the warning is about the face, and repeating it
         per row would bury the document's other diagnostics.
+        The first use is what fixes the warning's place in the array,
+        so it is also what fixes the record the warning carries.
 
         Args:
             font: The name the font is published under.
             character: The character with no glyph.
             path: The node being set.
+            record: The record the band was built for, or ``None``
+                where no record produced it.
 
         """
         key = (font, character)
         if key in self.shared.reported:
             return
         self.shared.reported.add(key)
-        self.shared.warnings.append(missing_glyph(font, character, str(path)))
+        self.shared.warnings.append(
+            missing_glyph(font, character, str(path), record))
 
 
 def deferrals(

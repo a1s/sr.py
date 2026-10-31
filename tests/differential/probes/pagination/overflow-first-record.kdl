@@ -6,11 +6,9 @@
 // the record that produced it, and doc/layout.md#errors says the first
 // record's 0 as well.
 //
-// The reference leaves `record` out of the first warning and writes it
-// on the second, which is what omitting a zero value does, not a rule
-// about warnings: the first record is the record this band was placed for.
-//
-// Registered as the divergence `overflow-record-zero`, filed against the reference.
+// Leaving `record` out of the first warning and writing it on the second
+// is what omitting a zero value does, not a rule about warnings: the first
+// record is the record this band was placed for, as much as the second is.
 
 report name="pagination/overflow-first-record" {
   font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5

@@ -4,8 +4,7 @@
 // to three decimals as soon as it is computed, and a barcode's
 // are computed: its length is the module times its modules,
 // its bars 15% of that, and under `grow` its module is the box's side
-// over its modules.  The reference writes all three unrounded,
-// as binary64 gives them:
+// over its modules.  Unrounded, as binary64 gives them, the three are:
 //
 // - `10mil` is 0.72 points, and 66 modules of it are 47.519999999999996
 //   rather than 47.52;
@@ -15,8 +14,7 @@
 //
 // doc/ rounds each: 47.52, 23.1, and a module rounded down to 1.724,
 // so that the symbol, 49.996, never outgrows the box it was
-// made to fill.  This probe is a registered divergence:
-// see `barcode-lengths-unrounded` in divergences.toml.
+// made to fill.
 //
 // doc/layout.md#a-barcode-in-its-box is what this became.
 

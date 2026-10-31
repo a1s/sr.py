@@ -4,7 +4,7 @@
 // unless an ECI says otherwise, and the reference writes
 // a value's UTF-8 bytes without one: the qr, datamatrix
 // and aztec probes hold it to that.  The format's answer is
-// two properties the reference does not know:
+// two properties, of which the reference has taken the first:
 //
 // - `charset="iso-8859-1"`, a byte per character, which a reader that
 //   follows the standard reads back without being told;
@@ -19,6 +19,11 @@
 //
 // doc/template.md#character-set is what this became, and
 // doc/barcode.md says where each type writes the ECI.
+//
+// The reference has no `eci`: it accepts the property, ignores it, and
+// warns about an unknown name, so its symbols carry no ECI header and
+// its printout carries six warnings this one does not.  That is the
+// divergence `barcode-eci`.
 
 report name="barcode/charset" {
   font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10

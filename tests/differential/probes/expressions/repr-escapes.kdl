@@ -17,9 +17,9 @@
 // of a character as `\x`.
 //
 // An emoji is a character the face has no glyph for, so it has
-// a field of its own: the reference orders the glyph warnings
-// of one element by codepoint, which `glyph-warning-order` registers,
-// and one character to an element keeps that question out of this one.
+// a field of its own: the order of the `warnings` array is a question
+// with a probe of its own, and one character to an element keeps it
+// out of this one.
 //
 // See doc/expressions.md#quoted-strings.
 

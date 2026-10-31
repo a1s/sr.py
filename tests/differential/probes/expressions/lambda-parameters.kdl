@@ -1,17 +1,17 @@
 // probes/expressions/lambda-parameters.kdl -- the parameters left out.
 //
-// A registered divergence: the reference takes the whole of Starlark's
-// parameter grammar, and this engine takes plain parameters and their
-// defaults.  See `divergences.toml`, entry `lambda-parameter-forms`.
+// A lambda takes plain parameters and their defaults, and the four forms
+// below are the rest of Starlark's parameter grammar, which it does not.
+// Both engines refuse them, so there is no answer file beside this probe.
 //
 // Three of the four are a choice: `*args`, `**kwargs`, and the bare `*`
 // that makes what follows it keyword-only.  The fourth is not.
 // Python parses `__debug__` as a parameter and then refuses to bind it,
 // and supporting it would mean renaming it throughout the lambda's body.
 //
-// `/` is not here because neither engine takes it.  The reference calls
-// it "not an identifier", so it is a refusal the two share rather than
-// a difference, and a probe would have nothing to record.
+// `/` is not here because neither engine names it: the reference calls
+// it "not an identifier", where the four below each get a message of
+// their own, which is what makes them worth asking about together.
 
 report name="expressions/lambda-parameters" {
   font "body" file="../../../../example/fonts/Go-Regular.ttf" size=10

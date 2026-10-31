@@ -12,9 +12,8 @@
 // - The fourth row declares 3, which is not below the third's 4, so it
 //   is the summary's child as well, at 2, and not the third row's.
 //
-// The reference writes every level as declared, 2, 2, 1, 4, 3, which
-// breaks the invariant.  Registered under the divergence
-// `outline-level-gaps`.
+// Written as declared the five would be 2, 2, 1, 4, 3, which breaks
+// the invariant at the first entry and again at the fourth.
 
 report name="outline/levels" {
   font "body" file="../../../../example/fonts/Go-Regular.ttf" size=5

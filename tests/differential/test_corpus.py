@@ -72,6 +72,29 @@ def expected(entry: Divergence, detail: str) -> None:
     pytest.xfail(f"{entry.describe()}\n{detail}")
 
 
+def has_done_its_work(ident: str, listed: Divergence, registered: bool) -> None:
+    """Fail, asking for the entry a comparison no longer needs.
+
+    A listed case that stops differing is how both lists shrink by
+    themselves: the entry is read, taken out, and the case joins the
+    ones that simply agree.
+
+    Args:
+        ident: What was compared.
+        listed: The entry that covered it.
+        registered: Whether it came from the divergence register
+            rather than from the pending list.
+
+    """
+    file = "divergences.toml" if registered else "pending.toml"
+    word = "divergence" if registered else "pending entry"
+    pytest.fail(
+        f"{ident} now agrees, so the {word} {listed.ident!r} "
+        f"has done its work: remove it from {file}",
+        pytrace=False,
+    )
+
+
 def unbuilt(entry: Divergence, detail: str) -> None:
     """Mark the running test as a case this engine does not build yet.
 
@@ -140,6 +163,16 @@ def judge(
         for name, outcome in outcomes.items()
         if isinstance(outcome, BuildFailed)
     }
+    if len(refused) == len(outcomes):
+        # Two engines that both refuse a template agree about it: neither
+        # wrote a document, and doc/cli.md leaves the wording of a refusal
+        # to each engine, so the exit code is the whole of what there is
+        # to hold them to.  An entry that covered the refusal is spent,
+        # exactly as one covering a difference in bytes that has gone.
+        listed = entry if entry is not None else waiting
+        if listed is not None:
+            has_done_its_work(case.ident, listed, entry is not None)
+        return
     if refused:
         detail = "\n".join(str(failure) for failure in refused.values())
         if entry is not None:
@@ -174,13 +207,7 @@ def judge(
     listed = entry if entry is not None else waiting
     assert listed is not None
     if comparison.identical:
-        file = "divergences.toml" if entry is not None else "pending.toml"
-        word = "divergence" if entry is not None else "pending entry"
-        pytest.fail(
-            f"{case.ident} now agrees, so the {word} {listed.ident!r} "
-            f"has done its work: remove it from {file}",
-            pytrace=False,
-        )
+        has_done_its_work(case.ident, listed, entry is not None)
     if entry is not None:
         expected(entry, comparison.report)
     unbuilt(listed, comparison.report)
@@ -208,6 +235,7 @@ def summary_of(build: Build) -> str:
 def test_the_reference_builds_every_probe(
     case: Case,
     oracle: Engine,
+    local: Engine,
     build_directory: Path,
     register: Register,
 ) -> None:
@@ -222,14 +250,20 @@ def test_the_reference_builds_every_probe(
     A refusal the register covers is the answer rather than a fault:
     two of the dialect amendments are expressions the reference has
     no name for, and refusing them is exactly the divergence recorded.
+    So is a refusal this engine shares, where the probe's answer is
+    that the template is refused and both engines give it.  This engine
+    is run only where the reference refused, which is rare.
 
     """
     outcome = attempt(oracle, case, build_directory)
-    if isinstance(outcome, BuildFailed):
-        entry = register.entry_for(case.ident)
-        if entry is not None:
-            expected(entry, str(outcome))
-        pytest.fail(str(outcome), pytrace=False)
+    if not isinstance(outcome, BuildFailed):
+        return
+    entry = register.entry_for(case.ident)
+    if entry is not None:
+        expected(entry, str(outcome))
+    if isinstance(attempt(local, case, build_directory), BuildFailed):
+        return
+    pytest.fail(str(outcome), pytrace=False)
 
 
 @pytest.mark.differential
@@ -237,6 +271,7 @@ def test_the_reference_builds_every_probe(
 def test_the_reference_still_answers_the_same_way(
     case: Case,
     oracle: Engine,
+    local: Engine,
     build_directory: Path,
     register: Register,
 ) -> None:
@@ -252,17 +287,25 @@ def test_the_reference_still_answers_the_same_way(
     Record them again with ``python -m tests.differential.record_answers``,
     and read what changes before committing it.
 
+    A probe the reference refuses has no answer to record, and that is
+    the answer only where the register says why or where this engine
+    refuses it too.  Either way the file beside it has to be gone,
+    since a stale one would be a lie.
+
     """
     recorded = answer_path(ROOT / case.template)
     outcome = attempt(oracle, case, build_directory)
     if isinstance(outcome, BuildFailed):
         entry = register.entry_for(case.ident)
-        assert entry is not None, str(outcome)
+        shared = isinstance(attempt(local, case, build_directory), BuildFailed)
+        assert entry is not None or shared, str(outcome)
         assert not recorded.exists(), (
             f"{case.ident}: the reference refuses this probe, so "
             f"{recorded.name} should not exist. It said:\n{outcome}"
         )
-        expected(entry, str(outcome))
+        if entry is not None:
+            expected(entry, str(outcome))
+        return
     assert recorded.is_file(), (
         f"{case.ident}: no recorded answer; run "
         "`python -m tests.differential.record_answers`"

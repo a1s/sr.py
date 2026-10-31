@@ -17,32 +17,27 @@
 # entries record a measured difference rather than an intended one.
 # The rest came from building against the oracle: two are defects in
 # the reference, one is a grammar that had been left to the host, one
-# is a clause doc/ was missing, and one -- `time-before-year-one` --
+# is a wording doc/ leaves to each engine, and one -- `time-before-year-one` --
 # is a difference this engine chose and will keep.  M7 added a further
-# defect in the reference, `zero-height-float-gap`, and M8 fifteen more.
-# From `column-floor` on, eleven are defects in the reference's pagination,
+# defect in the reference, `zero-height-float-gap`, and M8 fourteen more.
+# From `column-floor` on, ten are defects in the reference's pagination,
 # and four are decisions: `footer-at-a-group-break`, `first-page-init`,
-# `carried-once`, and `suppressed-band-ejects`.  M9 added four about
-# deferred values: one defect, `deferred-glyph-warnings`, and three
-# decisions, `final-vertical`, `final-at-a-group-break`, and
-# `footer-deferral-balance`.  M10 added two defects in the reference's
-# barcodes, `code93-check-k`, `barcode-lengths-unrounded`, and
-# `qr-numeric-plus`, and one decision, `barcode-charset`.  After M10
+# `carried-once`, and `suppressed-band-ejects`.  M9 added three about
+# deferred values: one defect, `deferred-glyph-warnings`, and two
+# decisions, `final-at-a-group-break` and `footer-deferral-balance`.
+# M10 added two defects in the reference's barcodes, `code93-check-k`
+# and `qr-numeric-plus`, and one decision, `barcode-eci`.  After M10
 # came one decision about reading the records, `records-byte-order-mark`.
-# M11 added three defects in the reference's images:
-# `cut-crop-ignores-alignment`, `grow-ignores-valign`,
-# and `unprinted-blobs-written`; and two decisions,
-# `image-type-removed` and `image-without-pixels`.  After M11 came
+# M11 added two decisions about images, `image-type-removed` and
+# `image-without-pixels`.  After M11 came
 # one decision about the font table, `twin-fonts-merged`.  M12 added
 # two decisions about subreports, `subreport-rollback` and
 # `subreport-pages-at-a-break`, and three defects in the
 # reference's, `graft-beside-columns`, `graft-without-room`, and
 # `inline-summary-strip`; two of its probes show `column-floor`
 # and `column-footer-strip` again, inside a subreport.
-# M13 added four defects in the reference's printouts, each a
-# printout that breaks one of the invariants: `margins-unchecked`,
-# `outline-target-missing`, `outline-level-gaps`, and `outline-balance`;
-# and one decision, `outline-names-untargeted`.
+# M13 added `outline-balance` and `margins-named-by-band`, each a
+# printout of the reference's that breaks one of the invariants.
 # M14 added one decision about rendering, `image-past-its-pixels`.
 # Its case is a render, which the harness names `render/` and then
 # the case whose printout was rendered.
@@ -54,6 +49,22 @@
 # and `subreport-fonts-listed` in the reference, and
 # `load-diagnostic-spelling` on both sides.  Ten entries above
 # cover a report or a command line as well as a printout.
+#
+# The reference's 0.2.0 took doc/ and most of what was filed against it,
+# and thirteen entries came out with it: `glyph-warning-order`,
+# `empty-font-table-is-null`, `negative-sizes-refused`,
+# `overflow-record-zero`, `barcode-lengths-unrounded`,
+# `cut-crop-ignores-alignment`, `grow-ignores-valign`,
+# `unprinted-blobs-written`, `outline-target-missing`,
+# `outline-level-gaps`, `outline-names-untargeted`, `final-vertical`,
+# and `lambda-parameter-forms`.  Four narrowed to what the catch-up
+# left: `unknown-names-accepted` to `unknown-node-lists-what-fits`,
+# `barcode-charset` to `barcode-eci`, `margins-unchecked` to
+# `margins-named-by-band`, and `font-warning-node` to
+# `font-warning-in-the-check`.  It brought one of its own,
+# `cbor-empty-group-tables`.  The last four of the thirteen are
+# templates both engines now refuse, which the comparison reads as
+# agreement; see test_corpus.py.
 #
 # The milestone numbers:
 #   M0: Scaffold and oracle
@@ -260,61 +271,31 @@ since = "2026-09-13"
 affects = ["probe/expressions/null-folds*"]
 
 [[divergence]]
-id = "unknown-names-accepted"
-summary = "a node or property the format does not define is accepted here; the reference refuses it"
+id = "unknown-node-lists-what-fits"
+summary = "the warning about an unknown node names the children its parent takes; the reference's names only the node"
 reason = """
-Neither doc/ nor either engine's messages ever stated the rule: the \
-validation list covered nesting, cardinality, required properties and \
-value ranges, and none of those implies refusing an extra.  Both engines \
-refused anyway.  doc/template.md#unknown-names now states the opposite, \
-and states the cost of each direction rather than leaving it to taste.  \
-An unknown name is accepted and warned about, so a template written for a \
-newer, an older or a different implementation still builds; a name one \
-edit from a name legal on that node is an error, because `printwhn=` is a \
-misspelling far more often than an extension and accepting it silently \
-paints an element the template meant to suppress; and `x-` names, names \
-listed in a template's `accept`, and names given to `--accept` are \
-accepted in silence, which is how an extension says it is one.  \
-`--strict-names` restores the old behaviour for anyone who wants it.  \
-The reference is the side that changes, and the `accept` node is the part \
-of it that it does not have yet.  Its command line has neither `--accept` \
-nor `--strict-names`, and its dump has no place for the `prop` that \
-the warning about an unknown property carries, so a check, a dump and \
-two command lines differ with the printouts.\
+What is left of `unknown-names-accepted`, which this entry replaces.  \
+The reference has taken doc/template.md#unknown-names: it accepts a node \
+or a property the format does not define, refuses a near miss, keeps an \
+`x-` name and an `accept`ed one silent, and has `--accept`, \
+`--strict-names`, and a place in its dump for the `prop` an unknown \
+property carries.  One wording is left.  Where the name is a node, this \
+engine's message ends with the children that node's parent does take, \
+`detail accepts: style eject outline field line rectangle image barcode \
+xref subreport`, which is what tells a reader whether the name was meant \
+or mistyped; a near miss is already an error, so the list is the only \
+thing left that answers the question.  The reference writes the message \
+without it.  doc/ fixes neither wording, so this is a difference in \
+polish rather than in conformance, and what retires it is doc/ fixing \
+one, or the reference listing them too.  The check differs with the \
+printout, and shows `load-diagnostic-spelling` there as well.\
 """
-ticket = "M4: unknown names, template.md#unknown-names"
-since = "2026-09-13"
+ticket = "M4: unknown names, template.md#unknown-names; filed against the Go engine"
+since = "2026-10-31"
 affects = [
     "probe/values/unknown-names*",
     "validate/probe/values/unknown-names*",
-    "inspect/probe/image/type",
-    "cli/validate/accept",
-    "cli/validate/strict-names",
 ]
-
-[[divergence]]
-id = "glyph-warning-order"
-summary = "glyph warnings come out in the order the build raised them; the reference sorts some of them by codepoint"
-reason = """
-The reference has two orders and uses them both.  A `field` without \
-`stretch` reports the characters of one element sorted by codepoint and \
-the elements in document order; a band whose fields all `stretch` \
-reports every character of the band sorted by codepoint, document order \
-gone.  Neither is a rule anyone would write down, and the two cannot \
-both be one, so the oracle does not settle this question and something \
-has to.  doc/printout.md#header-line now states the order: a warning \
-appears where the build raised it, and a `glyph` warning is raised at \
-the first element set in that font that needed the character.  It is \
-the only order the four kinds have in common -- an `overflow` and an \
-`unknown` have no codepoint to sort by -- and it is what both engines \
-already do everywhere except that one path.  The reference is the side \
-that changes.  Only a probe with two missing characters in one band \
-sees it, which is why the two `breaking` probes are here and the rest \
-of the corpus is not.\
-"""
-ticket = "M6: warning order, printout.md#header-line; filed against the Go engine"
-since = "2026-09-20"
-affects = ["probe/breaking/codepoints", "probe/breaking/opportunities"]
 
 [[divergence]]
 id = "zero-height-float-gap"
@@ -340,68 +321,23 @@ since = "2026-09-26"
 affects = ["probe/layout/float-zero-height"]
 
 [[divergence]]
-id = "empty-font-table-is-null"
-summary = "an empty font table is [] here; the reference writes null"
+id = "font-warning-in-the-check"
+summary = "the check writes a font warning as the dump does, kind and node first; the reference writes the message alone"
 reason = """
-doc/printout.md#fonts lists the fonts a document used, and a document in \
-which no element prints uses none.  The table is an array whatever its \
-length, and `data` beside it is written `{}` when it is empty, so this \
-engine writes `"fonts":[]`.  The reference writes `"fonts":null`, which \
-is not an array at all, and is the shape an absent list takes when it is \
-serialized without being made empty first.  A reader that iterates the \
-table fails on it.  The reference is the side that changes.\
+What is left of `font-warning-node`, which this entry replaces.  The \
+reference now names the `font` node that asked for a substituted \
+typeface in the printout's warning, as doc/printout.md#header-line \
+requires, and its check does not: there the warning is the message by \
+itself, where doc/cli.md#sr-validate has a warning the printout would \
+carry written as the dump's `warnings` section writes one, which is kind, \
+then the record where one produced it, then the node, then the message.  \
+So a reader of the check cannot tell which of several fonts fell back \
+without matching the typeface in the message, although the printout of \
+the same template says.  The reference is the side that changes.\
 """
-ticket = "M7: the font table, printout.md#fonts; filed against the Go engine"
-since = "2026-09-26"
-affects = ["probe/printout/no-fonts"]
-
-[[divergence]]
-id = "negative-sizes-refused"
-summary = "a negative width, height, maxwidth, or maxheight is a validation error here; the reference accepts it"
-reason = """
-Neither doc/ nor either engine said what a size below zero means.  The \
-reference accepts one and draws the box with no extent, while keeping \
-the declared bottom above the top, so a floating element below it \
-measures its gap from a point above the box and lands lower than it \
-would below a height of 0.  Nothing needs that: every other effect of a \
-negative size is written more plainly with a size of 0 or a negative \
-`right` or `bottom`, which is what reaching past the container is for.  \
-doc/template.md#position-and-size-any-two-of-three now makes a negative \
-size an error, on an element, an `xref`, and a section alike, as the \
-reference already does for a negative stroke width.  The reference is \
-the side that changes.  The check refuses the probe here, as the build \
-does.\
-"""
-ticket = "M7: negative sizes, template.md#position-and-size-any-two-of-three"
+ticket = "M5: the check, cli.md#sr-validate; filed against the Go engine"
 since = "2026-09-27"
-affects = [
-    "probe/values/negative-size",
-    "validate/probe/values/negative-size",
-]
-
-[[divergence]]
-id = "font-warning-node"
-summary = "a font warning names its font node here; the reference leaves node out"
-reason = """
-doc/printout.md#header-line gives every warning `kind`, `node`, `record`, \
-and `message`, and a `font` warning, which says a typeface fell back to the \
-substitute face, has a node to name: the `font` node that asked for it.  \
-This engine writes it as `report > font "body"`.  The reference writes \
-`node` on a `glyph` warning, as the corpus shows, and leaves it out of this \
-kind, so a reader that goes from a warning to the template cannot find \
-which of several fonts fell back without matching the typeface in the \
-message.  The difference dates from M5; it went unregistered until \
-the harness could build a probe without `--strict-fonts`, which refuses a \
-`typeface` outright.  The reference is the side that changes.  Its check \
-writes the warning as the message alone, where doc/cli.md#sr-inspect has \
-every report write one as the dump does, kind and node first.\
-"""
-ticket = "M5: font warnings, printout.md#header-line; filed against the Go engine"
-since = "2026-09-27"
-affects = [
-    "probe/printout/font-warning",
-    "validate/probe/printout/font-warning",
-]
+affects = ["validate/probe/printout/font-warning"]
 
 [[divergence]]
 id = "column-floor"
@@ -446,29 +382,6 @@ changes.\
 ticket = "M8: placing a band, layout.md#placing-a-band; filed against the Go engine"
 since = "2026-09-27"
 affects = ["probe/pagination/cut-in-place"]
-
-[[divergence]]
-id = "overflow-record-zero"
-summary = "an overflow warning on the first record carries record 0 here; the reference leaves record out"
-reason = """
-doc/printout.md#header-line has a warning carry the record that produced it \
-and leave `record` out only where no record did.  An oversized band on the \
-first record was produced by record 0, and the reference writes `record` on \
-the second such warning and not on the first, which is what serializing an \
-integer with its zero value omitted does rather than a rule about warnings.  \
-doc/layout.md#errors now says the first record's 0 is included.  The \
-reference is the side that changes.  Its dump reads a `record` of 0 the \
-same way, as no record, so the dump of a printout that carries one \
-leaves it out.\
-"""
-ticket = "M8: overflow, layout.md#errors; filed against the Go engine"
-since = "2026-09-27"
-affects = [
-    "probe/pagination/overflow-first-record",
-    "inspect/probe/pagination/overflow-first-record",
-    "inspect/probe/pagination/swapfooter-overflow",
-    "inspect/probe/printout/margins",
-]
 
 [[divergence]]
 id = "last-outer-summary"
@@ -718,26 +631,6 @@ since = "2026-10-03"
 affects = ["probe/deferred/glyphs"]
 
 [[divergence]]
-id = "final-vertical"
-summary = "FINAL.VERTICAL_POSITION and FINAL.VERTICAL_SPACE are refused here; the reference answers with the band it measured last"
-reason = """\
-doc/expressions.md#final held every predefined variable, and two of them \
-describe a band being measured: where it begins in its frame and what it \
-has left.  When a scope ends no band is being measured.  The reference \
-answers with the last band it happened to measure, which depends on \
-lookaheads and reservations a template cannot see.  doc/ now leaves both \
-out of FINAL, and FINAL itself, and validation refuses them.  It is a \
-decision rather than a defect, and the reference is the side that changes.  \
-The check refuses the probe here, as the build does.\
-"""
-ticket = "M9: FINAL, expressions.md#final"
-since = "2026-10-03"
-affects = [
-    "probe/deferred/final-vertical",
-    "validate/probe/deferred/final-vertical",
-]
-
-[[divergence]]
 id = "final-at-a-group-break"
 summary = "a page that ends at a group break resolves its deferrals against the run that ended here; the reference against the run that begins"
 reason = """\
@@ -792,42 +685,23 @@ since = "2026-10-04"
 affects = ["probe/barcode/code93"]
 
 [[divergence]]
-id = "barcode-lengths-unrounded"
-summary = "a barcode's length, bars, and grown module are rounded to three decimals here; the reference writes them as binary64 left them"
+id = "barcode-eci"
+summary = "`eci` names a 2-D symbol's charset in the symbol here; the reference has no `eci` and reads it as an unknown property"
 reason = """\
-doc/layout.md#coordinates-and-rounding rounds every computed coordinate \
-and extent to three decimals as soon as it is computed, and \
-doc/printout.md#units-and-number-format writes no length with more.  The \
-reference rounds none of a barcode's own: the length is the module times \
-the modules, 47.519999999999996 for 66 modules of 10mil; the bars are 15% \
-of that; and under `grow` the module is the box's side over the modules, \
-1.7241379310344827 for 29 of them in 50.  doc/ rounds each, and rounds \
-a grown module down, so that the symbol never outgrows the box it was \
-made to fill.  Any barcode whose module is not a whole number of \
-points shows it, which is why every other probe here uses a module of \
-one point.  The invoices example shows it, in the one QR symbol that keeps \
-it from agreeing, and the sakila example will too once it can be built.\
-"""
-ticket = "M10: a barcode in its box, layout.md#a-barcode-in-its-box; filed against the Go engine"
-since = "2026-10-04"
-affects = ["probe/barcode/rounding"]
-
-[[divergence]]
-id = "barcode-charset"
-summary = "`charset` and `eci` choose a 2-D symbol's bytes and its ECI here; the reference refuses both as unknown properties"
-reason = """\
+What is left of `barcode-charset`, which this entry replaces.  \
 Every 2-D standard reads a symbol's bytes as ISO 8859-1 unless an ECI \
-names another charset.  The reference writes a value's UTF-8 bytes and \
-no ECI, so a reader that follows the standard turns each character \
+names another charset.  The reference wrote a value's UTF-8 bytes and \
+no ECI, so a reader that follows the standard turned each character \
 outside ASCII into two or more wrong ones.  doc/template.md#character-set \
 keeps that as the default, because phone apps reading QR detect UTF-8 \
 for themselves, and adds two properties for the readers that follow the \
 standard: `charset="iso-8859-1"`, a byte per character, and `eci=#true`, \
 which names the charset in the symbol whenever the value is not ASCII.  \
-doc/barcode.md says where each type writes the ECI.  The reference \
-refuses both, as it refuses any property it does not know (see \
-`unknown-names-accepted`), and is the side that changes.  Its check \
-refuses the probe too.\
+doc/barcode.md says where each type writes the ECI.  The reference has \
+taken `charset` and not `eci`, which it now accepts and ignores as an \
+unknown property rather than refusing: so it warns where this engine \
+does not, and its symbols carry no ECI header where the probe asks for \
+one.  It is the side that changes.  Its check carries the warning too.\
 """
 ticket = "M10: template.md#character-set and barcode.md; filed against the Go engine"
 since = "2026-10-04"
@@ -873,43 +747,6 @@ The reference is the side that changes.\
 ticket = "M15: data input, template.md#data-input"
 since = "2026-10-10"
 affects = ["probe/records/byte-order-mark"]
-
-[[divergence]]
-id = "cut-crop-ignores-alignment"
-summary = "a clipped image keeps the pixels its alignment leaves in the box here; the reference keeps the top-left corner whatever the alignment"
-reason = """\
-doc/template.md#alignment has `halign` and `valign` position an image's \
-bitmap inside its box, in the same sentence that has them position a \
-barcode's symbol, and `cut` clips the bitmap to the box.  So an image \
-wider than its box and aligned right keeps its right side, and one \
-centred keeps its middle: the mark's `crop` starts that far into the \
-image.  The reference starts every crop at the image's top-left corner, \
-so alignment stops mattering the moment an image is larger than its box, \
-while it still aligns a barcode's symbol in the same position.  \
-doc/layout.md#an-image-in-its-box spells the crop out, and the reference \
-is the side that changes.\
-"""
-ticket = "M11: an image in its box, layout.md#an-image-in-its-box; filed against the Go engine"
-since = "2026-10-10"
-affects = ["probe/image/cut-aligned"]
-
-[[divergence]]
-id = "grow-ignores-valign"
-summary = "a grow image shorter than its box is placed by `valign` here; the reference puts it at the box's top"
-reason = """\
-Under `scale="grow"` the box expands wherever the image exceeds it, and \
-where the image is smaller the box stays as it was and the image sits \
-inside it.  doc/template.md#alignment places it there by `halign` and \
-`valign`.  The reference applies `halign`, and centres a narrow image in \
-a wide box, but not `valign`: an image shorter than its box starts at \
-the box's top whatever `valign` says, where a barcode's symbol in the \
-same box, and the same image under `cut`, would be moved down.  \
-doc/layout.md#an-image-in-its-box applies both, and the reference is the \
-side that changes.\
-"""
-ticket = "M11: an image in its box, layout.md#an-image-in-its-box; filed against the Go engine"
-since = "2026-10-10"
-affects = ["probe/image/grow-valign"]
 
 [[divergence]]
 id = "image-type-removed"
@@ -961,23 +798,6 @@ reference is the side that changes.\
 ticket = "M11: image, template.md#image"
 since = "2026-10-10"
 affects = ["probe/image/no-pixels"]
-
-[[divergence]]
-id = "unprinted-blobs-written"
-summary = "only `data` entries the document refers to are written here; the reference also writes the blob of an image it built and never drew"
-reason = """\
-A band is built whenever it is measured, so a footer is built when its \
-space is reserved, and an image in it takes its generated name then, \
-before the bands that fill the page.  Both engines agree on that.  If the \
-footer's `printwhen` is false by the time it is built for the page, the \
-image never reaches the page, and doc/printout.md#data says only entries \
-something refers to are written.  The reference writes the image's bytes \
-all the same, under a name no mark names.  This engine leaves the name \
-taken and the entry out, and the reference is the side that changes.\
-"""
-ticket = "M11: data, printout.md#data; filed against the Go engine"
-since = "2026-10-10"
-affects = ["probe/data/unprinted"]
 
 [[divergence]]
 id = "twin-fonts-merged"
@@ -1103,54 +923,24 @@ since = "2026-10-11"
 affects = ["probe/subreport/summary-strip-eject"]
 
 [[divergence]]
-id = "margins-unchecked"
-summary = "a mark outside the page's printable area is an overflow here; the reference checks no mark against the margins"
+id = "margins-named-by-band"
+summary = "a mark outside the printable area is reported against the element that made it; the reference names the band"
 reason = """\
-doc/layout.md#errors lists a mark that lands outside the page's printable \
-area among the overflows, which --allow-overflow downgrades to a warning, \
-and the printout's seventh invariant rules one out of any printout that \
-carries no such warning.  The reference builds such a template without \
---allow-overflow and writes no warning, so its printout breaks its own \
-invariant.  Five probes written before the check put marks outside the \
-margins without meaning to, and M13 moved those marks inside, each probe \
-asking its question as before.  The reference is the side that changes.\
+What is left of `margins-unchecked`, which this entry replaces.  The \
+reference now checks every mark against the page's margins and raises \
+the overflow doc/layout.md#errors asks for, on the band's record and \
+with the message doc/ gives.  What it names is the band: \
+`report > layout > detail` where the mark came from the `rectangle` \
+inside it.  doc/layout.md#errors reports the band once, for the first \
+of its marks in paint order that lies outside, **against the element \
+that mark came from** -- which is what tells a reader which of a band's \
+elements to move, and is the whole of what the `node` field is for here, \
+since the record already says which band.  The reference is the side \
+that changes.\
 """
 ticket = "M13: the printable area, layout.md#errors; filed against the Go engine"
 since = "2026-10-17"
 affects = ["probe/printout/margins"]
-
-[[divergence]]
-id = "outline-target-missing"
-summary = "an xref to an outline entry no entry claims is an error here; the reference writes it"
-reason = """\
-An xref of type `outline` whose target no entry in the document carries \
-breaks the printout's fifth invariant, and doc/render.md refuses to \
-render one.  Validation catches a target that is a constant, and the \
-reference does too; one computed from the data reaches the build, where \
-doc/printout.md#xref makes it an error naming the xref and its record. \
-The reference writes the printout, with an xref that goes nowhere.  The \
-reference is the side that changes.\
-"""
-ticket = "M13: outline entries, printout.md#xref; filed against the Go engine"
-since = "2026-10-17"
-affects = ["probe/outline/missing-target"]
-
-[[divergence]]
-id = "outline-level-gaps"
-summary = "an outline entry's level is written as its depth in the tree here; the reference writes the level declared, gaps and all"
-reason = """\
-The printout's tenth invariant has no outline level more than one deeper \
-than the one before it, and a template can declare one, or leave the \
-entry that would have been its parent unprinted.  doc/printout.md#outline \
-writes each entry at its depth in the tree its declared levels describe, \
-whose parent is the nearest entry before it at a lower declared level, so \
-levels declared without a gap are written as they are.  The reference \
-writes the declared level, so its printout breaks its own invariant. \
-The reference is the side that changes.\
-"""
-ticket = "M13: outline entries, printout.md#outline; filed against the Go engine"
-since = "2026-10-17"
-affects = ["probe/outline/levels"]
 
 [[divergence]]
 id = "outline-balance"
@@ -1165,20 +955,6 @@ the bands that stayed there.  The reference is the side that changes.\
 ticket = "M13: outline entries, printout.md#outline; filed against the Go engine"
 since = "2026-10-17"
 affects = ["probe/outline/balance"]
-
-[[divergence]]
-id = "outline-names-untargeted"
-summary = "an outline entry's name is written only where an xref targets it here; the reference writes every name"
-reason = """\
-doc/printout.md#outline has said from the start that an entry's `name` \
-is present only when some xref targets it: a name nothing targets tells \
-a renderer nothing.  The reference writes every name a template gives. \
-Kept as written, a decision rather than a defect, and the reference is \
-the side that changes.\
-"""
-ticket = "M13: outline entries, printout.md#outline"
-since = "2026-10-17"
-affects = ["probe/outline/names"]
 
 [[divergence]]
 id = "image-past-its-pixels"
@@ -1348,29 +1124,6 @@ affects = [
 ]
 
 [[divergence]]
-id = "lambda-parameter-forms"
-summary = "the reference takes *args, **kwargs, a bare *, and __debug__ as lambda parameters; here a parameter is plain or defaulted"
-reason = """
-`starlark-go` retired `resolve.AllowLambda`, so the reference hosts a lambda \
-whether it chose one or not, and the whole `def` parameter grammar with it.  \
-This engine compiles expressions through Python's parser, where the same \
-forms are free, and refuses them all the same: doc/expressions.md#functions \
-takes plain parameters and their defaults and nothing else.  Narrowing is \
-the half of the decision that can be taken back, and a call here already \
-refuses a starred argument.  `__debug__` is the one row that is not a \
-choice: Python's parser takes it as a parameter and Python's compiler \
-then refuses to bind it, so taking it would mean renaming it throughout \
-the body.  `/` is in neither engine and so is in no probe.  The check \
-refuses this one here, as the build does.\
-"""
-ticket = "doc/expressions.md#functions: widen the lambda parameters, or keep them"
-since = "2026-10-31"
-affects = [
-    "probe/expressions/lambda-parameters",
-    "validate/probe/expressions/lambda-parameters",
-]
-
-[[divergence]]
 id = "lambda-default-state"
 summary = "a mutable lambda default counts the evaluations of the expression, and the reference evaluates a stretched field twice"
 reason = """
@@ -1388,3 +1141,24 @@ here would trade it for a louder one.\
 ticket = "doc/expressions.md#a-mutable-default: freeze a lambda default, or keep the gap"
 since = "2026-10-31"
 affects = ["probe/expressions/lambda-default-state"]
+
+[[divergence]]
+id = "cbor-empty-group-tables"
+summary = "an empty `groupRuns` or `groupKeys` is left out of a CBOR header here; the reference writes both, though its NDJSON leaves them out"
+reason = """\
+doc/printout.md#header-line lists `groupRuns` and `groupKeys` once a \
+group has opened and leaves them out while none has, and \
+doc/printout.md#cbor writes the same records as NDJSON, in the same \
+order, one data item each.  The reference leaves both out of a report \
+with no groups in NDJSON and writes them as empty maps in CBOR, so its \
+two encodings of one document disagree about which fields the header \
+has.  The reference is the side that changes.  The CBOR comparison \
+drops an empty one before holding the reference to this engine, for \
+the reason it drops an image mark's `type`: every case without a group \
+would differ, and whatever else differs in it would be buried.  So the \
+case that keeps this visible is the one command line that writes a CBOR \
+file and compares it whole.\
+"""
+ticket = "M15: the CBOR encoding, printout.md#cbor; filed against the Go engine"
+since = "2026-10-31"
+affects = ["cli/format/over-a-known-extension"]

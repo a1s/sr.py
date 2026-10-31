@@ -2,10 +2,11 @@
 //
 // doc/printout.md#header-line gives every warning `kind`, `node`,
 // `record`, and `message`, and a `font` warning has a node to name:
-// the `font` node whose typeface was not found.  This engine writes it;
-// the reference leaves `node` out of this one kind.  That is a
-// registered divergence rather than the rule; see divergences.toml,
-// `font-warning-node`.
+// the `font` node whose typeface was not found.  A `font` warning has
+// no record, since it is raised while the fonts are resolved and before
+// any data is read.  The two printouts agree; the reference's check
+// writes the warning as the message alone, which is the divergence
+// `font-warning-in-the-check`.
 //
 // A substitute is only reached without `--strict-fonts`, so the sidecar
 // asks the harness for `!host-fonts`.  Which face the host offers is
