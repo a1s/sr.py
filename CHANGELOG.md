@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - Support for building reports from a sequence of records.
+- Allow `lambda` in Starlark expressions.
 - Add per-process cache for the host font table lookups.
 - Build, read records, and render faster.
 

@@ -12,8 +12,8 @@ that build it.
    So :mod:`sr.expr.literals` reads the tokens first, by Starlark's
    rules, and the parser gets the text with the literals blanked.
 2. **Reject** every node kind the dialect does not have.  This is what
-   makes the superset a subset again: no ``**``, no lambda, no f-string,
-   no walrus, no chained comparison, no starred argument, no ``is``.
+   makes the superset a subset again: no ``**``, no f-string, no walrus,
+   no chained comparison, no starred argument, no ``is``.
 3. **Rewrite** ``a.b`` into ``getattr_(a, "b")``, ``a[i]`` into
    ``getitem_(a, i)``, ``a[i:j]`` into ``getslice_(...)``, and ``a % b``
    into ``mod_(a, b)``.  Attribute and index resolution then run through
@@ -46,6 +46,7 @@ from typing import Any, Final
 from sr.errors import ExpressionError
 from sr.expr.builtins import GLOBALS, getattr_, getitem_, getslice_, mod_
 from sr.expr.literals import Lexed, lex
+from sr.expr.values import EXPRESSION_FILE
 
 __all__ = ["Expression", "compile_expression", "evaluate"]
 
@@ -84,7 +85,6 @@ LINE_END: Final = re.compile(r"\r\n|\r|\n")
 # The message names the Starlark spelling wherever there is one, because
 # a template author reading it wants the alternative rather than the rule.
 REFUSED: Final[dict[type[ast.AST], str]] = {
-    ast.Lambda: "there are no lambdas; the language has no function definitions",
     ast.NamedExpr: "there is no := operator",
     ast.JoinedStr: "there are no f-strings; use the format() builtin",
     ast.FormattedValue: "there are no f-strings; use the format() builtin",
@@ -245,6 +245,38 @@ class Rejector(ast.NodeVisitor):
                 raise self.refuse(node, "an argument may not be starred")
         self.generic_visit(node)
 
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        """Refuse the parameter forms this dialect's lambda leaves out.
+
+        Starlark's own ``lambda`` takes the whole ``def`` parameter
+        grammar.  This one takes plain parameters and their defaults,
+        and the rest waits for doc/expressions.md to ask for it.
+        Python's ``/`` is not Starlark's in any case.
+
+        """
+        arguments = node.args
+        if arguments.vararg is not None or arguments.kwarg is not None:
+            raise self.refuse(node, "a lambda parameter may not be starred")
+        if arguments.posonlyargs or arguments.kwonlyargs:
+            raise self.refuse(
+                node, "a lambda takes plain parameters; there is no / or bare *"
+            )
+        self.generic_visit(node)
+
+    def visit_arg(self, node: ast.arg) -> None:
+        """Refuse a parameter named for the compiler's own machinery.
+
+        A parameter is an ``ast.arg`` rather than an ``ast.Name``, so
+        :meth:`visit_Name` never sees one, and a lambda that took
+        ``_sr_getattr`` would shadow the helper that every rewritten
+        attribute access in its body calls.
+
+        """
+        if node.arg.startswith(RESERVED):
+            raise self.refuse(
+                node, f"a name may not begin with {RESERVED!r}: {node.arg}"
+            )
+
     def visit_Constant(self, node: ast.Constant) -> None:
         """Refuse the literal kinds the language has no values for.
 
@@ -294,6 +326,7 @@ class Names(ast.NodeVisitor):
 
     Comprehension variables are local to their comprehension, as they
     are in Starlark, so ``[x for x in xs]`` reads ``xs`` and not ``x``.
+    A lambda's parameters are local to the lambda the same way.
 
     Attributes:
         bound: The names a comprehension has bound around the current node.
@@ -318,6 +351,22 @@ class Names(ast.NodeVisitor):
     def visit_DictComp(self, node: ast.DictComp) -> None:
         """Visit a dict comprehension with its variables bound."""
         self.comprehend(node.generators, node.key, node.value)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        """Visit a lambda with its parameters bound.
+
+        A default belongs to the scope the lambda is written in rather
+        than to the lambda, so the defaults are visited before the
+        parameters bind and the body after.  Only plain parameters
+        arrive here: :class:`Rejector` has refused the other forms.
+
+        """
+        for default in node.args.defaults:
+            self.visit(default)
+        was = set(self.bound)
+        self.bound |= {parameter.arg for parameter in node.args.args}
+        self.visit(node.body)
+        self.bound = was
 
     def comprehend(
         self, generators: list[ast.comprehension], *bodies: ast.expr
@@ -573,7 +622,7 @@ def build(
     assert isinstance(body, ast.Return)
     body.value = tree.body
     ast.fix_missing_locations(shell)
-    code = compile(shell, filename=f"<expr {source!r}>", mode="exec")
+    code = compile(shell, filename=f"{EXPRESSION_FILE}{source!r}>", mode="exec")
     made: dict[str, Any] = {}
     exec(code, RUNTIME, made)
     function: Callable[..., Any] = made[FUNCTION_NAME]

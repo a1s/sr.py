@@ -55,6 +55,24 @@ def test_a_comprehension_variable_is_local_to_its_comprehension() -> None:
     assert compile_expression("{k: v for k, v in pairs}").names == ("pairs",)
 
 
+def test_a_lambda_parameter_is_local_to_its_lambda() -> None:
+    assert compile_expression("(lambda value: value * factor)(2)").names == ("factor",)
+    assert compile_expression("(lambda amount: amount)(2)").names == ()
+
+
+def test_a_lambda_default_is_read_where_the_lambda_is_written() -> None:
+    """A default belongs to the enclosing scope, so it is a free name."""
+    assert compile_expression("(lambda value, plus=rate: plus)(1)").names == ("rate",)
+
+
+def test_a_lambda_closes_over_the_scope_it_is_written_in() -> None:
+    assert evaluate("(lambda value: value + amount)(1)", {"amount": 10}) == 11
+
+
+def test_a_lambda_parameter_shadows_the_scope_it_is_written_in() -> None:
+    assert evaluate("(lambda amount: amount)(1)", {"amount": 10}) == 1
+
+
 def test_a_compiled_expression_is_called_with_what_it_needs() -> None:
     compiled = compile_expression("unit * qty")
     assert compiled(Decimal("2.50"), 4) == Decimal("10.00")
@@ -85,7 +103,11 @@ def test_the_globals_need_no_declaring() -> None:
     ("source", "complaint"),
     [
         ("2 ** 3", "no \\*\\* operator"),
-        ("lambda x: x", "no lambdas"),
+        ("lambda *rest: rest", "lambda parameter may not be starred"),
+        ("lambda **named: named", "lambda parameter may not be starred"),
+        ("lambda one, /, two: one", r"no / or bare \*"),
+        ("lambda one, *, two: one", r"no / or bare \*"),
+        ("lambda _sr_name: 1", "may not begin"),
         ("f'{x}'", "no f-strings"),
         ("(x := 1)", "no := operator"),
         ("1 < 2 < 3", "no chained comparisons"),
@@ -236,6 +258,7 @@ def test_a_form_feed_in_a_literal_or_a_comment_compiles(source: str) -> None:
         "'a'.__class__",
         "().__class__.__bases__",
         "[].append.__globals__",
+        "(lambda value: value.__class__)(1)",
     ],
 )
 def test_nothing_reaches_outside_the_language(source: str) -> None:
@@ -294,6 +317,11 @@ def test_the_position_names_are_floats_in_points() -> None:
         ("[x for x in range(4) if x % 2 == 0]", [0, 2]),
         ("sorted(['b', 'a'])", ["a", "b"]),
         ("'%s-%s' % ('a', 'b')", "a-b"),
+        ("(lambda value: value + 1)(2)", 3),
+        ("(lambda value, plus=10: value + plus)(1)", 11),
+        ("sorted(['bb', 'a'], key=lambda word: len(word))", ["a", "bb"]),
+        ("type(lambda value: value)", "function"),
+        ("str(lambda value: value)", "<function lambda>"),
     ],
 )
 def test_the_dialect_computes_what_it_should(source: str, answer: object) -> None:

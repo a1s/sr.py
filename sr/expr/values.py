@@ -1198,6 +1198,25 @@ def truthy(value: Any) -> bool:
     return bool(value)
 
 
+# What `sr.expr.compile.build` names the code object it compiles,
+# and so what `co_filename` begins with for every lambda inside one.
+# It is how a function a template wrote is told from one the engine
+# predeclares: both are plain Python functions, and the language
+# gives them different type names and different reprs.
+EXPRESSION_FILE: Final = "<expr "
+
+
+def template_function(value: Any) -> bool:
+    """Report whether a value is a lambda a template wrote.
+
+    Args:
+        value: The value to place.
+
+    """
+    code = getattr(value, "__code__", None)
+    return code is not None and code.co_filename.startswith(EXPRESSION_FILE)
+
+
 # What `type()` answers, for the types whose Python name is
 # not the language's.  Everything absent from here answers
 # with its class name, which is already right for `int`, `float`,
@@ -1231,6 +1250,8 @@ def type_name(value: Any) -> str:
     if named is not None:
         return named
     if callable(value):
+        if template_function(value):
+            return "function"
         return "builtin_function_or_method"
     return type(value).__name__
 
@@ -1525,4 +1546,8 @@ def starlark_repr(value: Any) -> str:
         return f"range({value.stop})"
     if isinstance(value, bytes):
         return "b" + quote(value.decode("utf-8", "surrogateescape"))
+    if template_function(value):
+        # Python writes an address into a function's repr, and
+        # a printout that held one would differ from run to run.
+        return "<function lambda>"
     return repr(value)

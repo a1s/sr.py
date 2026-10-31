@@ -328,6 +328,8 @@ the reference gave, and names the section of `doc/` that answer became.
 | `expressions/decimal-precision` | how far a decimal's digits survive a float conversion |
 | `expressions/null-folds` | what a null does to an accumulator |
 | `expressions/date-layout` | a point in a layout that is not a fraction |
+| `expressions/lambda` | the lambda both engines take, and what one prints as |
+| `expressions/lambda-starred` | the lambda parameters this engine leaves out |
 | `values/dimensions` | what a dimension string means |
 | `values/colors` | what each colour spelling resolves to |
 | `values/hex-float` | a number the host's parser takes and the grammar does not |
@@ -465,6 +467,17 @@ since the reference never said so: `layout/anchored-stretch`,
 `values/dimensions`. M13 moved each mark inside, by a band above it,
 a wider page, or an xref to hold an offset that is still negative,
 so that each asks its question as before, and each says how.
+
+After M13 came `lambda`. `starlark-go` retired `resolve.AllowLambda`,
+so the reference has taken a lambda all along, and this engine refused one
+until doc/expressions.md#functions was written. The two agree on plain
+parameters and their defaults, on what `type` and `repr` call a function,
+and on a function held in a variable, which `expressions/lambda` records.
+They do not agree on the rest of Starlark's parameter grammar: the reference
+takes `*args`, `**kwargs` and a bare `*`, and this engine refuses all three.
+That is `expressions/lambda-starred` and the divergence
+`lambda-starred-parameters`, the second of the two that go the way
+`values/hex-float` does, built by the reference and refused here.
 
 The CBOR encoding is compared over a part of the corpus, in
 [test_cbor.py](../test_cbor.py), and agrees wherever the NDJSON does,

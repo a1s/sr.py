@@ -1346,3 +1346,23 @@ affects = [
     "validate/probe/layout/band-height",
     "validate/probe/layout/style-walk",
 ]
+
+[[divergence]]
+id = "lambda-starred-parameters"
+summary = "the reference takes *args, **kwargs and a bare * in a lambda; here a parameter is plain or defaulted"
+reason = """
+`starlark-go` retired `resolve.AllowLambda`, so the reference hosts a lambda \
+whether it chose one or not, and the whole `def` parameter grammar with it.  \
+This engine compiles expressions through Python's parser, where the same \
+forms are free, and refuses them all the same: doc/expressions.md#functions \
+takes plain parameters and their defaults and nothing else.  Narrowing is \
+the half of the decision that can be taken back, and a call here already \
+refuses a starred argument.  `/` is in neither engine and so is in no probe.  \
+The check refuses this one here, as the build does.\
+"""
+ticket = "doc/expressions.md#functions: widen the lambda parameters, or keep them"
+since = "2026-10-31"
+affects = [
+    "probe/expressions/lambda-starred",
+    "validate/probe/expressions/lambda-starred",
+]
