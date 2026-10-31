@@ -198,12 +198,8 @@ def judge(
         for name, outcome in outcomes.items()
         if isinstance(outcome, BuildFailed)
     }
-    if len(refused) == len(outcomes):
-        # Two engines that both refuse a template agree about it: neither
-        # wrote a document, and doc/cli.md leaves the wording of a refusal
-        # to each engine, so the exit code is the whole of what there is
-        # to hold them to.  An entry that covered the refusal is spent,
-        # exactly as one covering a difference in bytes that has gone.
+    if case.refused:
+        agreed_on_a_refusal(case, outcomes, refused)
         listed = entry if entry is not None else waiting
         if listed is not None:
             has_done_its_work(case.ident, listed, entry is not None)
@@ -270,7 +266,6 @@ def summary_of(build: Build) -> str:
 def test_the_reference_builds_every_probe(
     case: Case,
     oracle: Engine,
-    local: Engine,
     build_directory: Path,
     register: Register,
 ) -> None:
@@ -285,18 +280,24 @@ def test_the_reference_builds_every_probe(
     A refusal the register covers is the answer rather than a fault:
     two of the dialect amendments are expressions the reference has
     no name for, and refusing them is exactly the divergence recorded.
-    So is a refusal this engine shares, where the probe's answer is
-    that the template is refused and both engines give it.  This engine
-    is run only where the reference refused, which is rare.
+    So is one the probe's sidecar declared with ``!refused``, where being
+    refused is the answer.  Anything else the reference will not build
+    is a probe that has stopped measuring, a new one with a typo in it
+    included, and this is what says so.
 
     """
     outcome = attempt(oracle, case, build_directory)
     if not isinstance(outcome, BuildFailed):
+        assert not case.refused, (
+            f"{case.ident}: its sidecar says both engines refuse it, and "
+            f"the reference built it. Take {REFUSED!r} out of the sidecar "
+            "and record the answer."
+        )
         return
     entry = register.entry_for(case.ident)
     if entry is not None:
         expected(entry, str(outcome))
-    if isinstance(attempt(local, case, build_directory), BuildFailed):
+    if case.refused:
         return
     pytest.fail(str(outcome), pytrace=False)
 
@@ -306,7 +307,6 @@ def test_the_reference_builds_every_probe(
 def test_the_reference_still_answers_the_same_way(
     case: Case,
     oracle: Engine,
-    local: Engine,
     build_directory: Path,
     register: Register,
 ) -> None:
@@ -323,8 +323,8 @@ def test_the_reference_still_answers_the_same_way(
     and read what changes before committing it.
 
     A probe the reference refuses has no answer to record, and that is
-    the answer only where the register says why or where this engine
-    refuses it too.  Either way the file beside it has to be gone,
+    the answer only where the register says why or where the sidecar
+    says ``!refused``.  Either way the file beside it has to be gone,
     since a stale one would be a lie.
 
     """
@@ -332,8 +332,7 @@ def test_the_reference_still_answers_the_same_way(
     outcome = attempt(oracle, case, build_directory)
     if isinstance(outcome, BuildFailed):
         entry = register.entry_for(case.ident)
-        shared = isinstance(attempt(local, case, build_directory), BuildFailed)
-        assert entry is not None or shared, str(outcome)
+        assert entry is not None or case.refused, str(outcome)
         assert not recorded.exists(), (
             f"{case.ident}: the reference refuses this probe, so "
             f"{recorded.name} should not exist. It said:\n{outcome}"
@@ -375,3 +374,63 @@ def test_only_an_image_marks_type_is_dropped() -> None:
     assert without_image_types(printout) == (
         image + b'"data":"wide.png"}' + barcode + b'"type":"Code128"}'
     )
+
+
+def refusal(name: str, code: int | None) -> BuildFailed:
+    """Return a refusal as an engine's run would raise it."""
+    return BuildFailed(f"{name} refused it", code)
+
+
+def declared_refused() -> Case:
+    """Return a case whose sidecar says both engines refuse it."""
+    return Case(
+        ident="probe/refused",
+        template=Path("tests/differential/probes/values/negative-size.kdl"),
+        refused=True,
+    )
+
+
+def test_two_refusals_with_one_exit_code_are_an_answer() -> None:
+    refused = {"reference": refusal("reference", 1), "local": refusal("local", 1)}
+    agreed_on_a_refusal(declared_refused(), dict(refused), refused)
+
+
+@pytest.mark.parametrize(
+    ("theirs", "ours"),
+    [(1, 2), (2, 1), (1, None), (None, None)],
+    ids=["one-two", "two-one", "no-code-here", "no-code-either-side"],
+)
+def test_two_refusals_that_mean_different_things_are_not(
+    theirs: int | None, ours: int | None
+) -> None:
+    """doc/cli.md gives each exit code a meaning.
+
+    A timeout and a run that wrote no file carry none, so neither is ever
+    the same refusal as anything else, their own kind included.
+
+    """
+    refused = {
+        "reference": refusal("reference", theirs),
+        "local": refusal("local", ours),
+    }
+    with pytest.raises(AssertionError, match="not in the same way"):
+        agreed_on_a_refusal(declared_refused(), dict(refused), refused)
+
+
+def test_a_declared_refusal_one_engine_built_is_a_failure() -> None:
+    """The declaration is held to, so it cannot go stale unnoticed."""
+    case = declared_refused()
+    theirs = refusal("local", 1)
+    outcomes: dict[str, Build | BuildFailed] = {
+        "reference": Build(
+            engine=Engine("reference", (), "sr 0.1.0"),
+            case=case,
+            path=Path("out.srp.jsonl"),
+            printout=b"",
+            stdout="",
+            stderr="",
+        ),
+        "local": theirs,
+    }
+    with pytest.raises(AssertionError, match="reference built it"):
+        agreed_on_a_refusal(case, outcomes, {"local": theirs})
